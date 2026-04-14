@@ -40,6 +40,13 @@
         .empty { color: #999; padding: 40px 0; text-align: center; }
         .actions { display: flex; gap: 8px; }
 
+        .split-layout { display: flex; gap: 24px; align-items: flex-start; }
+        .split-left { flex: 1; min-width: 0; }
+        .split-right { width: 395px; flex-shrink: 0; position: sticky; top: 24px; }
+        .phone-frame-small { width: 375px; height: 680px; border: 10px solid #333; border-radius: 36px; overflow: hidden; background: #000; }
+        .phone-frame-small iframe { width: 100%; height: 100%; border: none; background: #f5f5f5; }
+        .preview-label { text-align: center; color: #999; font-size: 13px; margin-bottom: 8px; }
+
         .preview-wrap { display: flex; gap: 24px; align-items: flex-start; }
         .preview-sidebar { width: 280px; flex-shrink: 0; }
         .preview-phone { flex: 1; display: flex; justify-content: center; }
@@ -71,77 +78,113 @@
         <div class="content">
             <!-- 赛道管理 -->
             <div class="page active" id="page-tracks">
-                <div class="card">
-                    <h3>添加赛道</h3>
-                    <div class="form-row">
-                        <input type="text" id="t-name" placeholder="赛道名称">
-                        <input type="text" id="t-icon" placeholder="图标 emoji，如 🎬">
-                        <input type="number" id="t-sortOrder" placeholder="排序数字">
-                        <input type="text" id="t-previewBloggers" placeholder="预览博主，如 粥左罗、剽悍一只猫">
+                <div class="split-layout">
+                    <div class="split-left">
+                        <div class="card">
+                            <h3>添加赛道</h3>
+                            <div class="form-row">
+                                <input type="text" id="t-name" placeholder="赛道名称" oninput="updateTrackDemo()">
+                                <input type="text" id="t-icon" placeholder="图标 emoji，如 🎬" oninput="updateTrackDemo()">
+                            </div>
+                            <div class="form-row">
+                                <input type="number" id="t-sortOrder" placeholder="排序数字" oninput="updateTrackDemo()">
+                                <input type="text" id="t-previewBloggers" placeholder="预览博主，如 粥左罗、剽悍一只猫" oninput="updateTrackDemo()">
+                            </div>
+                            <div class="form-row">
+                                <button class="btn" onclick="addTrack()">添加赛道</button>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <h3>赛道列表</h3>
+                            <table>
+                                <thead><tr><th>排序</th><th>图标</th><th>名称</th><th>预览博主</th><th width="160">操作</th></tr></thead>
+                                <tbody id="track-list"></tbody>
+                            </table>
+                        </div>
                     </div>
-                    <div class="form-row">
-                        <button class="btn" onclick="addTrack()">添加赛道</button>
+                    <div class="split-right">
+                        <div class="preview-label">实时预览</div>
+                        <div class="phone-frame-small">
+                            <iframe id="preview-frame-tracks" src="preview.html?mode=demo&page=index"></iframe>
+                        </div>
                     </div>
-                </div>
-                <div class="card">
-                    <h3>赛道列表</h3>
-                    <table>
-                        <thead><tr><th>排序</th><th>图标</th><th>名称</th><th>预览博主</th><th width="160">操作</th></tr></thead>
-                        <tbody id="track-list"></tbody>
-                    </table>
                 </div>
             </div>
 
             <!-- 博主管理 -->
             <div class="page" id="page-bloggers">
-                <div class="card">
-                    <h3>添加博主</h3>
-                    <div class="form-row">
-                        <input type="text" id="b-name" placeholder="博主名称">
-                        <input type="text" id="b-tagline" placeholder="一句话定位">
-                        <select id="b-trackId"><option value="">选择赛道</option></select>
-                        <input type="number" id="b-rankNum" placeholder="排名">
+                <div class="split-layout">
+                    <div class="split-left">
+                        <div class="card">
+                            <h3>添加博主</h3>
+                            <div class="form-row">
+                                <input type="text" id="b-name" placeholder="博主名称" oninput="updateBloggerDemo()">
+                                <input type="text" id="b-tagline" placeholder="一句话定位" oninput="updateBloggerDemo()">
+                            </div>
+                            <div class="form-row">
+                                <select id="b-trackId" onchange="updateBloggerDemo()"><option value="">选择赛道</option></select>
+                                <input type="number" id="b-rankNum" placeholder="排名" oninput="updateBloggerDemo()">
+                            </div>
+                            <div class="form-row">
+                                <button class="btn" onclick="addBlogger()">添加博主</button>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <h3>博主列表</h3>
+                            <div class="form-row" style="margin-bottom:16px;">
+                                <select id="b-filter-track" onchange="loadBloggers()"><option value="">全部赛道</option></select>
+                            </div>
+                            <table>
+                                <thead><tr><th>排名</th><th>名称</th><th>定位</th><th>所属赛道</th><th width="160">操作</th></tr></thead>
+                                <tbody id="blogger-list"></tbody>
+                            </table>
+                        </div>
                     </div>
-                    <div class="form-row">
-                        <button class="btn" onclick="addBlogger()">添加博主</button>
+                    <div class="split-right">
+                        <div class="preview-label">实时预览</div>
+                        <div class="phone-frame-small">
+                            <iframe id="preview-frame-bloggers" src="preview.html?mode=demo&page=blogger"></iframe>
+                        </div>
                     </div>
-                </div>
-                <div class="card">
-                    <h3>博主列表</h3>
-                    <div class="form-row" style="margin-bottom:16px;">
-                        <select id="b-filter-track" onchange="loadBloggers()"><option value="">全部赛道</option></select>
-                    </div>
-                    <table>
-                        <thead><tr><th>排名</th><th>名称</th><th>定位</th><th>所属赛道</th><th width="160">操作</th></tr></thead>
-                        <tbody id="blogger-list"></tbody>
-                    </table>
                 </div>
             </div>
 
             <!-- 文章管理 -->
             <div class="page" id="page-posts">
-                <div class="card">
-                    <h3>添加文章</h3>
-                    <div class="form-row">
-                        <select id="p-trackId" onchange="loadPostBloggers()"><option value="">选择赛道</option></select>
-                        <select id="p-bloggerId"><option value="">选择博主</option></select>
-                        <input type="text" id="p-title" placeholder="文章标题">
-                        <input type="text" id="p-url" placeholder="文章链接">
+                <div class="split-layout">
+                    <div class="split-left">
+                        <div class="card">
+                            <h3>添加文章</h3>
+                            <div class="form-row">
+                                <select id="p-trackId" onchange="loadPostBloggers();updatePostDemo()"><option value="">选择赛道</option></select>
+                                <select id="p-bloggerId" onchange="updatePostDemo()"><option value="">选择博主</option></select>
+                            </div>
+                            <div class="form-row">
+                                <input type="text" id="p-title" placeholder="文章标题">
+                                <input type="text" id="p-url" placeholder="文章链接">
+                            </div>
+                            <div class="form-row">
+                                <button class="btn" onclick="addPost()">添加文章</button>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <h3>文章列表</h3>
+                            <div class="form-row" style="margin-bottom:16px;">
+                                <select id="p-filter-track" onchange="onPostFilterTrackChange()"><option value="">全部赛道</option></select>
+                                <select id="p-filter-blogger" onchange="loadPosts()"><option value="">全部博主</option></select>
+                            </div>
+                            <table>
+                                <thead><tr><th>标题</th><th>链接</th><th>博主</th><th>赛道</th><th width="160">操作</th></tr></thead>
+                                <tbody id="post-list"></tbody>
+                            </table>
+                        </div>
                     </div>
-                    <div class="form-row">
-                        <button class="btn" onclick="addPost()">添加文章</button>
+                    <div class="split-right">
+                        <div class="preview-label">实时预览（所属博主页）</div>
+                        <div class="phone-frame-small">
+                            <iframe id="preview-frame-posts" src="preview.html?mode=demo&page=blogger"></iframe>
+                        </div>
                     </div>
-                </div>
-                <div class="card">
-                    <h3>文章列表</h3>
-                    <div class="form-row" style="margin-bottom:16px;">
-                        <select id="p-filter-track" onchange="onPostFilterTrackChange()"><option value="">全部赛道</option></select>
-                        <select id="p-filter-blogger" onchange="loadPosts()"><option value="">全部博主</option></select>
-                    </div>
-                    <table>
-                        <thead><tr><th>标题</th><th>链接</th><th>博主</th><th>赛道</th><th width="160">操作</th></tr></thead>
-                        <tbody id="post-list"></tbody>
-                    </table>
                 </div>
             </div>
 
@@ -193,6 +236,76 @@
         return result.data;
     }
 
+    // Demo preview helpers
+    function setFrameSrc(frameId, url) {
+        document.getElementById(frameId).src = url;
+    }
+
+    function updateTrackDemo() {
+        const name = document.getElementById('t-name').value.trim();
+        const icon = document.getElementById('t-icon').value.trim();
+        const preview = document.getElementById('t-previewBloggers').value.trim();
+        const rank = document.getElementById('t-sortOrder').value || '1';
+        if (!name && !icon && !preview) {
+            setFrameSrc('preview-frame-tracks', 'preview.html?mode=demo&page=index');
+            return;
+        }
+        const params = new URLSearchParams();
+        params.set('mode', 'demo');
+        params.set('page', 'index');
+        params.set('demoName', name || '示例赛道');
+        params.set('demoIcon', icon || '🏷️');
+        params.set('demoPreview', preview || '');
+        params.set('demoRank', rank);
+        setFrameSrc('preview-frame-tracks', 'preview.html?' + params.toString());
+    }
+
+    function updateBloggerDemo() {
+        const name = document.getElementById('b-name').value.trim();
+        const tagline = document.getElementById('b-tagline').value.trim();
+        const rank = document.getElementById('b-rankNum').value || '1';
+        const trackId = document.getElementById('b-trackId').value;
+        const trackName = trackId ? (tracksCache.find(t => t.id === trackId)?.name || '') : '';
+        if (!name && !tagline) {
+            setFrameSrc('preview-frame-bloggers', 'preview.html?mode=demo&page=blogger');
+            return;
+        }
+        const params = new URLSearchParams();
+        params.set('mode', 'demo');
+        params.set('page', 'blogger');
+        params.set('demoName', name || '示例博主');
+        params.set('demoTagline', tagline || '');
+        params.set('demoRank', rank);
+        params.set('demoTrackName', trackName);
+        setFrameSrc('preview-frame-bloggers', 'preview.html?' + params.toString());
+    }
+
+    async function updatePostDemo() {
+        const bloggerId = document.getElementById('p-bloggerId').value;
+        if (!bloggerId) {
+            setFrameSrc('preview-frame-posts', 'preview.html?mode=demo&page=blogger');
+            return;
+        }
+        try {
+            const blogger = await request('/api/bloggers/' + bloggerId);
+            let trackName = '';
+            if (blogger.trackId) {
+                const track = await request('/api/tracks/' + blogger.trackId);
+                trackName = track.name;
+            }
+            const params = new URLSearchParams();
+            params.set('mode', 'demo');
+            params.set('page', 'blogger');
+            params.set('demoName', blogger.name);
+            params.set('demoTagline', blogger.tagline || '');
+            params.set('demoRank', blogger.rankNum || '');
+            params.set('demoTrackName', trackName);
+            setFrameSrc('preview-frame-posts', 'preview.html?' + params.toString());
+        } catch (e) {
+            setFrameSrc('preview-frame-posts', 'preview.html?mode=demo&page=blogger');
+        }
+    }
+
     // Tracks
     async function loadTracks() {
         tracksCache = await request('/api/tracks');
@@ -205,7 +318,7 @@
                 <td>${t.name}</td>
                 <td>${t.previewBloggers || '-'}</td>
                 <td class="actions">
-                    <button class="btn btn-sm btn-preview" onclick="previewTrack('${t.id}')">预览</button>
+                    <button class="btn btn-sm btn-preview" onclick="previewTrackInPage('${t.id}')">预览</button>
                     <button class="btn btn-sm btn-danger" onclick="delTrack('${t.id}')">删除</button>
                 </td>
             </tr>
@@ -221,6 +334,7 @@
             previewBloggers: document.getElementById('t-previewBloggers').value.trim()
         });
         ['t-name','t-icon','t-sortOrder','t-previewBloggers'].forEach(id => document.getElementById(id).value = '');
+        updateTrackDemo();
         loadTracks();
     }
     async function delTrack(id) {
@@ -228,15 +342,8 @@
         await request('/api/tracks/' + id, 'DELETE');
         loadTracks();
     }
-    function previewTrack(id) {
-        showPage('preview');
-        setTimeout(() => {
-            const frame = document.getElementById('preview-frame');
-            frame.src = 'preview.html?page=track&id=' + encodeURIComponent(id);
-            document.querySelectorAll('.preview-list-item').forEach(el => el.classList.remove('active'));
-            const active = document.querySelector('.preview-list-item[data-track-id="' + id + '"]');
-            if (active) active.classList.add('active');
-        }, 50);
+    function previewTrackInPage(id) {
+        setFrameSrc('preview-frame-tracks', 'preview.html?page=track&id=' + encodeURIComponent(id));
     }
 
     // Bloggers
@@ -273,7 +380,7 @@
                 <td>${b.tagline}</td>
                 <td>${b.trackName}</td>
                 <td class="actions">
-                    <button class="btn btn-sm btn-preview" onclick="previewBlogger('${b.id}')">预览</button>
+                    <button class="btn btn-sm btn-preview" onclick="previewBloggerInPage('${b.id}')">预览</button>
                     <button class="btn btn-sm btn-danger" onclick="delBlogger('${b.id}')">删除</button>
                 </td>
             </tr>
@@ -287,6 +394,7 @@
         await request('/api/bloggers', 'POST', { name, tagline, trackId, rankNum: parseInt(document.getElementById('b-rankNum').value) || 0 });
         ['b-name','b-tagline','b-rankNum'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('b-trackId').value = '';
+        updateBloggerDemo();
         loadBloggers();
     }
     async function delBlogger(id) {
@@ -294,11 +402,8 @@
         await request('/api/bloggers/' + id, 'DELETE');
         loadBloggers();
     }
-    function previewBlogger(id) {
-        showPage('preview');
-        setTimeout(() => {
-            document.getElementById('preview-frame').src = 'preview.html?page=blogger&id=' + encodeURIComponent(id);
-        }, 50);
+    function previewBloggerInPage(id) {
+        setFrameSrc('preview-frame-bloggers', 'preview.html?page=blogger&id=' + encodeURIComponent(id));
     }
 
     // Posts
@@ -319,6 +424,7 @@
         if (!trackId) return;
         const list = await request('/api/bloggers?trackId=' + trackId);
         sel.innerHTML += list.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+        updatePostDemo();
     }
     async function onPostFilterTrackChange() {
         const trackId = document.getElementById('p-filter-track').value;
@@ -373,6 +479,7 @@
         await request('/api/posts', 'POST', { title, url, bloggerId });
         ['p-title','p-url'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('p-bloggerId').value = '';
+        updatePostDemo();
         loadPosts();
     }
     async function delPost(id) {
@@ -381,7 +488,7 @@
         loadPosts();
     }
 
-    // Preview Sidebar
+    // Preview Sidebar (global preview center)
     async function loadPreviewSidebar() {
         tracksCache = await request('/api/tracks');
         const container = document.getElementById('preview-track-list');
@@ -392,6 +499,22 @@
                 <span class="tag">赛道页</span>
             </div>
         `).join('');
+    }
+    function previewTrack(id) {
+        showPage('preview');
+        setTimeout(() => {
+            const frame = document.getElementById('preview-frame');
+            frame.src = 'preview.html?page=track&id=' + encodeURIComponent(id);
+            document.querySelectorAll('.preview-list-item').forEach(el => el.classList.remove('active'));
+            const active = document.querySelector('.preview-list-item[data-track-id="' + id + '"]');
+            if (active) active.classList.add('active');
+        }, 50);
+    }
+    function previewBlogger(id) {
+        showPage('preview');
+        setTimeout(() => {
+            document.getElementById('preview-frame').src = 'preview.html?page=blogger&id=' + encodeURIComponent(id);
+        }, 50);
     }
 
     // Init

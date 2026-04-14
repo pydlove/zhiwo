@@ -391,10 +391,61 @@
         navigator.clipboard.writeText(text).then(() => alert('已复制：' + text)).catch(() => {});
     }
 
+    // Demo 模式渲染（无需后端数据）
+    function renderDemoIndex() {
+        const name = getParam('demoName') || '示例赛道';
+        const icon = getParam('demoIcon') || '🏷️';
+        const preview = getParam('demoPreview') || '';
+        const rank = parseInt(getParam('demoRank')) || 1;
+        const color = rank <= 3 ? rankColors[rank - 1] : '#666';
+        showPage('index', '公众号博主榜', false);
+        document.getElementById('index-track-list').innerHTML = `
+            <div class="track-card">
+                <div class="track-rank" style="color: ${color};">${rank}</div>
+                <div class="track-info">
+                    <div class="track-name">${icon} ${name}</div>
+                    <div class="track-preview">${preview}</div>
+                </div>
+                <div class="track-action">查看 →</div>
+            </div>
+        `;
+    }
+
+    function renderDemoTrack() {
+        const name = getParam('demoName') || '示例赛道';
+        const icon = getParam('demoIcon') || '🏷️';
+        showPage('track', `${icon} ${name}`, true);
+        document.getElementById('track-title').textContent = `${icon} ${name}`;
+        document.getElementById('track-blogger-list').innerHTML = '<div class="empty-tip">暂无博主数据（预览）</div>';
+    }
+
+    function renderDemoBlogger() {
+        const name = getParam('demoName') || '示例博主';
+        const tagline = getParam('demoTagline') || '';
+        const rank = getParam('demoRank') || '1';
+        const trackName = getParam('demoTrackName') || '';
+        showPage('blogger', name, true);
+        document.getElementById('blogger-name').textContent = name;
+        document.getElementById('blogger-avatar').style.display = 'none';
+        document.getElementById('blogger-avatar-placeholder').style.display = 'block';
+        document.getElementById('blogger-track').textContent = trackName ? `${trackName}赛道 · Top ${rank}` : `Top ${rank}`;
+        document.getElementById('blogger-post-list').innerHTML = '<div class="empty-tip">暂无文章数据（预览）</div>';
+    }
+
     // 初始化
     (async function init() {
+        const mode = getParam('mode');
         const page = getParam('page') || 'index';
         const id = getParam('id');
+
+        if (mode === 'demo') {
+            if (page === 'index') renderDemoIndex();
+            else if (page === 'track') renderDemoTrack();
+            else if (page === 'blogger') renderDemoBlogger();
+            else renderDemoIndex();
+            return;
+        }
+
         if (page === 'track' && id) {
             await renderTrackPage(id);
         } else if (page === 'blogger' && id) {

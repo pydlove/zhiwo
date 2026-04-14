@@ -1,3 +1,5 @@
+// 本地开发使用 localhost；真机预览时，请换成你电脑的局域网 IP，例如：
+// const BASE_URL = 'http://192.168.1.5:8080/api'
 const BASE_URL = 'http://localhost:8080/api'
 
 function request(url, method = 'GET', data = null) {

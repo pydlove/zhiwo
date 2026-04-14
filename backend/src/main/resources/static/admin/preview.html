@@ -304,12 +304,13 @@
         showPage('index', '公众号博主榜', false);
         const tracks = await request('/api/tracks');
         const container = document.getElementById('index-track-list');
+        const isStatic = getParam('static') === '1';
         if (!tracks.length) {
             container.innerHTML = '<div class="empty-tip">暂无赛道数据</div>';
             return;
         }
         container.innerHTML = tracks.map((t, i) => `
-            <div class="track-card" onclick="goToTrack('${t.id}')">
+            <div class="track-card" ${isStatic ? '' : `onclick="goToTrack('${t.id}')"`}>
                 <div class="track-rank" style="color: ${i < 3 ? rankColors[i] : '#666'};">${i + 1}</div>
                 <div class="track-info">
                     <div class="track-name">${t.icon} ${t.name}</div>
@@ -328,11 +329,12 @@
         ]);
         document.getElementById('track-title').textContent = `${track.icon} ${track.name}`;
         const container = document.getElementById('track-blogger-list');
+        const isStatic = getParam('static') === '1';
         if (!bloggers.length) {
             container.innerHTML = '<div class="empty-tip">暂无博主数据</div>';
         } else {
             container.innerHTML = bloggers.map((b, i) => `
-                <div class="blogger-card" onclick="goToBlogger('${b.id}')">
+                <div class="blogger-card" ${isStatic ? '' : `onclick="goToBlogger('${b.id}')"`}>
                     <div class="blogger-rank" style="background: ${i < 3 ? rankColors[i] : '#e0e0e0'}; color: ${i < 3 ? '#fff' : '#333'};">${b.rankNum}</div>
                     <div class="blogger-info">
                         <div class="blogger-name">${b.name}</div>
@@ -398,9 +400,10 @@
         const preview = getParam('demoPreview') || '';
         const rank = parseInt(getParam('demoRank')) || 1;
         const color = rank <= 3 ? rankColors[rank - 1] : '#666';
+        const isStatic = getParam('static') === '1';
         showPage('index', '公众号博主榜', false);
         document.getElementById('index-track-list').innerHTML = `
-            <div class="track-card">
+            <div class="track-card" ${isStatic ? '' : 'onclick="goToTrack(\'demo\')"'}>
                 <div class="track-rank" style="color: ${color};">${rank}</div>
                 <div class="track-info">
                     <div class="track-name">${icon} ${name}</div>
@@ -414,9 +417,19 @@
     function renderDemoTrack() {
         const name = getParam('demoName') || '示例赛道';
         const icon = getParam('demoIcon') || '🏷️';
+        const isStatic = getParam('static') === '1';
         showPage('track', `${icon} ${name}`, true);
         document.getElementById('track-title').textContent = `${icon} ${name}`;
-        document.getElementById('track-blogger-list').innerHTML = '<div class="empty-tip">暂无博主数据（预览）</div>';
+        document.getElementById('track-blogger-list').innerHTML = `
+            <div class="blogger-card" ${isStatic ? '' : 'onclick="goToBlogger(\'demo\')"'}>
+                <div class="blogger-rank" style="background: #ff4d4f; color: #fff;">1</div>
+                <div class="blogger-info">
+                    <div class="blogger-name">示例博主</div>
+                    <div class="blogger-tagline">一句话定位示例</div>
+                </div>
+                <div class="blogger-action">查看作品 →</div>
+            </div>
+        `;
     }
 
     function renderDemoBlogger() {

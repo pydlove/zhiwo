@@ -97,7 +97,7 @@
                         <div class="card">
                             <h3>赛道列表</h3>
                             <table>
-                                <thead><tr><th>排序</th><th>图标</th><th>名称</th><th>预览博主</th><th width="160">操作</th></tr></thead>
+                                <thead><tr><th>排序</th><th>图标</th><th>名称</th><th>预览博主</th><th width="100">操作</th></tr></thead>
                                 <tbody id="track-list"></tbody>
                             </table>
                         </div>
@@ -105,7 +105,7 @@
                     <div class="split-right">
                         <div class="preview-label">实时预览</div>
                         <div class="phone-frame-small">
-                            <iframe id="preview-frame-tracks" src="preview.html?mode=demo&page=index"></iframe>
+                            <iframe id="preview-frame-tracks" src="preview.html?mode=demo&page=index&static=1"></iframe>
                         </div>
                     </div>
                 </div>
@@ -247,12 +247,13 @@
         const preview = document.getElementById('t-previewBloggers').value.trim();
         const rank = document.getElementById('t-sortOrder').value || '1';
         if (!name && !icon && !preview) {
-            setFrameSrc('preview-frame-tracks', 'preview.html?mode=demo&page=index');
+            setFrameSrc('preview-frame-tracks', 'preview.html?mode=demo&page=index&static=1');
             return;
         }
         const params = new URLSearchParams();
         params.set('mode', 'demo');
         params.set('page', 'index');
+        params.set('static', '1');
         params.set('demoName', name || '示例赛道');
         params.set('demoIcon', icon || '🏷️');
         params.set('demoPreview', preview || '');
@@ -310,7 +311,7 @@
     async function loadTracks() {
         tracksCache = await request('/api/tracks');
         const tbody = document.getElementById('track-list');
-        if (!tracksCache.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无数据</td></tr>'; return; }
+        if (!tracksCache.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无数据</td></tr>'; return; }
         tbody.innerHTML = tracksCache.map(t => `
             <tr>
                 <td>${t.sortOrder}</td>
@@ -318,7 +319,6 @@
                 <td>${t.name}</td>
                 <td>${t.previewBloggers || '-'}</td>
                 <td class="actions">
-                    <button class="btn btn-sm btn-preview" onclick="previewTrackInPage('${t.id}')">预览</button>
                     <button class="btn btn-sm btn-danger" onclick="delTrack('${t.id}')">删除</button>
                 </td>
             </tr>
@@ -342,10 +342,6 @@
         await request('/api/tracks/' + id, 'DELETE');
         loadTracks();
     }
-    function previewTrackInPage(id) {
-        setFrameSrc('preview-frame-tracks', 'preview.html?page=track&id=' + encodeURIComponent(id));
-    }
-
     // Bloggers
     async function loadTrackSelects() {
         tracksCache = await request('/api/tracks');

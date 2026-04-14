@@ -1,0 +1,22 @@
+<view class="container">
+  <view class="page-title">{{track.icon}} {{track.name}}</view>
+
+  <view class="blogger-list">
+    <view
+      class="blogger-card"
+      wx:for="{{bloggers}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="goToBlogger"
+    >
+      <view class="blogger-rank" style="background: {{index < 3 ? rankColors[index] : '#e0e0e0'}}; color: {{index < 3 ? '#fff' : '#333'}};">{{item.rankNum}}</view>
+      <view class="blogger-info">
+        <view class="blogger-name">{{item.name}}</view>
+        <view class="blogger-tagline">{{item.tagline}}</view>
+      </view>
+      <view class="blogger-action">查看作品 →</view>
+    </view>
+  </view>
+
+  <view class="ad-placeholder">— 底部流量主广告位 —</view>
+</view>

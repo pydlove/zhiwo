@@ -1,0 +1,24 @@
+<view class="container">
+  <view class="blogger-header">
+    <image class="blogger-avatar" src="{{blogger.avatar}}" mode="aspectFill" wx:if="{{blogger.avatar}}"/>
+    <view class="blogger-avatar placeholder" wx:else></view>
+    <view class="blogger-meta">
+      <view class="blogger-name">{{blogger.name}}</view>
+      <view class="blogger-track">{{trackName}}赛道 · Top {{blogger.rankNum}}</view>
+    </view>
+  </view>
+
+  <view class="section-title">🔥 代表作品</view>
+
+  <view class="post-list">
+    <view class="post-card" wx:for="{{posts}}" wx:key="id">
+      <view class="post-title">{{item.title}}</view>
+      <view class="post-actions">
+        <view class="action-btn" data-url="{{item.url}}" bindtap="copyUrl">🔗 复制链接</view>
+        <view class="action-btn" data-title="{{item.title}}" bindtap="copyTitle">📋 复制标题</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="ad-placeholder">— 底部流量主广告位 —</view>
+</view>

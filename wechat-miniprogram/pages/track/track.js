@@ -3,7 +3,8 @@ const api = require('../../utils/api.js')
 Page({
   data: {
     track: {},
-    bloggers: []
+    bloggers: [],
+    rankColors: ['#ff4d4f', '#ff7a45', '#ffa940']
   },
 
   onLoad(options) {
@@ -17,6 +18,8 @@ Page({
       wx.setNavigationBarTitle({
         title: `${track.icon} ${track.name}`
       })
+    }).catch(err => {
+      wx.showToast({ title: '加载失败', icon: 'none' })
     })
 
     api.getBloggersByTrack(trackId).then(bloggers => {

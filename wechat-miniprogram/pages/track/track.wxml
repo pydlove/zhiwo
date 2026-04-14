@@ -9,7 +9,7 @@
       data-id="{{item.id}}"
       bindtap="goToBlogger"
     >
-      <view class="blogger-rank">{{item.rankNum}}</view>
+      <view class="blogger-rank" style="background: {{index < 3 ? rankColors[index] : '#e0e0e0'}}; color: {{index < 3 ? '#fff' : '#333'}};">{{item.rankNum}}</view>
       <view class="blogger-info">
         <view class="blogger-name">{{item.name}}</view>
         <view class="blogger-tagline">{{item.tagline}}</view>

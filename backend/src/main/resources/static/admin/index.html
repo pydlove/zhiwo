@@ -3,22 +3,399 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>管理后台</title>
+    <title>博主整理系统 - 管理后台</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; }
-        .nav { background: #07c160; padding: 16px; color: #fff; }
-        .nav h1 { font-size: 18px; }
-        .menu { padding: 16px; }
-        .menu-item { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 12px; display: block; text-decoration: none; color: #1a1a1a; font-size: 15px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; background: #f0f2f5; color: #333; }
+        .layout { display: flex; min-height: 100vh; }
+        .sidebar { width: 220px; background: #001529; color: #fff; flex-shrink: 0; display: flex; flex-direction: column; }
+        .sidebar .logo { padding: 20px; font-size: 16px; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .sidebar .nav { flex: 1; padding: 12px 0; }
+        .sidebar .nav-item { display: block; padding: 14px 20px; color: rgba(255,255,255,0.7); text-decoration: none; cursor: pointer; transition: all 0.2s; font-size: 14px; }
+        .sidebar .nav-item:hover { color: #fff; background: rgba(255,255,255,0.05); }
+        .sidebar .nav-item.active { color: #fff; background: #07c160; }
+        .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+        .header { background: #fff; padding: 16px 24px; border-bottom: 1px solid #e8e8e8; font-size: 16px; font-weight: 500; }
+        .content { flex: 1; padding: 24px; overflow: auto; }
+        .page { display: none; }
+        .page.active { display: block; }
+
+        .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .card h3 { font-size: 15px; margin-bottom: 16px; color: #1a1a1a; }
+        .form-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+        .form-row input, .form-row select { flex: 1; min-width: 180px; padding: 10px 12px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 14px; outline: none; }
+        .form-row input:focus, .form-row select:focus { border-color: #07c160; }
+        .btn { background: #07c160; color: #fff; border: none; padding: 10px 20px; border-radius: 4px; font-size: 14px; cursor: pointer; }
+        .btn:hover { background: #06ad56; }
+        .btn-sm { padding: 6px 12px; font-size: 13px; }
+        .btn-danger { background: #ff4d4f; }
+        .btn-danger:hover { background: #e03b3d; }
+        .btn-preview { background: #1890ff; }
+        .btn-preview:hover { background: #1476d3; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+        th { color: #666; font-weight: 500; background: #fafafa; }
+        tr:hover td { background: #fafafa; }
+        .empty { color: #999; padding: 40px 0; text-align: center; }
+        .actions { display: flex; gap: 8px; }
+
+        .preview-wrap { display: flex; gap: 24px; align-items: flex-start; }
+        .preview-sidebar { width: 280px; flex-shrink: 0; }
+        .preview-phone { flex: 1; display: flex; justify-content: center; }
+        .phone-frame { width: 375px; height: 760px; border: 12px solid #333; border-radius: 40px; overflow: hidden; background: #000; position: relative; }
+        .phone-frame iframe { width: 100%; height: 100%; border: none; background: #f5f5f5; }
+
+        .preview-list { background: #fff; border-radius: 8px; overflow: hidden; }
+        .preview-list-item { padding: 14px 16px; border-bottom: 1px solid #f0f0f0; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .preview-list-item:hover { background: #f6ffed; }
+        .preview-list-item.active { background: #f6ffed; border-left: 3px solid #07c160; }
+        .preview-list-item:last-child { border-bottom: none; }
+
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; background: #f0f0f0; color: #666; }
     </style>
 </head>
 <body>
-    <div class="nav"><h1>博主整理系统 - 管理后台</h1></div>
-    <div class="menu">
-        <a class="menu-item" href="tracks.html">🏷️ 赛道管理</a>
-        <a class="menu-item" href="bloggers.html">👤 博主管理</a>
-        <a class="menu-item" href="posts.html">📝 文章管理</a>
+<div class="layout">
+    <div class="sidebar">
+        <div class="logo">博主整理系统</div>
+        <div class="nav">
+            <a class="nav-item active" data-page="tracks" onclick="showPage('tracks')">🏷️ 赛道管理</a>
+            <a class="nav-item" data-page="bloggers" onclick="showPage('bloggers')">👤 博主管理</a>
+            <a class="nav-item" data-page="posts" onclick="showPage('posts')">📝 文章管理</a>
+            <a class="nav-item" data-page="preview" onclick="showPage('preview')">📱 预览中心</a>
+        </div>
     </div>
+    <div class="main">
+        <div class="header" id="pageTitle">赛道管理</div>
+        <div class="content">
+            <!-- 赛道管理 -->
+            <div class="page active" id="page-tracks">
+                <div class="card">
+                    <h3>添加赛道</h3>
+                    <div class="form-row">
+                        <input type="text" id="t-name" placeholder="赛道名称">
+                        <input type="text" id="t-icon" placeholder="图标 emoji，如 🎬">
+                        <input type="number" id="t-sortOrder" placeholder="排序数字">
+                        <input type="text" id="t-previewBloggers" placeholder="预览博主，如 粥左罗、剽悍一只猫">
+                    </div>
+                    <div class="form-row">
+                        <button class="btn" onclick="addTrack()">添加赛道</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>赛道列表</h3>
+                    <table>
+                        <thead><tr><th>排序</th><th>图标</th><th>名称</th><th>预览博主</th><th width="160">操作</th></tr></thead>
+                        <tbody id="track-list"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 博主管理 -->
+            <div class="page" id="page-bloggers">
+                <div class="card">
+                    <h3>添加博主</h3>
+                    <div class="form-row">
+                        <input type="text" id="b-name" placeholder="博主名称">
+                        <input type="text" id="b-tagline" placeholder="一句话定位">
+                        <select id="b-trackId"><option value="">选择赛道</option></select>
+                        <input type="number" id="b-rankNum" placeholder="排名">
+                    </div>
+                    <div class="form-row">
+                        <button class="btn" onclick="addBlogger()">添加博主</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>博主列表</h3>
+                    <div class="form-row" style="margin-bottom:16px;">
+                        <select id="b-filter-track" onchange="loadBloggers()"><option value="">全部赛道</option></select>
+                    </div>
+                    <table>
+                        <thead><tr><th>排名</th><th>名称</th><th>定位</th><th>所属赛道</th><th width="160">操作</th></tr></thead>
+                        <tbody id="blogger-list"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 文章管理 -->
+            <div class="page" id="page-posts">
+                <div class="card">
+                    <h3>添加文章</h3>
+                    <div class="form-row">
+                        <select id="p-trackId" onchange="loadPostBloggers()"><option value="">选择赛道</option></select>
+                        <select id="p-bloggerId"><option value="">选择博主</option></select>
+                        <input type="text" id="p-title" placeholder="文章标题">
+                        <input type="text" id="p-url" placeholder="文章链接">
+                    </div>
+                    <div class="form-row">
+                        <button class="btn" onclick="addPost()">添加文章</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>文章列表</h3>
+                    <div class="form-row" style="margin-bottom:16px;">
+                        <select id="p-filter-track" onchange="onPostFilterTrackChange()"><option value="">全部赛道</option></select>
+                        <select id="p-filter-blogger" onchange="loadPosts()"><option value="">全部博主</option></select>
+                    </div>
+                    <table>
+                        <thead><tr><th>标题</th><th>链接</th><th>博主</th><th>赛道</th><th width="160">操作</th></tr></thead>
+                        <tbody id="post-list"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 预览中心 -->
+            <div class="page" id="page-preview">
+                <div class="preview-wrap">
+                    <div class="preview-sidebar">
+                        <div class="card" style="padding:0;overflow:hidden;">
+                            <div style="padding:14px 16px;border-bottom:1px solid #f0f0f0;font-weight:500;">选择预览内容</div>
+                            <div id="preview-track-list" class="preview-list"></div>
+                        </div>
+                    </div>
+                    <div class="preview-phone">
+                        <div class="phone-frame">
+                            <iframe id="preview-frame" src="preview.html"></iframe>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Cache
+    let tracksCache = [];
+    let bloggersCache = [];
+    let postsCache = [];
+
+    function showPage(name) {
+        document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+        document.getElementById('page-' + name).classList.add('active');
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+        document.querySelector('.nav-item[data-page="' + name + '"]').classList.add('active');
+        const titles = { tracks: '赛道管理', bloggers: '博主管理', posts: '文章管理', preview: '预览中心' };
+        document.getElementById('pageTitle').textContent = titles[name];
+        if (name === 'tracks') loadTracks();
+        if (name === 'bloggers') { loadTrackSelects(); loadBloggers(); }
+        if (name === 'posts') { loadPostTracks(); loadPosts(); }
+        if (name === 'preview') loadPreviewSidebar();
+    }
+
+    async function request(url, method = 'GET', body = null) {
+        const opts = { method, headers: { 'Content-Type': 'application/json' } };
+        if (body) opts.body = JSON.stringify(body);
+        const res = await fetch(url, opts);
+        const result = await res.json();
+        if (result.code !== 200) throw new Error(result.msg);
+        return result.data;
+    }
+
+    // Tracks
+    async function loadTracks() {
+        tracksCache = await request('/api/tracks');
+        const tbody = document.getElementById('track-list');
+        if (!tracksCache.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无数据</td></tr>'; return; }
+        tbody.innerHTML = tracksCache.map(t => `
+            <tr>
+                <td>${t.sortOrder}</td>
+                <td>${t.icon}</td>
+                <td>${t.name}</td>
+                <td>${t.previewBloggers || '-'}</td>
+                <td class="actions">
+                    <button class="btn btn-sm btn-preview" onclick="previewTrack('${t.id}')">预览</button>
+                    <button class="btn btn-sm btn-danger" onclick="delTrack('${t.id}')">删除</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+    async function addTrack() {
+        const name = document.getElementById('t-name').value.trim();
+        const icon = document.getElementById('t-icon').value.trim();
+        if (!name || !icon) return alert('请输入赛道名称和图标');
+        await request('/api/tracks', 'POST', {
+            name, icon,
+            sortOrder: parseInt(document.getElementById('t-sortOrder').value) || 0,
+            previewBloggers: document.getElementById('t-previewBloggers').value.trim()
+        });
+        ['t-name','t-icon','t-sortOrder','t-previewBloggers'].forEach(id => document.getElementById(id).value = '');
+        loadTracks();
+    }
+    async function delTrack(id) {
+        if (!confirm('确定删除？')) return;
+        await request('/api/tracks/' + id, 'DELETE');
+        loadTracks();
+    }
+    function previewTrack(id) {
+        showPage('preview');
+        setTimeout(() => {
+            const frame = document.getElementById('preview-frame');
+            frame.src = 'preview.html?page=track&id=' + encodeURIComponent(id);
+            document.querySelectorAll('.preview-list-item').forEach(el => el.classList.remove('active'));
+            const active = document.querySelector('.preview-list-item[data-track-id="' + id + '"]');
+            if (active) active.classList.add('active');
+        }, 50);
+    }
+
+    // Bloggers
+    async function loadTrackSelects() {
+        tracksCache = await request('/api/tracks');
+        ['b-trackId','b-filter-track'].forEach(id => {
+            const sel = document.getElementById(id);
+            const old = sel.value;
+            sel.innerHTML = '<option value="">' + (id === 'b-trackId' ? '选择赛道' : '全部赛道') + '</option>' +
+                tracksCache.map(t => `<option value="${t.id}">${t.icon} ${t.name}</option>`).join('');
+            sel.value = old;
+        });
+    }
+    async function loadBloggers() {
+        const trackId = document.getElementById('b-filter-track').value;
+        const all = [];
+        if (trackId) {
+            all.push(...(await request('/api/bloggers?trackId=' + trackId)));
+        } else {
+            for (const t of tracksCache) {
+                const list = await request('/api/bloggers?trackId=' + t.id);
+                list.forEach(b => b.trackName = t.name);
+                all.push(...list);
+            }
+        }
+        all.forEach(b => { if (!b.trackName) { const t = tracksCache.find(x => x.id === b.trackId); b.trackName = t ? t.name : '-'; } });
+        bloggersCache = all;
+        const tbody = document.getElementById('blogger-list');
+        if (!all.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无数据</td></tr>'; return; }
+        tbody.innerHTML = all.map(b => `
+            <tr>
+                <td>${b.rankNum}</td>
+                <td>${b.name}</td>
+                <td>${b.tagline}</td>
+                <td>${b.trackName}</td>
+                <td class="actions">
+                    <button class="btn btn-sm btn-preview" onclick="previewBlogger('${b.id}')">预览</button>
+                    <button class="btn btn-sm btn-danger" onclick="delBlogger('${b.id}')">删除</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+    async function addBlogger() {
+        const name = document.getElementById('b-name').value.trim();
+        const tagline = document.getElementById('b-tagline').value.trim();
+        const trackId = document.getElementById('b-trackId').value;
+        if (!name || !tagline || !trackId) return alert('请填写完整信息');
+        await request('/api/bloggers', 'POST', { name, tagline, trackId, rankNum: parseInt(document.getElementById('b-rankNum').value) || 0 });
+        ['b-name','b-tagline','b-rankNum'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('b-trackId').value = '';
+        loadBloggers();
+    }
+    async function delBlogger(id) {
+        if (!confirm('确定删除？')) return;
+        await request('/api/bloggers/' + id, 'DELETE');
+        loadBloggers();
+    }
+    function previewBlogger(id) {
+        showPage('preview');
+        setTimeout(() => {
+            document.getElementById('preview-frame').src = 'preview.html?page=blogger&id=' + encodeURIComponent(id);
+        }, 50);
+    }
+
+    // Posts
+    async function loadPostTracks() {
+        tracksCache = await request('/api/tracks');
+        ['p-trackId','p-filter-track'].forEach(id => {
+            const sel = document.getElementById(id);
+            const old = sel.value;
+            sel.innerHTML = '<option value="">' + (id === 'p-trackId' ? '选择赛道' : '全部赛道') + '</option>' +
+                tracksCache.map(t => `<option value="${t.id}">${t.icon} ${t.name}</option>`).join('');
+            sel.value = old;
+        });
+    }
+    async function loadPostBloggers() {
+        const trackId = document.getElementById('p-trackId').value;
+        const sel = document.getElementById('p-bloggerId');
+        sel.innerHTML = '<option value="">选择博主</option>';
+        if (!trackId) return;
+        const list = await request('/api/bloggers?trackId=' + trackId);
+        sel.innerHTML += list.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+    }
+    async function onPostFilterTrackChange() {
+        const trackId = document.getElementById('p-filter-track').value;
+        const sel = document.getElementById('p-filter-blogger');
+        sel.innerHTML = '<option value="">全部博主</option>';
+        if (!trackId) { loadPosts(); return; }
+        const list = await request('/api/bloggers?trackId=' + trackId);
+        sel.innerHTML += list.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+        loadPosts();
+    }
+    async function loadPosts() {
+        const trackId = document.getElementById('p-filter-track').value;
+        const bloggerId = document.getElementById('p-filter-blogger').value;
+        const all = [];
+        let targetBloggers = [];
+        if (bloggerId) {
+            targetBloggers = [bloggersCache.find(b => b.id === bloggerId) || { id: bloggerId }];
+        } else if (trackId) {
+            targetBloggers = await request('/api/bloggers?trackId=' + trackId);
+        } else {
+            for (const t of tracksCache) {
+                const list = await request('/api/bloggers?trackId=' + t.id);
+                targetBloggers.push(...list);
+            }
+        }
+        for (const b of targetBloggers) {
+            const list = await request('/api/posts?bloggerId=' + b.id);
+            const t = tracksCache.find(x => x.id === (b.trackId || (bloggersCache.find(bb => bb.id === b.id)?.trackId)));
+            list.forEach(p => { p.bloggerName = b.name; p.trackName = t ? t.name : '-'; });
+            all.push(...list);
+        }
+        postsCache = all;
+        const tbody = document.getElementById('post-list');
+        if (!all.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无数据</td></tr>'; return; }
+        tbody.innerHTML = all.map(p => `
+            <tr>
+                <td>${p.title}</td>
+                <td><a href="${p.url}" target="_blank" style="color:#1890ff;">${p.url}</a></td>
+                <td>${p.bloggerName}</td>
+                <td>${p.trackName}</td>
+                <td class="actions">
+                    <button class="btn btn-sm btn-danger" onclick="delPost('${p.id}')">删除</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+    async function addPost() {
+        const title = document.getElementById('p-title').value.trim();
+        const url = document.getElementById('p-url').value.trim();
+        const bloggerId = document.getElementById('p-bloggerId').value;
+        if (!title || !url || !bloggerId) return alert('请填写完整信息');
+        await request('/api/posts', 'POST', { title, url, bloggerId });
+        ['p-title','p-url'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('p-bloggerId').value = '';
+        loadPosts();
+    }
+    async function delPost(id) {
+        if (!confirm('确定删除？')) return;
+        await request('/api/posts/' + id, 'DELETE');
+        loadPosts();
+    }
+
+    // Preview Sidebar
+    async function loadPreviewSidebar() {
+        tracksCache = await request('/api/tracks');
+        const container = document.getElementById('preview-track-list');
+        if (!tracksCache.length) { container.innerHTML = '<div style="padding:20px;color:#999;text-align:center;">请先添加赛道</div>'; return; }
+        container.innerHTML = tracksCache.map(t => `
+            <div class="preview-list-item" data-track-id="${t.id}" onclick="previewTrack('${t.id}')">
+                <div><span style="margin-right:6px;">${t.icon}</span>${t.name}</div>
+                <span class="tag">赛道页</span>
+            </div>
+        `).join('');
+    }
+
+    // Init
+    loadTracks();
+</script>
 </body>
 </html>

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>小程序预览</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; background: #f5f5f5; }
+
+        /* 模拟微信导航栏 */
+        .nav-bar {
+            background: #fff;
+            padding: 44px 16px 12px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: 500;
+            color: #1a1a1a;
+            border-bottom: 1px solid #e5e5e5;
+            position: relative;
+        }
+        .nav-back {
+            position: absolute;
+            left: 16px;
+            bottom: 12px;
+            font-size: 14px;
+            color: #333;
+            display: none;
+            cursor: pointer;
+        }
+        .nav-back.show { display: block; }
+
+        .page { display: none; min-height: calc(100vh - 85px); }
+        .page.active { display: block; }
+
+        .container {
+            background: #f5f5f5;
+            padding: 16px;
+            min-height: calc(100vh - 85px);
+        }
+
+        .page-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 12px;
+        }
+
+        .track-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .track-card {
+            background: #fff;
+            padding: 14px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-left: 3px solid transparent;
+            cursor: pointer;
+        }
+        .track-card:nth-child(1) { border-left-color: #ff4d4f; }
+        .track-card:nth-child(2) { border-left-color: #ff7a45; }
+        .track-card:nth-child(3) { border-left-color: #ffa940; }
+        .track-card:nth-child(n+4) { border-left-color: #07c160; }
+        .track-rank {
+            font-size: 24px;
+            font-weight: 700;
+            min-width: 28px;
+            text-align: center;
+        }
+        .track-info { flex: 1; }
+        .track-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: #1a1a1a;
+        }
+        .track-preview {
+            font-size: 11px;
+            color: #555;
+            margin-top: 2px;
+        }
+        .track-action {
+            font-size: 11px;
+            color: #07c160;
+            font-weight: 500;
+        }
+
+        .blogger-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .blogger-card {
+            background: #fff;
+            padding: 12px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+        }
+        .blogger-rank {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        .blogger-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .blogger-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: #1a1a1a;
+        }
+        .blogger-tagline {
+            font-size: 11px;
+            color: #555;
+            margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .blogger-action {
+            font-size: 11px;
+            color: #07c160;
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+
+        .blogger-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .blogger-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            object-fit: cover;
+        }
+        .blogger-avatar.placeholder {
+            background: #e0e0e0;
+        }
+        .blogger-meta { flex: 1; }
+        .blogger-name-lg {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+        .blogger-track {
+            font-size: 11px;
+            color: #555;
+            margin-top: 2px;
+        }
+        .section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 10px;
+        }
+        .post-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .post-card {
+            background: #fff;
+            padding: 12px;
+            border-radius: 8px;
+        }
+        .post-title {
+            font-size: 13px;
+            color: #1a1a1a;
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+        .post-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .action-btn {
+            background: #f0f0f0;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #333;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            font-family: inherit;
+        }
+
+        .ad-placeholder {
+            margin-top: 12px;
+            font-size: 11px;
+            color: #666;
+            text-align: center;
+        }
+        .empty-tip {
+            text-align: center;
+            padding: 40px 0;
+            color: #999;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav-bar">
+        <span class="nav-back" id="navBack" onclick="goBack()">← 返回</span>
+        <span id="navTitle">公众号博主榜</span>
+    </div>
+
+    <!-- 首页 -->
+    <div class="page" id="page-index">
+        <div class="container">
+            <div class="page-title">🔥 热门赛道</div>
+            <div class="track-list" id="index-track-list"></div>
+            <div class="ad-placeholder">— 底部流量主广告位 —</div>
+        </div>
+    </div>
+
+    <!-- 赛道页 -->
+    <div class="page" id="page-track">
+        <div class="container">
+            <div class="page-title" id="track-title"></div>
+            <div class="blogger-list" id="track-blogger-list"></div>
+            <div class="ad-placeholder">— 底部流量主广告位 —</div>
+        </div>
+    </div>
+
+    <!-- 博主页 -->
+    <div class="page" id="page-blogger">
+        <div class="container">
+            <div class="blogger-header">
+                <img class="blogger-avatar" id="blogger-avatar" src="" style="display:none;">
+                <div class="blogger-avatar placeholder" id="blogger-avatar-placeholder"></div>
+                <div class="blogger-meta">
+                    <div class="blogger-name-lg" id="blogger-name"></div>
+                    <div class="blogger-track" id="blogger-track"></div>
+                </div>
+            </div>
+            <div class="section-title">🔥 代表作品</div>
+            <div class="post-list" id="blogger-post-list"></div>
+            <div class="ad-placeholder">— 底部流量主广告位 —</div>
+        </div>
+    </div>
+
+<script>
+    const rankColors = ['#ff4d4f', '#ff7a45', '#ffa940'];
+    let historyStack = [];
+
+    function getParam(name) {
+        const url = new URL(window.location.href);
+        return url.searchParams.get(name);
+    }
+
+    async function request(url) {
+        const res = await fetch(url);
+        const result = await res.json();
+        if (result.code !== 200) throw new Error(result.msg);
+        return result.data;
+    }
+
+    function showPage(name, title, showBack) {
+        document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+        document.getElementById('page-' + name).classList.add('active');
+        document.getElementById('navTitle').textContent = title;
+        document.getElementById('navBack').classList.toggle('show', showBack);
+    }
+
+    function goToTrack(trackId) {
+        historyStack.push({ page: 'index', title: '公众号博主榜', showBack: false });
+        renderTrackPage(trackId);
+    }
+
+    function goToBlogger(bloggerId) {
+        const currentTitle = document.getElementById('navTitle').textContent;
+        const currentPage = document.querySelector('.page.active').id.replace('page-', '');
+        historyStack.push({ page: currentPage, title: currentTitle, showBack: currentPage !== 'index' });
+        renderBloggerPage(bloggerId);
+    }
+
+    function goBack() {
+        if (!historyStack.length) return;
+        const prev = historyStack.pop();
+        showPage(prev.page, prev.title, prev.showBack);
+        if (prev.page === 'index') renderIndexPage();
+    }
+
+    // 首页渲染
+    async function renderIndexPage() {
+        showPage('index', '公众号博主榜', false);
+        const tracks = await request('/api/tracks');
+        const container = document.getElementById('index-track-list');
+        if (!tracks.length) {
+            container.innerHTML = '<div class="empty-tip">暂无赛道数据</div>';
+            return;
+        }
+        container.innerHTML = tracks.map((t, i) => `
+            <div class="track-card" onclick="goToTrack('${t.id}')">
+                <div class="track-rank" style="color: ${i < 3 ? rankColors[i] : '#666'};">${i + 1}</div>
+                <div class="track-info">
+                    <div class="track-name">${t.icon} ${t.name}</div>
+                    <div class="track-preview">${t.previewBloggers || ''}</div>
+                </div>
+                <div class="track-action">查看 →</div>
+            </div>
+        `).join('');
+    }
+
+    // 赛道页渲染
+    async function renderTrackPage(trackId) {
+        const [track, bloggers] = await Promise.all([
+            request('/api/tracks/' + trackId),
+            request('/api/bloggers?trackId=' + trackId)
+        ]);
+        document.getElementById('track-title').textContent = `${track.icon} ${track.name}`;
+        const container = document.getElementById('track-blogger-list');
+        if (!bloggers.length) {
+            container.innerHTML = '<div class="empty-tip">暂无博主数据</div>';
+        } else {
+            container.innerHTML = bloggers.map((b, i) => `
+                <div class="blogger-card" onclick="goToBlogger('${b.id}')">
+                    <div class="blogger-rank" style="background: ${i < 3 ? rankColors[i] : '#e0e0e0'}; color: ${i < 3 ? '#fff' : '#333'};">${b.rankNum}</div>
+                    <div class="blogger-info">
+                        <div class="blogger-name">${b.name}</div>
+                        <div class="blogger-tagline">${b.tagline}</div>
+                    </div>
+                    <div class="blogger-action">查看作品 →</div>
+                </div>
+            `).join('');
+        }
+        showPage('track', `${track.icon} ${track.name}`, true);
+    }
+
+    // 博主页渲染
+    async function renderBloggerPage(bloggerId) {
+        const [blogger, posts] = await Promise.all([
+            request('/api/bloggers/' + bloggerId),
+            request('/api/posts?bloggerId=' + bloggerId)
+        ]);
+        document.getElementById('blogger-name').textContent = blogger.name;
+        if (blogger.avatar) {
+            const img = document.getElementById('blogger-avatar');
+            img.src = blogger.avatar;
+            img.style.display = 'block';
+            document.getElementById('blogger-avatar-placeholder').style.display = 'none';
+        } else {
+            document.getElementById('blogger-avatar').style.display = 'none';
+            document.getElementById('blogger-avatar-placeholder').style.display = 'block';
+        }
+        if (blogger.trackId) {
+            request('/api/tracks/' + blogger.trackId).then(track => {
+                document.getElementById('blogger-track').textContent = `${track.name}赛道 · Top ${blogger.rankNum}`;
+            }).catch(() => {
+                document.getElementById('blogger-track').textContent = `Top ${blogger.rankNum}`;
+            });
+        } else {
+            document.getElementById('blogger-track').textContent = `Top ${blogger.rankNum}`;
+        }
+        const container = document.getElementById('blogger-post-list');
+        if (!posts.length) {
+            container.innerHTML = '<div class="empty-tip">暂无文章数据</div>';
+        } else {
+            container.innerHTML = posts.map(p => `
+                <div class="post-card">
+                    <div class="post-title">${p.title}</div>
+                    <div class="post-actions">
+                        <button class="action-btn" onclick="window.open('${p.url}', '_blank')">🔗 打开链接</button>
+                        <button class="action-btn" onclick="copyText('${p.title.replace(/'/g, "\\'")}')">📋 复制标题</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        showPage('blogger', blogger.name, true);
+    }
+
+    function copyText(text) {
+        navigator.clipboard.writeText(text).then(() => alert('已复制：' + text)).catch(() => {});
+    }
+
+    // 初始化
+    (async function init() {
+        const page = getParam('page') || 'index';
+        const id = getParam('id');
+        if (page === 'track' && id) {
+            await renderTrackPage(id);
+        } else if (page === 'blogger' && id) {
+            await renderBloggerPage(id);
+        } else {
+            await renderIndexPage();
+        }
+    })();
+</script>
+</body>
+</html>

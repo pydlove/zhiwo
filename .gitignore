@@ -1,2 +1,5 @@
 .worktrees/
 .superpowers/
+backend/target/
+uni-app/node_modules/
+uni-app/package-lock.json

@@ -14,7 +14,7 @@
         .list { background: #fff; border-radius: 8px; }
         .item { padding: 12px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
         .item:last-child { border-bottom: none; }
-        .del { color: #ff4d4f; font-size: 13px; }
+        .del { color: #ff4d4f; font-size: 13px; cursor: pointer; }
         .back { display: block; margin-top: 16px; color: #666; font-size: 13px; text-decoration: none; }
     </style>
 </head>
@@ -33,43 +33,63 @@
     <script>
         const API = '/api/bloggers';
         async function loadTracks() {
-            const res = await fetch('/api/tracks');
-            const result = await res.json();
-            const select = document.getElementById('trackId');
-            result.data.forEach(t => {
-                const opt = document.createElement('option');
-                opt.value = t.id;
-                opt.textContent = `${t.icon} ${t.name}`;
-                select.appendChild(opt);
-            });
+            try {
+                const res = await fetch('/api/tracks');
+                const result = await res.json();
+                if (result.code !== 200) { alert(result.msg); return; }
+                const select = document.getElementById('trackId');
+                result.data.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t.id;
+                    opt.textContent = `${t.icon} ${t.name}`;
+                    select.appendChild(opt);
+                });
+            } catch (e) { alert('加载赛道失败：' + e.message); }
         }
         async function load() {
-            const trackId = document.getElementById('trackId').value;
-            if (!trackId) { document.getElementById('list').innerHTML = '<div class="item" style="color:#999">请先在上方选择赛道</div>'; return; }
-            const res = await fetch(`${API}?trackId=${trackId}`);
-            const result = await res.json();
-            document.getElementById('list').innerHTML = result.data.map(b => `
-                <div class="item">
-                    <div>#${b.rankNum} ${b.name} - ${b.tagline}</div>
-                    <span class="del" onclick="del('${b.id}')">删除</span>
-                </div>
-            `).join('');
+            try {
+                const trackId = document.getElementById('trackId').value;
+                if (!trackId) { document.getElementById('list').innerHTML = '<div class="item" style="color:#999">请先在上方选择赛道</div>'; return; }
+                const res = await fetch(`${API}?trackId=${trackId}`);
+                const result = await res.json();
+                if (result.code !== 200) { alert(result.msg); return; }
+                document.getElementById('list').innerHTML = result.data.map(b => `
+                    <div class="item">
+                        <div>#${b.rankNum} ${b.name} - ${b.tagline}</div>
+                        <span class="del" onclick="del('${b.id}')">删除</span>
+                    </div>
+                `).join('');
+            } catch (e) { alert('加载博主失败：' + e.message); }
         }
         async function add() {
+            const name = document.getElementById('name').value.trim();
+            const tagline = document.getElementById('tagline').value.trim();
+            const trackId = document.getElementById('trackId').value;
+            if (!name) { alert('请输入博主名称'); return; }
+            if (!tagline) { alert('请输入一句话定位'); return; }
+            if (!trackId) { alert('请选择赛道'); return; }
             const body = {
-                name: document.getElementById('name').value,
-                tagline: document.getElementById('tagline').value,
-                trackId: document.getElementById('trackId').value,
+                name: name,
+                tagline: tagline,
+                trackId: trackId,
                 rankNum: parseInt(document.getElementById('rankNum').value) || 0
             };
-            await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            ['name','tagline','rankNum'].forEach(id => document.getElementById(id).value = '');
-            load();
+            try {
+                const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                const result = await res.json();
+                if (result.code !== 200) { alert(result.msg); return; }
+                ['name','tagline','rankNum'].forEach(id => document.getElementById(id).value = '');
+                load();
+            } catch (e) { alert('添加失败：' + e.message); }
         }
         async function del(id) {
             if (!confirm('确定删除？')) return;
-            await fetch(`${API}/${id}`, { method: 'DELETE' });
-            load();
+            try {
+                const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
+                const result = await res.json();
+                if (result.code !== 200) { alert(result.msg); return; }
+                load();
+            } catch (e) { alert('删除失败：' + e.message); }
         }
         document.getElementById('trackId').addEventListener('change', load);
         loadTracks();

@@ -14,7 +14,7 @@
         .list { background: #fff; border-radius: 8px; }
         .item { padding: 12px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
         .item:last-child { border-bottom: none; }
-        .del { color: #ff4d4f; font-size: 13px; }
+        .del { color: #ff4d4f; font-size: 13px; cursor: pointer; }
         .back { display: block; margin-top: 16px; color: #666; font-size: 13px; text-decoration: none; }
     </style>
 </head>
@@ -33,31 +33,46 @@
     <script>
         const API = '/api/tracks';
         async function load() {
-            const res = await fetch(API);
-            const result = await res.json();
-            const list = document.getElementById('list');
-            list.innerHTML = result.data.map(t => `
-                <div class="item">
-                    <div>${t.icon} ${t.name} (排序:${t.sortOrder})</div>
-                    <span class="del" onclick="del('${t.id}')">删除</span>
-                </div>
-            `).join('');
+            try {
+                const res = await fetch(API);
+                const result = await res.json();
+                if (result.code !== 200) { alert(result.msg); return; }
+                const list = document.getElementById('list');
+                list.innerHTML = result.data.map(t => `
+                    <div class="item">
+                        <div>${t.icon} ${t.name} (排序:${t.sortOrder})</div>
+                        <span class="del" onclick="del('${t.id}')">删除</span>
+                    </div>
+                `).join('');
+            } catch (e) { alert('加载失败：' + e.message); }
         }
         async function add() {
+            const name = document.getElementById('name').value.trim();
+            const icon = document.getElementById('icon').value.trim();
+            if (!name) { alert('请输入赛道名称'); return; }
+            if (!icon) { alert('请输入图标'); return; }
             const body = {
-                name: document.getElementById('name').value,
-                icon: document.getElementById('icon').value,
+                name: name,
+                icon: icon,
                 sortOrder: parseInt(document.getElementById('sortOrder').value) || 0,
-                previewBloggers: document.getElementById('previewBloggers').value
+                previewBloggers: document.getElementById('previewBloggers').value.trim()
             };
-            await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            ['name','icon','sortOrder','previewBloggers'].forEach(id => document.getElementById(id).value = '');
-            load();
+            try {
+                const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                const result = await res.json();
+                if (result.code !== 200) { alert(result.msg); return; }
+                ['name','icon','sortOrder','previewBloggers'].forEach(id => document.getElementById(id).value = '');
+                load();
+            } catch (e) { alert('添加失败：' + e.message); }
         }
         async function del(id) {
             if (!confirm('确定删除？')) return;
-            await fetch(`${API}/${id}`, { method: 'DELETE' });
-            load();
+            try {
+                const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
+                const result = await res.json();
+                if (result.code !== 200) { alert(result.msg); return; }
+                load();
+            } catch (e) { alert('删除失败：' + e.message); }
         }
         load();
     </script>

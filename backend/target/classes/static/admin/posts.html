@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文章管理</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; padding: 16px; }
+        h2 { font-size: 16px; margin-bottom: 12px; }
+        .form { background: #fff; padding: 12px; border-radius: 8px; margin-bottom: 16px; }
+        .form input, .form select { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        .btn { background: #07c160; color: #fff; border: none; padding: 10px 20px; border-radius: 4px; font-size: 14px; }
+        .list { background: #fff; border-radius: 8px; }
+        .item { padding: 12px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+        .item:last-child { border-bottom: none; }
+        .del { color: #ff4d4f; font-size: 13px; cursor: pointer; }
+        .back { display: block; margin-top: 16px; color: #666; font-size: 13px; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <h2>文章管理</h2>
+    <div class="form">
+        <select id="trackId"><option value="">选择赛道</option></select>
+        <select id="bloggerId"><option value="">选择博主</option></select>
+        <input type="text" id="title" placeholder="文章标题">
+        <input type="text" id="url" placeholder="文章链接">
+        <button class="btn" onclick="add()">添加文章</button>
+    </div>
+    <div class="list" id="list"></div>
+    <a class="back" href="index.html">← 返回首页</a>
+
+    <script>
+        const API = '/api/posts';
+        async function loadTracks() {
+            try {
+                const res = await fetch('/api/tracks');
+                const result = await res.json();
+                if (result.code !== 200) { alert(result.msg); return; }
+                const select = document.getElementById('trackId');
+                result.data.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t.id;
+                    opt.textContent = `${t.icon} ${t.name}`;
+                    select.appendChild(opt);
+                });
+            } catch (e) { alert('加载赛道失败：' + e.message); }
+        }
+        async function loadBloggers() {
+            try {
+                const trackId = document.getElementById('trackId').value;
+                const select = document.getElementById('bloggerId');
+                select.innerHTML = '<option value="">选择博主</option>';
+                if (!trackId) return;
+                const res = await fetch(`/api/bloggers?trackId=${trackId}`);
+                const result = await res.json();
+                if (result.code !== 200) { alert(result.msg); return; }
+                result.data.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b.id;
+                    opt.textContent = b.name;
+                    select.appendChild(opt);
+                });
+                load();
+            } catch (e) { alert('加载博主失败：' + e.message); }
+        }
+        async function load() {
+            try {
+                const bloggerId = document.getElementById('bloggerId').value;
+                if (!bloggerId) { document.getElementById('list').innerHTML = '<div class="item" style="color:#999">请先在上方选择博主</div>'; return; }
+                const res = await fetch(`${API}?bloggerId=${bloggerId}`);
+                const result = await res.json();
+                if (result.code !== 200) { alert(result.msg); return; }
+                document.getElementById('list').innerHTML = result.data.map(p => `
+                    <div class="item">
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.title}</div>
+                            <div style="font-size:11px;color:#999;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.url}</div>
+                        </div>
+                        <span class="del" onclick="del('${p.id}')">删除</span>
+                    </div>
+                `).join('');
+            } catch (e) { alert('加载文章失败：' + e.message); }
+        }
+        async function add() {
+            const title = document.getElementById('title').value.trim();
+            const url = document.getElementById('url').value.trim();
+            const bloggerId = document.getElementById('bloggerId').value;
+            if (!title) { alert('请输入文章标题'); return; }
+            if (!url) { alert('请输入文章链接'); return; }
+            if (!bloggerId) { alert('请选择博主'); return; }
+            const body = {
+                title: title,
+                url: url,
+                bloggerId: bloggerId
+            };
+            try {
+                const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                const result = await res.json();
+                if (result.code !== 200) { alert(result.msg); return; }
+                ['title','url'].forEach(id => document.getElementById(id).value = '');
+                load();
+            } catch (e) { alert('添加失败：' + e.message); }
+        }
+        async function del(id) {
+            if (!confirm('确定删除？')) return;
+            try {
+                const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
+                const result = await res.json();
+                if (result.code !== 200) { alert(result.msg); return; }
+                load();
+            } catch (e) { alert('删除失败：' + e.message); }
+        }
+        document.getElementById('trackId').addEventListener('change', loadBloggers);
+        document.getElementById('bloggerId').addEventListener('change', load);
+        loadTracks();
+    </script>
+</body>
+</html>

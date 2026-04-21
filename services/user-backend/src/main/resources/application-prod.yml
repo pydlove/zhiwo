@@ -7,6 +7,23 @@ spring:
     username: ENC(eMjL+ruzQaGH8gRfZwORwDtEs6TCLNa3jGr+wMyh8zEXoZ17WTP0GtoL3jjCb3lY)
     password: ENC(mXEtXq8EKDtHEoKZbALlFJ5QexDtrpxZSxsLv2qACb58Tj1jbjbrq8egHpf09jF2)
     driver-class-name: com.mysql.cj.jdbc.Driver
+  mail:
+    host: smtp.126.com
+    port: 465
+    username: aiocloud@126.com
+    password: ENC(hHb3OUbIanYmYyMYLSBz1WBtSIgAGZCSeNrIw5SG7BAnQnx6z7/bWx5UGyfI7XRl47T/HC7i3DQjamBSRIOujQ==)
+    protocol: smtp
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+            trust: "*"
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml
@@ -16,5 +33,6 @@ mybatis:
 
 jasypt:
   encryptor:
+    password: ${JASYPT_ENCRYPTOR_PASSWORD}
     algorithm: PBEWithHMACSHA512AndAES_256
     iv-generator-classname: org.jasypt.iv.RandomIvGenerator

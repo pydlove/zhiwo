@@ -114,6 +114,8 @@ CREATE TABLE ta_user (
     remark VARCHAR(500) DEFAULT '',
     name VARCHAR(100) DEFAULT '',
     role VARCHAR(50) DEFAULT '',
+    can_set_email TINYINT DEFAULT 0 COMMENT '0=不允许, 1=允许设置邮箱接收文章',
+    email_receive TINYINT DEFAULT 0 COMMENT '0=不接收, 1=接收邮件推送',
     is_deleted TINYINT DEFAULT 0 COMMENT '0=正常, 1=已删除',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -351,3 +353,11 @@ INSERT INTO tu_membership_plan (id, name, price, original_price, features_json, 
 ('mp002', '标准版', 29.90, 59.90, '["每日推送5篇爆款文章","支持3个赛道订阅","高级AI改写","优先客服支持","数据报表"]', 2, 1),
 ('mp003', '专业版', 49.90, 99.90, '["每日推送10篇爆款文章","支持8个赛道订阅","深度AI改写","1对1专属顾问","数据报表","导出Word"]', 3, 1),
 ('mp004', '旗舰版', 99.90, 199.90, '["每日推送20篇爆款文章","支持全部赛道订阅","顶级AI改写","1对1专属顾问","数据报表","导出Word","API接口","白标定制"]', 4, 1);
+
+-- Schema version tracking for incremental migrations
+CREATE TABLE IF NOT EXISTS _schema_version (
+    version VARCHAR(20) PRIMARY KEY,
+    description VARCHAR(200) NOT NULL,
+    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    executed_by VARCHAR(50) DEFAULT ''
+);

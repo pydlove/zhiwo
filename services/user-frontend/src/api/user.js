@@ -7,3 +7,15 @@ export function updateAvatar(userId, avatar) {
 export function updateUserTemplate(userId, template) {
   return request.put('/users/' + userId, { template })
 }
+
+export function getEmailConfig(userId) {
+  return request.get('/users/' + userId + '/email-config')
+}
+
+export function updateEmailConfig(userId, data) {
+  return request.put('/users/' + userId + '/email', data)
+}
+
+export function sendTestEmail(userId) {
+  return request.post('/users/' + userId + '/email/test')
+}

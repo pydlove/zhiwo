@@ -2,8 +2,9 @@
 import { ref, onMounted, computed } from 'vue'
 import { Card, Tabs, Modal, message } from 'ant-design-vue'
 import { useViewport } from '../composables/useViewport.js'
-import { updateAvatar, updateUserTemplate } from '../api/user.js'
+import { updateAvatar, updateUserTemplate, getEmailConfig, updateEmailConfig, sendTestEmail } from '../api/user.js'
 import { listStyles } from '../api/style.js'
+import { Switch } from 'ant-design-vue'
 
 const { isMobile } = useViewport()
 const activeTab = ref('template')
@@ -160,6 +161,76 @@ const passwordForm = ref({
   confirmPassword: '',
 })
 
+const emailForm = ref({
+  email: '',
+  emailReceive: 0,
+  canSetEmail: 0,
+})
+const emailLoading = ref(false)
+const testEmailLoading = ref(false)
+
+async function loadEmailConfig() {
+  if (!user.value.id) return
+  try {
+    const config = await getEmailConfig(user.value.id)
+    emailForm.value.email = config.email || ''
+    emailForm.value.emailReceive = config.emailReceive || 0
+    emailForm.value.canSetEmail = config.canSetEmail || 0
+  } catch (e) {
+    console.error('加载邮箱配置失败:', e)
+    message.error('加载邮箱配置失败: ' + (e?.message || '未知错误'))
+  }
+}
+
+async function saveEmailConfig() {
+  if (!user.value.id) {
+    message.error('用户未登录')
+    return
+  }
+  if (emailForm.value.canSetEmail !== 1) {
+    message.warning('您暂无权限设置邮箱接收')
+    return
+  }
+  if (!emailForm.value.email) {
+    message.warning('请输入邮箱地址')
+    return
+  }
+  emailLoading.value = true
+  try {
+    await updateEmailConfig(user.value.id, {
+      email: emailForm.value.email,
+      emailReceive: emailForm.value.emailReceive,
+    })
+    user.value.email = emailForm.value.email
+    localStorage.setItem('user', JSON.stringify(user.value))
+    message.success('邮箱配置已保存')
+  } catch (e) {
+    message.error('保存失败')
+  } finally {
+    emailLoading.value = false
+  }
+}
+
+async function handleSendTestEmail() {
+  if (!user.value.id) {
+    message.error('用户未登录')
+    return
+  }
+  if (!emailForm.value.email) {
+    message.warning('请先填写邮箱地址')
+    return
+  }
+  testEmailLoading.value = true
+  try {
+    await sendTestEmail(user.value.id)
+    message.success('测试邮件已发送，请查收')
+  } catch (e) {
+    message.error(e?.message || '发送失败')
+  } finally {
+    testEmailLoading.value = false
+  }
+}
+
 function changePassword() {
   if (!passwordForm.value.oldPassword || !passwordForm.value.newPassword || !passwordForm.value.confirmPassword) {
     message.warning('请填写完整信息')
@@ -176,6 +247,7 @@ function changePassword() {
 onMounted(() => {
   user.value = JSON.parse(localStorage.getItem('user') || '{}')
   loadStyles()
+  loadEmailConfig()
 })
 </script>
 
@@ -271,6 +343,49 @@ onMounted(() => {
             </div>
             <div>
               <button @click="changePassword" style="padding: 12px 24px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;">确认修改</button>
+            </div>
+          </div>
+        </Tabs.TabPane>
+
+        <Tabs.TabPane key="email" tab="邮件订阅">
+          <div style="max-width: 400px; display: flex; flex-direction: column; gap: 16px;">
+            <div v-if="emailForm.canSetEmail !== 1" style="padding: 12px 16px; background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; font-size: 13px; color: #92400e;">
+              您暂无权限设置邮箱订阅文章，请联系管理员开通
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <label style="font-size: 13px; font-weight: 500; color: #374151;">接收邮箱</label>
+              <input
+                v-model="emailForm.email"
+                type="email"
+                placeholder="请输入接收文章的邮箱地址"
+                :disabled="emailForm.canSetEmail !== 1"
+                style="padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; outline: none;"
+              />
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <label style="font-size: 13px; font-weight: 500; color: #374151;">接收每日推荐文章</label>
+              <Switch
+                v-model:checked="emailForm.emailReceive"
+                :disabled="emailForm.canSetEmail !== 1"
+                :checkedValue="1"
+                :unCheckedValue="0"
+              />
+            </div>
+            <div style="display: flex; gap: 12px;">
+              <button
+                @click="saveEmailConfig"
+                :disabled="emailLoading || emailForm.canSetEmail !== 1"
+                style="padding: 12px 24px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;"
+              >
+                {{ emailLoading ? '保存中...' : '保存配置' }}
+              </button>
+              <button
+                @click="handleSendTestEmail"
+                :disabled="testEmailLoading || emailForm.canSetEmail !== 1 || !emailForm.email"
+                style="padding: 12px 24px; background: #fff; color: #2563eb; border: 1px solid #2563eb; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;"
+              >
+                {{ testEmailLoading ? '发送中...' : '发送测试邮件' }}
+              </button>
             </div>
           </div>
         </Tabs.TabPane>

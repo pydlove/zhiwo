@@ -11,7 +11,7 @@ set -e
 SERVER_IP="101.126.15.58"           # 例如: 123.45.67.89
 SERVER_USER="root"                 # SSH 用户名
 SERVER_PASSWORD="Pydlove520smy@1"   # SSH 密码（或使用 SSH_KEY_PATH）
-SSH_KEY_PATH=""                    # 如使用密钥登录，填密钥路径，例如: ~/.ssh/id_rsa
+SSH_KEY_PATH="~/.ssh/id_rsa"                    # 如使用密钥登录，填密钥路径，例如: ~/.ssh/id_rsa
 SERVER_DOMAIN="www.mmshuo.tech" # 你的域名（用于 nginx server_name）
 NGINX_SSL_CERT="/root/ssl/fullchain.pem"      # SSL 证书路径
 NGINX_SSL_KEY="/root/ssl/domain.key"          # SSL 私钥路径

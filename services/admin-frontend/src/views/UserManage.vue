@@ -44,8 +44,8 @@ const creationColumns = [
 ]
 const platformOptions = ['公众号', '今日头条', '百家号']
 
-const addForm = ref({ username: '', contactType: '手机号', contact: '', password: 'Abc123456', aiLimit: 50, trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', remark: '' })
-const editForm = ref({ id: null, aiLimit: 50, trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', status: 1, remark: '' })
+const addForm = ref({ username: '', contactType: '手机号', contact: '', password: 'Abc123456', aiLimit: 50, trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', remark: '', canSetEmail: 0 })
+const editForm = ref({ id: null, aiLimit: 50, trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', status: 1, remark: '', canSetEmail: 0 })
 
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -268,13 +268,13 @@ function handleReset() {
 
 function handleAdd() {
   addModalOpen.value = true
-  addForm.value = { username: '', contactType: '手机号', contact: '', password: 'Abc123456', aiLimit: 50, trackLimit: 0, platformLimit: [...platformOptions], expireDate: '2026-12-31', remark: '' }
+  addForm.value = { username: '', contactType: '手机号', contact: '', password: 'Abc123456', aiLimit: 50, trackLimit: 0, platformLimit: [...platformOptions], expireDate: '2026-12-31', remark: '', canSetEmail: 0 }
 }
 
 function handleEdit(record) {
   editModalOpen.value = true
   const rawPlatforms = record.platformLimit || ''
-  editForm.value = { id: record.id, aiLimit: record.aiLimit || 50, trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [...platformOptions], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '' }
+  editForm.value = { id: record.id, aiLimit: record.aiLimit || 50, trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [...platformOptions], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0 }
 }
 
 async function saveAdd() {
@@ -292,6 +292,7 @@ async function saveAdd() {
       platformLimit: (addForm.value.platformLimit || []).join(','),
       expireDate: addForm.value.expireDate,
       remark: addForm.value.remark,
+      canSetEmail: addForm.value.canSetEmail ? 1 : 0,
     }
     if (addForm.value.contactType === '手机号') payload.phone = addForm.value.contact
     else if (addForm.value.contactType === '邮箱') payload.email = addForm.value.contact
@@ -306,20 +307,28 @@ async function saveAdd() {
 }
 
 async function saveEdit() {
+  if (!editForm.value.id) {
+    message.error('用户ID缺失，请重新打开编辑')
+    return
+  }
+  const payload = {
+    aiLimit: parseInt(editForm.value.aiLimit, 10) || 0,
+    trackLimit: parseInt(editForm.value.trackLimit, 10) || 0,
+    platformLimit: (editForm.value.platformLimit || []).join(','),
+    expireDate: editForm.value.expireDate,
+    status: editForm.value.status,
+    remark: editForm.value.remark,
+    canSetEmail: editForm.value.canSetEmail ? 1 : 0,
+  }
+  console.log('saveEdit payload:', payload, 'id:', editForm.value.id)
   try {
-    await request.put('/users/' + editForm.value.id, {
-      aiLimit: parseInt(editForm.value.aiLimit, 10) || 0,
-      trackLimit: parseInt(editForm.value.trackLimit, 10) || 0,
-      platformLimit: (editForm.value.platformLimit || []).join(','),
-      expireDate: editForm.value.expireDate,
-      status: editForm.value.status,
-      remark: editForm.value.remark,
-    })
+    await request.put('/users/' + editForm.value.id, payload)
     message.success('保存修改成功')
     editModalOpen.value = false
     loadData()
   } catch (e) {
-    message.error('保存失败')
+    console.error('保存失败:', e)
+    message.error('保存失败: ' + (e?.message || '未知错误'))
   }
 }
 
@@ -473,6 +482,9 @@ onMounted(loadData)
       <Form.Item label="可访问平台" required>
         <Checkbox.Group v-model:value="addForm.platformLimit" :options="platformOptions" />
       </Form.Item>
+      <Form.Item label="功能权限">
+        <Checkbox v-model:checked="addForm.canSetEmail" :true-value="1" :false-value="0">允许设置邮箱接收文章</Checkbox>
+      </Form.Item>
       <Form.Item label="备注">
         <Input.TextArea v-model:value="addForm.remark" placeholder="可选填，如：客户来源、特殊说明等" :rows="3" />
       </Form.Item>
@@ -501,6 +513,9 @@ onMounted(loadData)
       <div style="font-size: 12px; color: #999; margin-top: -8px; margin-bottom: 16px;">0 表示不限额或不限制赛道数</div>
       <Form.Item label="可访问平台" required>
         <Checkbox.Group v-model:value="editForm.platformLimit" :options="platformOptions" />
+      </Form.Item>
+      <Form.Item label="功能权限">
+        <Checkbox v-model:checked="editForm.canSetEmail" :true-value="1" :false-value="0">允许设置邮箱接收文章</Checkbox>
       </Form.Item>
       <Form.Item label="账号状态">
         <Select v-model:value="editForm.status">

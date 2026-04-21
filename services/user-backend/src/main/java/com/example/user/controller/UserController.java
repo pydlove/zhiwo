@@ -2,6 +2,7 @@ package com.example.user.controller;
 
 import com.example.user.entity.Result;
 import com.example.user.entity.User;
+import com.example.user.service.EmailService;
 import com.example.user.service.UserService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
@@ -14,10 +15,12 @@ import java.util.Map;
 public class UserController {
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
+    private final EmailService emailService;
 
-    public UserController(UserService userService, PasswordEncoder passwordEncoder) {
+    public UserController(UserService userService, PasswordEncoder passwordEncoder, EmailService emailService) {
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
+        this.emailService = emailService;
     }
 
     @GetMapping
@@ -59,6 +62,8 @@ public class UserController {
         if (user.getExpireDate() != null) existing.setExpireDate(user.getExpireDate());
         if (user.getRemark() != null) existing.setRemark(user.getRemark());
         if (user.getTemplate() != null) existing.setTemplate(user.getTemplate());
+        if (user.getCanSetEmail() != null) existing.setCanSetEmail(user.getCanSetEmail());
+        if (user.getEmailReceive() != null) existing.setEmailReceive(user.getEmailReceive());
         userService.save(existing);
         return Result.ok(null);
     }
@@ -78,5 +83,53 @@ public class UserController {
         existing.setAvatar(req.get("avatar"));
         userService.save(existing);
         return Result.ok(null);
+    }
+
+    @GetMapping("/{id}/email-config")
+    public Result<Map<String, Object>> getEmailConfig(@PathVariable String id) {
+        User user = userService.getById(id);
+        if (user == null) {
+            return Result.error("用户不存在");
+        }
+        return Result.ok(Map.of(
+            "email", user.getEmail() != null ? user.getEmail() : "",
+            "emailReceive", user.getEmailReceive() != null ? user.getEmailReceive() : 0,
+            "canSetEmail", user.getCanSetEmail() != null ? user.getCanSetEmail() : 0
+        ));
+    }
+
+    @PutMapping("/{id}/email")
+    public Result<Void> updateEmailConfig(@PathVariable String id, @RequestBody Map<String, Object> req) {
+        User existing = userService.getById(id);
+        if (existing == null) {
+            return Result.error("用户不存在");
+        }
+        Object emailObj = req.get("email");
+        if (emailObj != null) {
+            existing.setEmail(emailObj.toString());
+        }
+        Object receiveObj = req.get("emailReceive");
+        if (receiveObj != null) {
+            existing.setEmailReceive(Integer.parseInt(receiveObj.toString()));
+        }
+        userService.save(existing);
+        return Result.ok(null);
+    }
+
+    @PostMapping("/{id}/email/test")
+    public Result<Void> sendTestEmail(@PathVariable String id) {
+        User user = userService.getById(id);
+        if (user == null) {
+            return Result.error("用户不存在");
+        }
+        if (user.getEmail() == null || user.getEmail().isEmpty()) {
+            return Result.error("请先配置邮箱地址");
+        }
+        try {
+            emailService.sendTestEmail(user.getEmail());
+            return Result.ok(null);
+        } catch (Exception e) {
+            return Result.error("邮件发送失败: " + e.getMessage());
+        }
     }
 }

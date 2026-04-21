@@ -61,6 +61,8 @@ public class UserController {
         if (user.getTemplate() != null) existing.setTemplate(user.getTemplate());
         if (user.getExpireDate() != null) existing.setExpireDate(user.getExpireDate());
         if (user.getRemark() != null) existing.setRemark(user.getRemark());
+        if (user.getCanSetEmail() != null) existing.setCanSetEmail(user.getCanSetEmail());
+        if (user.getEmailReceive() != null) existing.setEmailReceive(user.getEmailReceive());
         userService.save(existing);
         return Result.ok(null);
     }

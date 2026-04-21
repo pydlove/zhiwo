@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { message, Modal, Button, Tag } from 'ant-design-vue'
+import { message, Modal, Button, Tag, Switch } from 'ant-design-vue'
 import { useViewport } from '../composables/useViewport.js'
 import { renderAsync } from 'docx-preview'
 import { usePlatformStore } from '../stores/platform.js'
@@ -9,6 +9,7 @@ import { listTracks } from '../api/track.js'
 import { listUserTracks, addUserTrack, removeUserTrack } from '../api/userTrack.js'
 import { getLatestSubscriptionPost, markSubscriptionPostUsed } from '../api/subscriptionPost.js'
 import { listHelps } from '../api/help.js'
+import { getEmailConfig, updateEmailConfig } from '../api/user.js'
 
 const router = useRouter()
 const { isMobile } = useViewport()
@@ -68,6 +69,46 @@ const previewFileType = computed(() => {
 })
 
 const user = computed(() => JSON.parse(localStorage.getItem('user') || '{}'))
+const emailConfig = ref({ email: '', emailReceive: 0, canSetEmail: 0 })
+const emailConfigLoading = ref(false)
+
+async function loadEmailConfig() {
+  const uid = user.value.id
+  if (!uid) return
+  try {
+    const config = await getEmailConfig(uid)
+    emailConfig.value = {
+      email: config.email || '',
+      emailReceive: config.emailReceive || 0,
+      canSetEmail: config.canSetEmail || 0,
+    }
+  } catch (e) {
+    // silent fail
+  }
+}
+
+async function toggleEmailReceive(val) {
+  const uid = user.value.id
+  if (!uid) return
+  if (emailConfig.value.canSetEmail !== 1) {
+    message.warning('您暂无权限设置邮箱接收，请联系管理员开通')
+    return
+  }
+  if (!emailConfig.value.email) {
+    message.warning('请先前往个人中心配置邮箱地址')
+    return
+  }
+  emailConfigLoading.value = true
+  try {
+    await updateEmailConfig(uid, { email: emailConfig.value.email, emailReceive: val })
+    emailConfig.value.emailReceive = val
+    message.success(val === 1 ? '已开启邮件订阅' : '已关闭邮件订阅')
+  } catch (e) {
+    message.error('设置失败')
+  } finally {
+    emailConfigLoading.value = false
+  }
+}
 const isExpired = computed(() => {
   const expire = user.value.expireDate
   if (!expire) return false
@@ -339,7 +380,7 @@ async function loadTracks() {
 }
 
 onMounted(() => {
-  Promise.all([loadTracks(), loadUserTracks()])
+  Promise.all([loadTracks(), loadUserTracks(), loadEmailConfig()])
 })
 </script>
 
@@ -518,8 +559,38 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Right: Help Docs -->
-      <div :style="{ width: isMobile ? '100%' : '260px', flexShrink: 0 }">
+      <!-- Right: Sidebar -->
+      <div :style="{ width: isMobile ? '100%' : '260px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '16px' }">
+        <!-- Email Config -->
+        <div style="background: #fff; border: 1px solid #f1f5f9; border-radius: 12px; padding: 16px;">
+          <div style="font-size: 14px; font-weight: 600; color: #262626; margin-bottom: 12px;">
+            邮件订阅
+          </div>
+          <div v-if="emailConfig.canSetEmail !== 1" style="font-size: 12px; color: #9ca3af;">
+            您暂无权限设置邮箱接收
+          </div>
+          <div v-else-if="!emailConfig.email" style="font-size: 12px; color: #9ca3af;">
+            未配置邮箱，请前往个人中心设置
+          </div>
+          <div v-else style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="font-size: 12px; color: #6b7280; word-break: break-all;">
+              {{ emailConfig.email }}
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <Switch
+                :checked="emailConfig.emailReceive === 1"
+                :disabled="emailConfigLoading"
+                @update:checked="toggleEmailReceive"
+                size="small"
+              />
+              <span style="font-size: 12px; color: #374151;">
+                {{ emailConfig.emailReceive === 1 ? '已开启' : '已关闭' }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Help Docs -->
         <div style="background: #fff; border: 1px solid #f1f5f9; border-radius: 12px; padding: 16px;">
           <div style="font-size: 14px; font-weight: 600; color: #262626; margin-bottom: 12px;">
             使用说明

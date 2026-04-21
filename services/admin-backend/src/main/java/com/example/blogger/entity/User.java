@@ -18,6 +18,8 @@ public class User {
     private java.time.LocalDate expireDate;
     private java.time.LocalDateTime lastLogin;
     private String remark;
+    private Integer canSetEmail;
+    private Integer emailReceive;
     private Integer isDeleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -53,6 +55,10 @@ public class User {
     public void setLastLogin(java.time.LocalDateTime lastLogin) { this.lastLogin = lastLogin; }
     public String getRemark() { return remark; }
     public void setRemark(String remark) { this.remark = remark; }
+    public Integer getCanSetEmail() { return canSetEmail; }
+    public void setCanSetEmail(Integer canSetEmail) { this.canSetEmail = canSetEmail; }
+    public Integer getEmailReceive() { return emailReceive; }
+    public void setEmailReceive(Integer emailReceive) { this.emailReceive = emailReceive; }
     public Integer getIsDeleted() { return isDeleted; }
     public void setIsDeleted(Integer isDeleted) { this.isDeleted = isDeleted; }
     public LocalDateTime getCreatedAt() { return createdAt; }

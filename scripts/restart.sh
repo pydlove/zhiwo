@@ -7,6 +7,9 @@ set -e
 
 BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
+# Jasypt 加密密钥（生产环境务必修改）
+export JASYPT_ENCRYPTOR_PASSWORD=MySecretKey2024
+
 # 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'

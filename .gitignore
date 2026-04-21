@@ -1,5 +1,61 @@
+# ===================================================================
+# 公众号创作助手 - Git Ignore
+# ===================================================================
+
+# --- 安全敏感文件 ---
+deploy/.env
+*.pem
+*.key
+*.p12
+*.pfx
+
+# --- IDE / 编辑器 ---
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+.playwright/
 .worktrees/
 .superpowers/
-backend/target/
-uni-app/node_modules/
-uni-app/package-lock.json
+博主资料/
+
+# --- 构建产物 ---
+services/*/target/
+services/*/dist/
+services/*/build/
+services/*/.gradle/
+services/*/.idea/
+services/*/.vscode/
+
+# --- 依赖 ---
+services/*/node_modules/
+
+# --- 日志 ---
+logs/
+*.log
+services/*/*.log
+
+# --- 本地开发配置（不应提交到仓库） ---
+# 本地环境配置文件，含真实数据库密码等
+services/*/src/main/resources/application-local.yml
+services/*/src/main/resources/application-dev.yml
+# 旧路径兼容
+backend/src/main/resources/application-local.yml
+backend/src/main/resources/application-dev.yml
+
+# --- 系统文件 ---
+.DS_Store
+Thumbs.db
+
+# --- 临时文件 ---
+*.tmp
+*.temp
+/tmp/
+
+# --- Claude / 工具 ---
+.playwright-mcp/
+/.playwright-mcp/
+/.claude/
+/.idea/

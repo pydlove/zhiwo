@@ -1,0 +1,60 @@
+[
+  {
+    "url": "https://gw.newrank.cn/api/internalUser/nr/user/info/getLoginUser?n-token=3b2f8f99af0545cc989cfae76477d9bf",
+    "keys": [
+      "success",
+      "value"
+    ],
+    "sample": "{'success': True, 'value': -999}"
+  },
+  {
+    "url": "https://gw.newrank.cn/api/identityAuth/nr/identity/auth/auth/getUserAuthStatus",
+    "keys": [
+      "msg",
+      "code"
+    ],
+    "sample": "{'msg': '用户未登录', 'code': 999}"
+  },
+  {
+    "url": "https://gw.newrank.cn/api/mainSearch/nr/mainSearch/trendSearch/getUserLabel",
+    "keys": [
+      "code",
+      "data",
+      "msg"
+    ],
+    "sample": "{'code': 999, 'data': None, 'msg': '用户未登录'}"
+  },
+  {
+    "url": "https://gw.newrank.cn/api/internalUser/nr/user/info/getUserInternal",
+    "keys": [
+      "success",
+      "value"
+    ],
+    "sample": "{'success': True, 'value': {'code': '000999', 'data': None, 'message': '用户未登录'}}"
+  },
+  {
+    "url": "https://gw.newrank.cn/api/pc/nr/personal/center/account/right/checkUserMemberStatus",
+    "keys": [
+      "msg",
+      "code"
+    ],
+    "sample": "{'msg': '用户未登录', 'code': 999}"
+  },
+  {
+    "url": "https://gw.newrank.cn/api/tiny/xdnphb/report/analyze/queryNewReports",
+    "keys": [
+      "success",
+      "value"
+    ],
+    "sample": "{'success': True, 'value': [{'href': 'https://www.newrank.cn/report/detail/412', 'isNew': False, 'title': '2023年新媒体生态报告'}, {'href': 'https://edit.newrank.cn/detail.html?uuid=0E4107D09B83D7938DEFC1B288"
+  },
+  {
+    "url": "https://gw.newrank.cn/api/tracking/nr/tracing/qy/user/getExclusiveKf",
+    "keys": [
+      "code",
+      "msg",
+      "data"
+    ],
+    "sample": "{'code': 999, 'msg': '用户未登录', 'data': None}"
+  }
+]

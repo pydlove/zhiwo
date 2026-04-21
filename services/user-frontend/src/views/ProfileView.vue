@@ -1,0 +1,314 @@
+<script setup>
+import { ref, onMounted, computed } from 'vue'
+import { Card, Tabs, Modal, message } from 'ant-design-vue'
+import { useViewport } from '../composables/useViewport.js'
+import { updateAvatar, updateUserTemplate } from '../api/user.js'
+import { listStyles } from '../api/style.js'
+
+const { isMobile } = useViewport()
+const activeTab = ref('template')
+
+const user = ref(JSON.parse(localStorage.getItem('user') || '{}'))
+const styles = ref([])
+
+const isExpired = computed(() => {
+  const expire = user.value.expireDate
+  if (!expire) return false
+  return new Date(expire + 'T23:59:59') < new Date()
+})
+
+async function loadStyles() {
+  try {
+    const list = await listStyles()
+    styles.value = list.map(s => {
+      let parsed = {}
+      try {
+        parsed = s.styleJson ? JSON.parse(s.styleJson) : {}
+      } catch (e) {
+        parsed = {}
+      }
+      return { ...s, ...parsed }
+    })
+  } catch (e) {
+    message.error('加载样式列表失败')
+  }
+}
+
+async function selectStyle(name) {
+  if (!user.value.id) {
+    message.error('用户未登录')
+    return
+  }
+  try {
+    await updateUserTemplate(user.value.id, name)
+    user.value.template = name
+    localStorage.setItem('user', JSON.stringify(user.value))
+    message.success('默认样式已更新')
+  } catch (e) {
+    message.error('样式保存失败')
+  }
+}
+
+// Preview modal
+const previewOpen = ref(false)
+const previewStyle = ref({})
+
+function openPreview(styleItem) {
+  previewStyle.value = styleItem
+  previewOpen.value = true
+}
+
+function getPreviewStyle(item) {
+  return {
+    fontSize: item.fontSize || '15px',
+    lineHeight: item.lineHeight || '1.8',
+    color: item.textColor || '#4a4a4a',
+    fontFamily: item.fontFamily || '系统默认',
+  }
+}
+
+function getTitleStyle(item) {
+  return {
+    fontSize: '20px',
+    fontWeight: 600,
+    color: item.titleColor || '#262626',
+    marginBottom: '20px',
+    lineHeight: '1.4',
+    fontFamily: item.fontFamily || '系统默认',
+  }
+}
+
+function getH1Style(item) {
+  return {
+    fontSize: item.h1Size || '18px',
+    fontWeight: 600,
+    color: item.titleColor || '#262626',
+    margin: '24px 0 12px',
+    fontFamily: item.fontFamily || '系统默认',
+  }
+}
+
+function getH2Style(item) {
+  return {
+    fontSize: item.h2Size || '16px',
+    fontWeight: 600,
+    color: item.titleColor || '#262626',
+    margin: '20px 0 10px',
+    fontFamily: item.fontFamily || '系统默认',
+  }
+}
+
+function getParagraphStyle(item) {
+  return {
+    fontSize: item.fontSize || '15px',
+    lineHeight: item.lineHeight || '1.8',
+    color: item.textColor || '#4a4a4a',
+    marginBottom: item.paragraphSpacing || '14px',
+    textAlign: 'justify',
+    fontFamily: item.fontFamily || '系统默认',
+  }
+}
+
+function getQuoteStyle(item) {
+  return {
+    fontSize: item.fontSize || '15px',
+    lineHeight: item.lineHeight || '1.8',
+    color: item.textColor || '#4a4a4a',
+    padding: '12px 12px 12px 14px',
+    background: item.quoteBg || '#e6f7ff',
+    borderLeft: '3px solid #1890ff',
+    margin: '16px 0',
+    fontFamily: item.fontFamily || '系统默认',
+  }
+}
+
+const fileInput = ref(null)
+
+function triggerAvatarUpload() {
+  fileInput.value?.click()
+}
+
+async function onAvatarChange(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    message.warning('请上传图片文件')
+    return
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    message.warning('图片大小不能超过 2MB')
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = async () => {
+    try {
+      await updateAvatar(user.value.id, reader.result)
+      user.value.avatar = reader.result
+      localStorage.setItem('user', JSON.stringify(user.value))
+      message.success('头像上传成功')
+    } catch (err) {
+      message.error('头像上传失败')
+    }
+  }
+  reader.readAsDataURL(file)
+  e.target.value = ''
+}
+
+const passwordForm = ref({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: '',
+})
+
+function changePassword() {
+  if (!passwordForm.value.oldPassword || !passwordForm.value.newPassword || !passwordForm.value.confirmPassword) {
+    message.warning('请填写完整信息')
+    return
+  }
+  if (passwordForm.value.newPassword !== passwordForm.value.confirmPassword) {
+    message.warning('两次输入的新密码不一致')
+    return
+  }
+  message.success('密码修改成功')
+  passwordForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+}
+
+onMounted(() => {
+  user.value = JSON.parse(localStorage.getItem('user') || '{}')
+  loadStyles()
+})
+</script>
+
+<template>
+  <div :style="{ maxWidth: isMobile ? '100%' : '800px', margin: '0 auto', padding: isMobile ? '0 0 32px' : '0 0 48px' }">
+    <Card style="border-radius: 16px; border: 1px solid #f1f5f9; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+      <!-- Profile Header -->
+      <div style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 20px; border-bottom: 1px solid #f1f5f9; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 16px;">
+          <input ref="fileInput" type="file" accept="image/*" style="display: none;" @change="onAvatarChange">
+          <div
+            @click="triggerAvatarUpload"
+            style="width: 64px; height: 64px; border-radius: 50%; background: #e5e7eb; display: flex; align-items: center; justify-content: center; font-size: 24px; color: #6b7280; cursor: pointer; overflow: hidden; position: relative;"
+          >
+            <img v-if="user.avatar" :src="user.avatar" style="width: 100%; height: 100%; object-fit: cover;">
+            <span v-else>U</span>
+            <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.3); color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s;" @mouseenter="$event.currentTarget.style.opacity = '1'" @mouseleave="$event.currentTarget.style.opacity = '0'">更换头像</div>
+          </div>
+          <div>
+            <div style="font-size: 18px; font-weight: 600; margin-bottom: 4px; color: #111827; display: flex; align-items: center; gap: 8px;">
+              {{ user.username || '用户' }}
+              <span v-if="isExpired" style="font-size: 11px; padding: 2px 8px; background: #fee2e2; color: #b91c1c; border-radius: 4px; font-weight: 500;">已到期</span>
+            </div>
+            <div style="font-size: 13px; color: #6b7280;">账号：{{ user.username || '-' }} · 注册时间：{{ user.createdAt ? user.createdAt.slice(0,10) : '-' }}</div>
+          </div>
+        </div>
+      </div>
+
+      <Tabs v-model:activeKey="activeTab">
+        <Tabs.TabPane key="template" tab="样式选择">
+          <div style="max-width: 600px;">
+            <div style="font-size: 14px; color: #6b7280; margin-bottom: 16px;">选择您的默认创作样式，下次新建文章时将自动加载该样式</div>
+            <div :style="{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px' }">
+              <div
+                v-for="s in styles"
+                :key="s.id"
+                :style="{
+                  padding: '18px',
+                  borderRadius: '12px',
+                  border: user.template === s.name ? '2px solid #2563eb' : '1px solid #e5e7eb',
+                  background: user.template === s.name ? '#eff6ff' : '#fff',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
+                }"
+              >
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;" @click="selectStyle(s.name)">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="font-size: 15px; font-weight: 600; color: '#111827';">{{ s.name }}</div>
+                    <span v-if="s.scene" style="font-size: 11px; padding: 2px 8px; background: #f3f4f6; color: #6b7280; border-radius: 4px;">{{ s.scene.split(',').join('、') }}</span>
+                  </div>
+                  <div v-if="user.template === s.name" style="width: 18px; height: 18px; background: #2563eb; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px;">✓</div>
+                </div>
+                <div style="font-size: 13px; color: #6b7280; line-height: 1.5; margin-bottom: 12px;" @click="selectStyle(s.name)">
+                  {{ s.desc || '适用于 ' + (s.scene ? s.scene.split(',').join('、') : '通用') + ' 场景的创作样式' }}
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <button
+                    @click.stop="openPreview(s)"
+                    style="padding: 5px 12px; font-size: 12px; border-radius: 6px; border: 1px solid #e5e7eb; background: #fff; color: #374151; cursor: pointer; font-weight: 500;"
+                  >预览</button>
+                  <button
+                    @click.stop="selectStyle(s.name)"
+                    :style="{
+                      padding: '5px 12px',
+                      fontSize: '12px',
+                      borderRadius: '6px',
+                      border: user.template === s.name ? '1px solid #2563eb' : '1px solid #2563eb',
+                      background: user.template === s.name ? '#2563eb' : '#fff',
+                      color: user.template === s.name ? '#fff' : '#2563eb',
+                      cursor: 'pointer',
+                      fontWeight: 500
+                    }"
+                  >{{ user.template === s.name ? '当前默认' : '设为默认' }}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Tabs.TabPane>
+
+        <Tabs.TabPane key="password" tab="密码修改">
+          <div style="max-width: 400px; display: flex; flex-direction: column; gap: 16px;">
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <label style="font-size: 13px; font-weight: 500; color: #374151;">原密码</label>
+              <input v-model="passwordForm.oldPassword" type="password" placeholder="请输入原密码" style="padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; outline: none;" />
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <label style="font-size: 13px; font-weight: 500; color: #374151;">新密码</label>
+              <input v-model="passwordForm.newPassword" type="password" placeholder="请输入新密码" style="padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; outline: none;" />
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <label style="font-size: 13px; font-weight: 500; color: #374151;">确认新密码</label>
+              <input v-model="passwordForm.confirmPassword" type="password" placeholder="请再次输入新密码" style="padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; outline: none;" />
+            </div>
+            <div>
+              <button @click="changePassword" style="padding: 12px 24px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;">确认修改</button>
+            </div>
+          </div>
+        </Tabs.TabPane>
+      </Tabs>
+    </Card>
+
+    <!-- Preview Modal -->
+    <Modal
+      v-model:open="previewOpen"
+      :title="previewStyle.name || '样式预览'"
+      :footer="null"
+      :width="700"
+      :mask-closable="false"
+    >
+      <div style="margin-top: 12px; max-height: 600px; overflow-y: auto;">
+        <div style="background: #fff; padding: 40px; min-height: 400px; border: 1px solid #f0f0f0;">
+          <template v-if="previewStyle.previewHtml">
+            <div v-html="previewStyle.previewHtml"></div>
+          </template>
+          <template v-else>
+            <div :style="getTitleStyle(previewStyle)">示例文章标题</div>
+            <div :style="getParagraphStyle(previewStyle)">
+              这是一段示例正文，用于预览当前样式配置的字体、字号、颜色和行高效果。
+            </div>
+            <div :style="getH1Style(previewStyle)">一、一级标题示例</div>
+            <div :style="getParagraphStyle(previewStyle)">
+              正文内容展示段落间距和排版效果，帮助您直观感受样式在实际文章中的呈现。
+            </div>
+            <div :style="getQuoteStyle(previewStyle)">
+              这是一段引用文本，展示引用块的背景色和左边框样式。
+            </div>
+            <div :style="getH2Style(previewStyle)">1.1 二级标题示例</div>
+            <div :style="getParagraphStyle(previewStyle)">
+              通过预览，您可以直观地了解该样式在实际创作中的效果。
+            </div>
+          </template>
+        </div>
+      </div>
+    </Modal>
+  </div>
+</template>

@@ -23,9 +23,15 @@ public class MembershipPlanService {
     }
 
     public void save(MembershipPlan plan) {
+        if (plan.getPrice() == null) plan.setPrice(new java.math.BigDecimal("0"));
+        if (plan.getOriginalPrice() == null) plan.setOriginalPrice(new java.math.BigDecimal("0"));
+        if (plan.getSortOrder() == null) plan.setSortOrder(0);
+        if (plan.getIsActive() == null) plan.setIsActive(1);
+        if (plan.getFeaturesJson() == null || plan.getFeaturesJson().isEmpty()) {
+            plan.setFeaturesJson("[]");
+        }
         if (plan.getId() == null || plan.getId().isEmpty()) {
             plan.setId(UUID.randomUUID().toString().replace("-", "").substring(0, 16));
-            if (plan.getIsActive() == null) plan.setIsActive(1);
             membershipPlanMapper.insert(plan);
         } else {
             membershipPlanMapper.update(plan);

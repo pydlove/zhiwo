@@ -76,7 +76,7 @@ onMounted(() => {
     <!-- Left -->
     <div v-if="!isMobile" style="flex: 1; background: linear-gradient(160deg, #07C160 0%, #06AD56 100%); display: flex; flex-direction: column; justify-content: center; padding: 64px; color: #fff;">
       <div style="width: 80px; height: 80px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 32px; margin-bottom: 1px;">
-        <img src="../assets/images/logo-green1.png" style="width: 64px; height: 64px; object-fit: contain; border-radius: 8px;">
+        <img src="https://foruda.gitee.com/images/1776841720416623884/f00aea60_8060302.png" style="width: 64px; height: 64px; object-fit: contain; border-radius: 8px;">
       </div>
       <h1 style="font-size: 40px; font-weight: 700; margin-bottom: 20px; line-height: 1.2;">发现热门赛道<br/>让 AI 帮你创作爆款内容</h1>
       <p style="font-size: 18px; opacity: 0.9; line-height: 1.6; max-width: 420px;">汇聚公众号、今日头条头部博主数据，基于爆款文章特征，AI 实时生成创作方向和优质内容。</p>

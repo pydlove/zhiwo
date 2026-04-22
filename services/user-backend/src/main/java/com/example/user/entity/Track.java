@@ -11,6 +11,7 @@ public class Track {
     private String intro;
     private String platforms;
     private String coverJson;
+    private Integer isHot;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private Integer isDeleted;
@@ -43,6 +44,8 @@ public class Track {
     public void setBloggerCount(Integer bloggerCount) { this.bloggerCount = bloggerCount; }
     public Integer getPostCount() { return postCount; }
     public void setPostCount(Integer postCount) { this.postCount = postCount; }
+    public Integer getIsHot() { return isHot; }
+    public void setIsHot(Integer isHot) { this.isHot = isHot; }
     public Integer getIsDeleted() { return isDeleted; }
     public void setIsDeleted(Integer isDeleted) { this.isDeleted = isDeleted; }
 }

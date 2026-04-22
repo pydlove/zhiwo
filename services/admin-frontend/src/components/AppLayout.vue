@@ -91,7 +91,7 @@ function handlePwdOk() {
   <Layout style="min-height: 100vh;">
     <Layout.Sider theme="dark" width="208" style="background: #001529;">
       <div style="padding: 16px 24px 24px; font-size: 18px; font-weight: 600; color: #fff; display: flex; align-items: center; gap: 10px;">
-        <img :src="logoImage" style="width: 40px; height: 40px; object-fit: cover;">
+         <img :src="logoImage" style="width: 40px; height: 40px; object-fit: cover;">
          <span style="font-size: 16px; font-weight: 600; color: #fff;">公众号创作助手管理系统</span>
       </div>
       <Menu

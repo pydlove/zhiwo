@@ -26,4 +26,7 @@ public interface BloggerMapper {
 
     @Select("SELECT COUNT(*) FROM tu_blogger WHERE is_deleted = 0")
     int countBloggers();
+
+    @Select("SELECT * FROM tu_blogger WHERE name = #{name} AND platform = #{platform} AND track_id = #{trackId} AND is_deleted = 0 LIMIT 1")
+    Blogger findByNamePlatformTrack(@Param("name") String name, @Param("platform") String platform, @Param("trackId") String trackId);
 }

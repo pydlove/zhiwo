@@ -7,6 +7,9 @@ import com.example.blogger.service.BloggerService;
 import com.example.blogger.mapper.TrackMapper;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -114,6 +117,9 @@ public class BloggerController {
                     continue;
                 }
 
+                // 检查重复：平台 + 名称 + 赛道
+                Blogger existing = bloggerService.findByNamePlatformTrack(name, platform, track.getId());
+
                 // 处理头像
                 String avatarUrl = null;
                 if (avatarFileName != null && !avatarFileName.isEmpty()) {
@@ -138,6 +144,13 @@ public class BloggerController {
                 blogger.setLink(link);
                 if (avatarUrl != null) {
                     blogger.setAvatar(avatarUrl);
+                }
+                if (existing != null) {
+                    blogger.setId(existing.getId());
+                    blogger.setRankNum(existing.getRankNum());
+                    if (avatarUrl == null) {
+                        blogger.setAvatar(existing.getAvatar());
+                    }
                 }
                 bloggerService.save(blogger);
                 success++;
@@ -212,5 +225,139 @@ public class BloggerController {
             }
         }
         dir.delete();
+    }
+
+    @PostMapping("/parse-export")
+    public ResponseEntity<byte[]> parseAndExport(
+            @RequestParam String text,
+            @RequestParam String platform,
+            @RequestParam String trackId,
+            @RequestParam(required = false) String avatarUrls) {
+        try {
+            Track track = trackMapper.findById(trackId);
+            String trackName = track != null ? track.getName() : "";
+
+            List<Map<String, String>> items = parseBloggerText(text);
+            List<String> avatarList = parseAvatarUrls(avatarUrls);
+
+            Workbook wb = new XSSFWorkbook();
+            Sheet sheet = wb.createSheet("博主导入模板");
+
+            Row header = sheet.createRow(0);
+            String[] cols = {"name", "tagline", "platform", "track", "link", "avatarFileName"};
+            for (int i = 0; i < cols.length; i++) {
+                Cell cell = header.createCell(i);
+                cell.setCellValue(cols[i]);
+            }
+
+            for (int i = 0; i < items.size(); i++) {
+                Map<String, String> item = items.get(i);
+                Row row = sheet.createRow(i + 1);
+                row.createCell(0).setCellValue(item.get("name"));
+                row.createCell(1).setCellValue(item.get("tagline"));
+                row.createCell(2).setCellValue(platform);
+                row.createCell(3).setCellValue(trackName);
+                row.createCell(4).setCellValue("");
+                String avatar = i < avatarList.size() ? avatarList.get(i) : "";
+                row.createCell(5).setCellValue(avatar);
+            }
+
+            for (int i = 0; i < cols.length; i++) {
+                sheet.autoSizeColumn(i);
+            }
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            wb.write(out);
+            wb.close();
+
+            String fileName = "blogger_export_" + System.currentTimeMillis() + ".xlsx";
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + fileName)
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(out.toByteArray());
+
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    private List<String> parseAvatarUrls(String avatarUrls) {
+        List<String> list = new ArrayList<>();
+        if (avatarUrls == null || avatarUrls.isEmpty()) {
+            return list;
+        }
+        String[] lines = avatarUrls.split("\\r?\\n");
+        java.util.regex.Pattern mdImgPattern = java.util.regex.Pattern.compile("!\\[.*?\\]\\((.*?)(?:\\s+\".*?\")?\\)");
+        for (String line : lines) {
+            line = line.trim();
+            if (line.isEmpty()) continue;
+            java.util.regex.Matcher m = mdImgPattern.matcher(line);
+            if (m.find()) {
+                list.add(m.group(1).trim());
+            } else {
+                list.add(line);
+            }
+        }
+        return list;
+    }
+
+    private List<Map<String, String>> parseBloggerText(String text) {
+        List<Map<String, String>> list = new ArrayList<>();
+        // 先尝试按空行分隔段落（名称一行 + 描述一行或多行）
+        String[] paragraphs = text.split("\\n\\s*\\n");
+        if (paragraphs.length > 1) {
+            for (String para : paragraphs) {
+                para = para.trim();
+                if (para.isEmpty()) continue;
+                String[] lines = para.split("\\r?\\n");
+                if (lines.length >= 2) {
+                    String name = lines[0].trim();
+                    StringBuilder desc = new StringBuilder();
+                    for (int i = 1; i < lines.length; i++) {
+                        if (desc.length() > 0) desc.append(" ");
+                        desc.append(lines[i].trim());
+                    }
+                    Map<String, String> map = new HashMap<>();
+                    map.put("name", name);
+                    map.put("tagline", desc.toString());
+                    list.add(map);
+                } else if (lines.length == 1) {
+                    parseSingleLine(lines[0].trim(), list);
+                }
+            }
+            return list;
+        }
+        // 回退：按行处理，每行内部找分隔符
+        String[] lines = text.split("\\r?\\n");
+        for (String line : lines) {
+            parseSingleLine(line.trim(), list);
+        }
+        return list;
+    }
+
+    private void parseSingleLine(String line, List<Map<String, String>> list) {
+        if (line == null || line.isEmpty()) return;
+        String name = line;
+        String desc = "";
+        String[] delimiters = {"：", ":", "\t"};
+        for (String delim : delimiters) {
+            int idx = line.indexOf(delim);
+            if (idx > 0 && idx < line.length() - 1) {
+                name = line.substring(0, idx).trim();
+                desc = line.substring(idx + delim.length()).trim();
+                break;
+            }
+        }
+        if (desc.isEmpty()) {
+            int spaceIdx = line.indexOf(' ');
+            if (spaceIdx > 0 && spaceIdx < 20 && spaceIdx < line.length() - 1) {
+                name = line.substring(0, spaceIdx).trim();
+                desc = line.substring(spaceIdx + 1).trim();
+            }
+        }
+        Map<String, String> map = new HashMap<>();
+        map.put("name", name);
+        map.put("tagline", desc);
+        list.add(map);
     }
 }

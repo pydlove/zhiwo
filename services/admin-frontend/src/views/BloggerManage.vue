@@ -322,7 +322,7 @@ onMounted(loadData)
     <Form layout="vertical" style="margin-top: 12px;">
       <Form.Item label="博主头像">
         <div style="display: flex; gap: 12px; align-items: flex-start;">
-          <label style="width: 100px; height: 100px; border: 1px dashed #d9d9d9; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; color: #8c8c8c; font-size: 13px; overflow: hidden; position: relative;">
+          <label style="width: 100px; height: 100px; border: 1px dashed #d9d9d9; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; color: #8c8c8c; font-size: 13px; overflow: hidden; position: relative; flex-shrink: 0;">
             <input type="file" accept="image/*" style="position: absolute; inset: 0; opacity: 0; cursor: pointer;" @change="handleAvatarUpload">
             <img v-if="avatarImage" :src="avatarImage" style="width: 100%; height: 100%; object-fit: cover;">
             <template v-else>
@@ -330,8 +330,11 @@ onMounted(loadData)
               <div>上传头像</div>
             </template>
           </label>
+          <div style="flex: 1; min-width: 0;">
+            <Input v-model:value="avatarImage" placeholder="或填写图片 URL" />
+            <div style="font-size: 12px; color: #999; margin-top: 4px;">支持上传本地图片或粘贴图片链接</div>
+          </div>
         </div>
-        <div style="font-size: 12px; color: #999; margin-top: 4px;">建议尺寸 200×200px，圆形展示</div>
       </Form.Item>
       <Form.Item label="博主名称" required>
         <Input v-model:value="form.name" placeholder="请输入博主名称" />

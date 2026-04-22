@@ -38,4 +38,8 @@ public class BloggerService {
     public void delete(String id) {
         bloggerMapper.delete(id);
     }
+
+    public Blogger findByNamePlatformTrack(String name, String platform, String trackId) {
+        return bloggerMapper.findByNamePlatformTrack(name, platform, trackId);
+    }
 }

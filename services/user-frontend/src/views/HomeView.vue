@@ -149,7 +149,13 @@ onMounted(async () => {
         <div style="height: 4px; width: 100%;" :style="{ background: t.cover?.gradient || 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%)' }"></div>
         <div style="padding: 24px 20px 20px; flex: 1; display: flex; flex-direction: column;">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-            <div style="font-size: 17px; font-weight: 600; color: #111827;">{{ t.name }}</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <div style="font-size: 17px; font-weight: 600; color: #111827;">{{ t.name }}</div>
+              <span v-if="t.isHot" style="display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; background: #fff2f0; border: 1px solid #ffccc7; border-radius: 4px; font-size: 11px; color: #f5222d; font-weight: 600;">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="#f5222d"><path d="M12 23c6.075 0 11-4.925 11-11S18.075 1 12 1 1 5.925 1 12s4.925 11 11 11zm0-2c-4.97 0-9-4.03-9-9 0-2.76 1.24-5.23 3.19-6.88.35 1.03.85 2.03 1.47 2.95.62.92 1.37 1.73 2.22 2.4.43.34.88.64 1.35.9.24-.56.37-1.18.37-1.82 0-1.38-.56-2.63-1.46-3.54C10.87 4.63 12.93 4 15 4c.34 0 .67.02 1 .06C16.97 5.6 18 7.68 18 10c0 1.1-.22 2.14-.62 3.1-.4.95-.98 1.8-1.7 2.5-.72.7-1.57 1.26-2.5 1.64-.93.38-1.94.58-2.97.61.17.28.36.54.58.78.22.24.46.46.72.65.26.19.54.35.84.48.3.13.61.23.93.29-.43.52-.95.97-1.55 1.33-.6.36-1.27.62-1.99.77-.72.15-1.47.2-2.23.13-.76-.07-1.49-.25-2.18-.53C5.56 19.3 6.5 18.2 7.72 17.36c.61-.42 1.3-.75 2.05-.97.75-.22 1.54-.33 2.33-.32-.08-.26-.14-.53-.18-.8-.04-.27-.06-.55-.06-.82 0-.55.09-1.09.26-1.6.17-.51.42-.98.73-1.4-.35.1-.69.23-1.01.4-.32.17-.62.37-.89.6-.27.23-.51.49-.72.78-.21.29-.39.6-.53.93-.14.33-.24.68-.3 1.04-.06.36-.08.73-.06 1.1.02.37.08.73.18 1.08.1.35.24.69.42 1 .18.31.4.6.65.85.25.25.53.47.84.65.31.18.65.32 1 .42.35.1.71.16 1.08.18.37.02.74 0 1.1-.06.36-.06.71-.16 1.04-.3.33-.14.64-.32.93-.53.29-.21.55-.45.78-.72.23-.27.43-.57.6-.89.17-.32.3-.66.4-1.01z"/></svg>
+                热门
+              </span>
+            </div>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
           </div>
           <div style="font-size: 13px; color: #6b7280; line-height: 1.6; margin-bottom: 16px; flex: 1;">

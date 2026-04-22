@@ -14,6 +14,7 @@ const rawList = ref([])
 
 const columns = [
   { title: '赛道名称', dataIndex: 'name', key: 'name' },
+  { title: '热门', key: 'isHot', width: 80 },
   { title: '平台', dataIndex: 'platform', key: 'platform' },
   { title: '博主数', dataIndex: 'bloggerCount', key: 'bloggerCount' },
   { title: '文章数', dataIndex: 'articleCount', key: 'articleCount' },
@@ -24,7 +25,7 @@ const columns = [
 
 const modalOpen = ref(false)
 const modalTitle = ref('新增赛道')
-const form = ref({ name: '', platform: '公众号', intro: '' })
+const form = ref({ name: '', platform: '公众号', intro: '', isHot: false })
 const coverImage = ref('')
 const editingId = ref(null)
 const selectedRowKeys = ref([])
@@ -99,7 +100,7 @@ function handlePageChange(p) {
 function handleAdd() {
   modalTitle.value = '新增赛道'
   editingId.value = null
-  form.value = { name: '', platform: '公众号', intro: '' }
+  form.value = { name: '', platform: '公众号', intro: '', isHot: false }
   coverImage.value = ''
   modalOpen.value = true
 }
@@ -108,7 +109,7 @@ function handleEdit(record) {
   modalTitle.value = '编辑赛道'
   editingId.value = record.id
   const firstPlatform = (record.platform || '公众号').split('、')[0].split(',')[0].trim()
-  form.value = { name: record.name, platform: firstPlatform || '公众号', intro: record.intro || '' }
+  form.value = { name: record.name, platform: firstPlatform || '公众号', intro: record.intro || '', isHot: !!record.isHot }
   coverImage.value = ''
   if (record.coverJson) {
     try {
@@ -147,6 +148,7 @@ async function handleSave() {
       platforms: form.value.platform,
       intro: form.value.intro,
       coverJson: coverJson || undefined,
+      isHot: form.value.isHot ? 1 : 0,
     })
     message.success(modalTitle.value + '成功')
     modalOpen.value = false
@@ -215,6 +217,10 @@ onMounted(loadData)
 
     <Table :columns="columns" :data-source="tableData" :pagination="false" row-key="id" :row-selection="rowSelection">
       <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'isHot'">
+          <Tag v-if="record.isHot" color="red">热门</Tag>
+          <span v-else style="color: #999;">-</span>
+        </template>
         <template v-if="column.key === 'action'">
           <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
           <a style="margin-right: 12px;" @click="goToBloggers(record)">查看博主</a>
@@ -242,6 +248,12 @@ onMounted(loadData)
       </Form.Item>
       <Form.Item label="赛道简介">
         <Input.TextArea v-model:value="form.intro" placeholder="请输入赛道简介，帮助用户快速了解该赛道定位" :rows="3" />
+      </Form.Item>
+      <Form.Item label="">
+        <Radio.Group v-model:value="form.isHot">
+          <Radio :value="true">设为热门赛道</Radio>
+          <Radio :value="false">普通赛道</Radio>
+        </Radio.Group>
       </Form.Item>
       <Form.Item label="封面图标">
         <div style="display: flex; gap: 12px; align-items: flex-start;">

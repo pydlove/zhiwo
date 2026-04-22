@@ -83,6 +83,22 @@ function removeFeature(index) {
   form.value.features.splice(index, 1)
 }
 
+function moveFeatureUp(index) {
+  if (index <= 0) return
+  const arr = form.value.features
+  const temp = arr[index]
+  arr[index] = arr[index - 1]
+  arr[index - 1] = temp
+}
+
+function moveFeatureDown(index) {
+  const arr = form.value.features
+  if (index >= arr.length - 1) return
+  const temp = arr[index]
+  arr[index] = arr[index + 1]
+  arr[index + 1] = temp
+}
+
 async function handleSave() {
   if (!form.value.name) {
     message.warning('请填写套餐名称')
@@ -92,10 +108,10 @@ async function handleSave() {
     const payload = {
       id: editingId.value || undefined,
       name: form.value.name,
-      price: form.value.price,
-      originalPrice: form.value.originalPrice,
+      price: form.value.price ?? 0,
+      originalPrice: form.value.originalPrice ?? 0,
       featuresJson: JSON.stringify(form.value.features),
-      sortOrder: form.value.sortOrder,
+      sortOrder: form.value.sortOrder ?? 0,
       isActive: form.value.isActive ? 1 : 0,
     }
     await saveMembershipPlan(payload)
@@ -171,8 +187,13 @@ onMounted(loadData)
           <Input v-model:value="form.featureInput" placeholder="输入权益后按回车添加" @pressEnter="addFeature" />
           <Button @click="addFeature">添加</Button>
         </div>
-        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-          <Tag v-for="(f, i) in form.features" :key="i" closable color="green" @close="removeFeature(i)">{{ f }}</Tag>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div v-for="(f, i) in form.features" :key="i" style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px;">
+            <span style="flex: 1; font-size: 14px; color: #262626;">{{ f }}</span>
+            <a style="font-size: 12px; color: #8c8c8c;" :style="i <= 0 ? { visibility: 'hidden' } : {}" @click="moveFeatureUp(i)">上移</a>
+            <a style="font-size: 12px; color: #8c8c8c;" :style="i >= form.features.length - 1 ? { visibility: 'hidden' } : {}" @click="moveFeatureDown(i)">下移</a>
+            <a style="font-size: 12px; color: #f5222d;" @click="removeFeature(i)">删除</a>
+          </div>
         </div>
       </Form.Item>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">

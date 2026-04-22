@@ -38,4 +38,7 @@ public interface TrackMapper {
             "(SELECT COUNT(*) FROM tu_post WHERE blogger_id IN (SELECT id FROM tu_blogger WHERE track_id = t.id AND is_deleted = 0) AND is_deleted = 0) as post_count " +
             "FROM tu_track t WHERE t.is_deleted = 0 ORDER BY post_count DESC LIMIT #{limit}")
     List<Track> findTopTracks(@Param("limit") int limit);
+
+    @Select("SELECT * FROM tu_track WHERE name = #{name} AND is_deleted = 0 LIMIT 1")
+    Track findByName(String name);
 }

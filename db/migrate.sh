@@ -8,6 +8,13 @@ set -e
 ENV=${1:-local}
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# 加载 .env 文件（如果存在）
+if [ -f "$SCRIPT_DIR/../.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/../.env"
+    set +a
+fi
+
 case "$ENV" in
   local)
     DB_HOST=${DB_HOST:-localhost}

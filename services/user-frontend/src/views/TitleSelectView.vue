@@ -45,7 +45,7 @@ function selectTitle(t) {
 function confirmCreate() {
   if (checkExpired()) return
   confirmOpen.value = false
-  router.push(`/create?trackId=${trackId}&bloggerId=${bloggerId}&title=${encodeURIComponent(selectedTitle.value)}`)
+  router.push(`/app/create?trackId=${trackId}&bloggerId=${bloggerId}&title=${encodeURIComponent(selectedTitle.value)}`)
 }
 </script>
 

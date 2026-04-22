@@ -40,7 +40,7 @@ async function loadData() {
 
 function editDraft(d) {
   if (checkExpired()) return
-  router.push(`/create?draftId=${d.id}&title=${encodeURIComponent(d.title)}`)
+  router.push(`/app/create?draftId=${d.id}&title=${encodeURIComponent(d.title)}`)
 }
 
 function deleteDraft(d) {

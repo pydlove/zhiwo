@@ -34,4 +34,8 @@ public class GuideService {
     public void delete(String id) {
         guideMapper.delete(id);
     }
+
+    public int batchUpdateRecommended(List<String> ids, Integer isRecommended) {
+        return guideMapper.batchUpdateRecommended(ids, isRecommended);
+    }
 }

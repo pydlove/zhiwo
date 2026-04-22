@@ -20,4 +20,8 @@ public class GuideService {
     public Guide getById(String id) {
         return guideMapper.findById(id);
     }
+
+    public List<Guide> findRecommended() {
+        return guideMapper.findRecommended();
+    }
 }

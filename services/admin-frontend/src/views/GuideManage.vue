@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, message } from 'ant-design-vue'
-import { listGuides, saveGuide, deleteGuide } from '../api/guide.js'
+import { listGuides, saveGuide, deleteGuide, batchUpdateRecommended } from '../api/guide.js'
 import mammoth from 'mammoth'
 import JSZip from 'jszip'
 import '@wangeditor/editor/dist/css/style.css'
@@ -10,8 +10,11 @@ import { Editor, Toolbar } from '@wangeditor/editor-for-vue'
 const search = ref('')
 const categoryFilter = ref(undefined)
 const statusFilter = ref(undefined)
+const recommendedFilter = ref(undefined)
 
 const rawData = ref([])
+const selectedRowKeys = ref([])
+const selectedRows = ref([])
 
 const categoryColorMap = {
   '标题技巧': 'blue',
@@ -28,14 +31,22 @@ const columns = [
   { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
   { title: '排序', dataIndex: 'sortOrder', key: 'sortOrder', width: 80 },
   { title: '状态', key: 'status', width: 100 },
+  { title: '推荐', key: 'isRecommended', width: 80 },
   { title: '更新时间', dataIndex: 'updateTime', key: 'updateTime', width: 150 },
   { title: '操作', key: 'action', width: 220 },
 ]
 
+const rowSelection = {
+  onChange: (keys, rows) => {
+    selectedRowKeys.value = keys
+    selectedRows.value = rows
+  },
+}
+
 const modalOpen = ref(false)
 const modalTitle = ref('新增创作技巧')
 const form = ref({
-  title: '', category: undefined, description: '', contentType: '平台阅读', sortOrder: 1, status: '已上架', link: '', content: '<p>在这里输入创作技巧内容...</p>'
+  title: '', category: undefined, description: '', contentType: '平台阅读', sortOrder: 1, status: '已上架', isRecommended: 0, link: '', content: '<p>在这里输入创作技巧内容...</p>'
 })
 const editingId = ref(null)
 const editorRef = ref(null)
@@ -52,12 +63,19 @@ function handleCreated(editor) {
 
 async function loadData() {
   try {
-    const list = await listGuides()
+    const params = {}
+    if (recommendedFilter.value !== undefined) {
+      params.isRecommended = recommendedFilter.value
+    }
+    const list = await listGuides(params)
     rawData.value = list.map(g => ({
       ...g,
       sortOrder: g.sortOrder || 0,
+      isRecommended: g.isRecommended || 0,
       updateTime: g.updatedAt ? g.updatedAt.slice(0, 16).replace('T', ' ') : '-',
     }))
+    selectedRowKeys.value = []
+    selectedRows.value = []
   } catch (e) {
     console.error('loadData error:', e)
     message.error('加载失败')
@@ -76,6 +94,9 @@ const filteredData = computed(() => {
   if (statusFilter.value) {
     list = list.filter(g => g.status === statusFilter.value)
   }
+  if (recommendedFilter.value !== undefined) {
+    list = list.filter(g => g.isRecommended === recommendedFilter.value)
+  }
   return list
 })
 
@@ -87,12 +108,13 @@ function handleReset() {
   search.value = ''
   categoryFilter.value = undefined
   statusFilter.value = undefined
+  recommendedFilter.value = undefined
 }
 
 function handleAdd() {
   modalTitle.value = '新增创作技巧'
   editingId.value = null
-  form.value = { title: '', category: undefined, description: '', contentType: '平台阅读', sortOrder: 1, status: '已上架', link: '', content: '<p>在这里输入创作技巧内容...</p>' }
+  form.value = { title: '', category: undefined, description: '', contentType: '平台阅读', sortOrder: 1, status: '已上架', isRecommended: 0, link: '', content: '<p>在这里输入创作技巧内容...</p>' }
   modalOpen.value = true
 }
 
@@ -107,6 +129,7 @@ function handleEdit(record) {
     contentType: isLink ? '外部链接' : '平台阅读',
     sortOrder: record.sortOrder || 1,
     status: record.status || '已上架',
+    isRecommended: record.isRecommended || 0,
     link: record.link || '',
     content: record.content || '<p>在这里输入创作技巧内容...</p>',
   }
@@ -142,6 +165,7 @@ async function handleSave() {
       link: form.value.contentType === '外部链接' ? form.value.link : undefined,
       sortOrder: parseInt(form.value.sortOrder, 10) || 0,
       status: form.value.status,
+      isRecommended: form.value.isRecommended ? 1 : 0,
     })
     message.success((editingId.value ? '编辑' : '新增') + '成功')
     modalOpen.value = false
@@ -267,8 +291,26 @@ async function toggleStatus(record) {
       link: record.link,
       sortOrder: record.sortOrder,
       status: newStatus,
+      isRecommended: record.isRecommended || 0,
     })
     message.success(newStatus === '已上架' ? '已上架' : '已下架')
+    loadData()
+  } catch (e) {
+    message.error('操作失败')
+  }
+}
+
+async function batchRecommend(isRecommended) {
+  const ids = selectedRowKeys.value
+  if (!ids || ids.length === 0) {
+    message.warning('请先选择数据')
+    return
+  }
+  try {
+    await batchUpdateRecommended(ids, isRecommended)
+    message.success(isRecommended === 1 ? '批量推荐成功' : '批量取消推荐成功')
+    selectedRowKeys.value = []
+    selectedRows.value = []
     loadData()
   } catch (e) {
     message.error('操作失败')
@@ -323,18 +365,31 @@ onMounted(loadData)
         <Select.Option value="已上架">已上架</Select.Option>
         <Select.Option value="已下架">已下架</Select.Option>
       </Select>
+      <Select v-model:value="recommendedFilter" placeholder="全部推荐" style="min-width: 140px;" allow-clear>
+        <Select.Option :value="1">已推荐</Select.Option>
+        <Select.Option :value="0">未推荐</Select.Option>
+      </Select>
       <Button type="primary" @click="handleSearch">查询</Button>
       <Button @click="handleReset">重置</Button>
       <Button type="primary" style="margin-left: auto;" @click="handleAdd">+ 新增技巧</Button>
     </div>
 
-    <Table :columns="columns" :data-source="filteredData" :pagination="false" row-key="id">
+    <div v-if="selectedRowKeys.length > 0" style="margin-bottom: 16px; padding: 8px 12px; background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 4px; display: flex; align-items: center; gap: 12px;">
+      <span style="font-size: 14px;">已选择 {{ selectedRowKeys.length }} 项</span>
+      <Button size="small" type="primary" @click="batchRecommend(1)">批量推荐</Button>
+      <Button size="small" @click="batchRecommend(0)">批量取消推荐</Button>
+    </div>
+
+    <Table :columns="columns" :data-source="filteredData" :pagination="false" row-key="id" :row-selection="rowSelection">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'category'">
           <Tag :color="categoryColorMap[record.category] || 'default'">{{ record.category }}</Tag>
         </template>
         <template v-if="column.key === 'status'">
           <Tag :color="record.status === '已上架' ? 'green' : 'default'">{{ record.status }}</Tag>
+        </template>
+        <template v-if="column.key === 'isRecommended'">
+          <Tag :color="record.isRecommended === 1 ? 'red' : 'default'">{{ record.isRecommended === 1 ? '推荐' : '-' }}</Tag>
         </template>
         <template v-if="column.key === 'action'">
           <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
@@ -379,12 +434,17 @@ onMounted(loadData)
           <Input type="number" v-model:value="form.sortOrder" placeholder="数字越小越靠前" />
         </Form.Item>
       </div>
-      <Form.Item label="状态">
-        <Select v-model:value="form.status" style="max-width: 352px;">
-          <Select.Option value="已上架">已上架</Select.Option>
-          <Select.Option value="已下架">已下架</Select.Option>
-        </Select>
-      </Form.Item>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <Form.Item label="状态">
+          <Select v-model:value="form.status">
+            <Select.Option value="已上架">已上架</Select.Option>
+            <Select.Option value="已下架">已下架</Select.Option>
+          </Select>
+        </Form.Item>
+        <Form.Item label="首页推荐">
+          <Switch v-model:checked="form.isRecommended" :checkedValue="1" :unCheckedValue="0" />
+        </Form.Item>
+      </div>
 
       <template v-if="form.contentType === '外部链接'">
         <Form.Item label="外部链接" required>

@@ -68,7 +68,7 @@ const groups = computed(() => {
 
 function editCreation(c) {
   if (checkExpired()) return
-  router.push(`/create?draftId=${c.id}&title=${encodeURIComponent(c.title)}`)
+  router.push(`/app/create?draftId=${c.id}&title=${encodeURIComponent(c.title)}`)
 }
 
 function deleteCreationItem(c) {

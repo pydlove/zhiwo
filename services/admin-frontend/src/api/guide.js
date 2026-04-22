@@ -1,7 +1,7 @@
 import request from './request.js'
 
-export function listGuides() {
-  return request.get('/guides')
+export function listGuides(params) {
+  return request.get('/guides', { params })
 }
 
 export function getGuide(id) {
@@ -17,4 +17,8 @@ export function saveGuide(data) {
 
 export function deleteGuide(id) {
   return request.delete('/guides/' + id)
+}
+
+export function batchUpdateRecommended(ids, isRecommended) {
+  return request.post('/guides/batch-recommended', { ids, isRecommended })
 }

@@ -2,7 +2,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, Avatar, message, Pagination } from 'ant-design-vue'
-import { listBloggers, saveBlogger, deleteBlogger } from '../api/blogger.js'
+import { listBloggers, saveBlogger, deleteBlogger, importBloggers } from '../api/blogger.js'
 import { listTracks } from '../api/track.js'
 
 const route = useRoute()
@@ -44,6 +44,12 @@ const form = ref({ name: '', intro: '', track: undefined, platform: undefined, l
 const avatarImage = ref('')
 const editingId = ref(null)
 const selectedRowKeys = ref([])
+
+// Import
+const importModalOpen = ref(false)
+const importExcelFile = ref(null)
+const importZipFile = ref(null)
+const importLoading = ref(false)
 
 const platformOptions = [
   { label: '公众号', value: '公众号' },
@@ -223,6 +229,47 @@ function goToPosts(record) {
   router.push('/posts?bloggerId=' + record.id)
 }
 
+function downloadTemplate() {
+  const headers = ['name', 'tagline', 'platform', 'track', 'link', 'avatarFileName']
+  const example1 = ['罗大伦频道', '传播中医健康知识', '公众号', '健康养生', 'https://mp.weixin.qq.com/xxx', 'https://example.com/avatar1.png']
+  const example2 = ['医路向前巍子', '每天科普疾病和急救知识', '公众号', '健康养生', '', 'weizi.png']
+  const csv = [headers.join(','), example1.join(','), example2.join(',')].join('\n')
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = '博主导入模板.csv'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function openImportModal() {
+  importModalOpen.value = true
+  importExcelFile.value = null
+  importZipFile.value = null
+}
+
+async function handleImport() {
+  if (!importExcelFile.value) {
+    message.warning('请选择 Excel 文件')
+    return
+  }
+  importLoading.value = true
+  try {
+    const result = await importBloggers(importExcelFile.value, importZipFile.value)
+    message.success(`导入完成：成功 ${result.success} 条，跳过 ${result.skip} 条`)
+    if (result.errors && result.errors.length) {
+      console.warn('导入错误：', result.errors)
+    }
+    importModalOpen.value = false
+    loadData()
+  } catch (e) {
+    message.error('导入失败：' + (e.response?.data?.msg || e.message))
+  } finally {
+    importLoading.value = false
+  }
+}
+
 onMounted(loadData)
 </script>
 
@@ -241,7 +288,8 @@ onMounted(loadData)
       <Button type="primary" @click="handleSearch">查询</Button>
       <Button @click="handleReset">重置</Button>
       <Button v-if="selectedRowKeys.length" danger style="margin-left: auto;" @click="handleBatchDelete">批量删除 ({{ selectedRowKeys.length }})</Button>
-      <Button type="primary" :style="selectedRowKeys.length ? { marginLeft: '12px' } : { marginLeft: 'auto' }" @click="handleAdd">+ 新增博主</Button>
+      <Button :style="selectedRowKeys.length ? { marginLeft: '12px' } : { marginLeft: 'auto' }" @click="openImportModal">📥 批量导入</Button>
+      <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增博主</Button>
     </div>
 
     <Table :columns="columns" :data-source="tableData" :pagination="false" row-key="id" :row-selection="rowSelection">
@@ -304,6 +352,38 @@ onMounted(loadData)
       <Form.Item label="主页链接">
         <Input v-model:value="form.link" placeholder="请输入博主主页或公众号链接" />
         <div style="font-size: 12px; color: #999; margin-top: 4px;">用于前端跳转查看原文博主主页</div>
+      </Form.Item>
+    </Form>
+  </Modal>
+
+  <!-- Import Modal -->
+  <Modal v-model:open="importModalOpen" title="批量导入博主" :mask-closable="false" :confirm-loading="importLoading" @ok="handleImport">
+    <Form layout="vertical" style="margin-top: 12px;">
+      <div style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+        <div style="font-size: 13px; color: #389e0d; margin-bottom: 8px;">
+          <strong>导入说明</strong>
+        </div>
+        <div style="font-size: 12px; color: #595959; line-height: 1.8;">
+          <div>1. 下载模板，按格式填写博主信息</div>
+          <div>2. Excel 列顺序：name | tagline | platform | track | link | avatarFileName</div>
+          <div>3. 头像支持两种方式：① 填图片 URL（如 https://xxx.com/avatar.png）② 填文件名，同时上传头像 ZIP 包</div>
+          <div>4. 平台支持：公众号 / 今日头条 / 百家号</div>
+          <div>5. track 填赛道名称，需与系统中赛道名称完全一致</div>
+        </div>
+      </div>
+
+      <Form.Item>
+        <Button size="small" @click="downloadTemplate">下载导入模板</Button>
+      </Form.Item>
+
+      <Form.Item label="Excel 文件" required>
+        <input type="file" accept=".xlsx,.xls,.csv" @change="e => importExcelFile = e.target.files[0]">
+        <div style="font-size: 12px; color: #999; margin-top: 4px;">支持 .xlsx / .xls / .csv</div>
+      </Form.Item>
+
+      <Form.Item label="头像 ZIP 包">
+        <input type="file" accept=".zip" @change="e => importZipFile = e.target.files[0]">
+        <div style="font-size: 12px; color: #999; margin-top: 4px;">将所有头像图片打包成 ZIP 上传，文件名需与 Excel 中 avatarFileName 一致</div>
       </Form.Item>
     </Form>
   </Modal>

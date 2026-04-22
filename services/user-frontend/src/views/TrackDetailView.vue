@@ -26,16 +26,11 @@ const isExpired = computed(() => {
   return new Date(expire + 'T23:59:59') < new Date()
 })
 
-const filteredBloggers = computed(() => {
-  return bloggers.value.filter(b => platformStore.trackMatches(b.platform))
-})
+const filteredBloggers = computed(() => bloggers.value)
 
 const filteredArticles = computed(() => {
-  return articles.value.filter(a => {
-    const matchPlatform = platformStore.trackMatches(a.platform)
-    const matchBlogger = currentBlogger.value ? a.bloggerId === currentBlogger.value.id : true
-    return matchPlatform && matchBlogger
-  })
+  if (!currentBlogger.value) return articles.value
+  return articles.value.filter(a => a.bloggerId === currentBlogger.value.id)
 })
 
 const currentBlogger = computed(() => {
@@ -43,10 +38,9 @@ const currentBlogger = computed(() => {
 })
 
 const estimatedRevenue = computed(() => {
-  if (platformStore.current !== '公众号') return null
   const totalReads = filteredArticles.value.reduce((sum, a) => sum + (a.readsNum || 0), 0)
   if (totalReads <= 0) return 0
-  return ((totalReads * 20) / 6000).toFixed(2)
+  return ((totalReads * 5) / 1000).toFixed(2)
 })
 
 watch(() => platformStore.current, () => {
@@ -66,7 +60,7 @@ function goToTitleSelect() {
     message.warning('账号已到期，请联系管理员续费')
     return
   }
-  router.push(`/create?trackId=${trackId}`)
+  router.push(`/app/create?trackId=${trackId}`)
 }
 
 function formatMeta(b) {
@@ -224,12 +218,12 @@ onMounted(async () => {
                 <span style="cursor: help; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: #fdba74; color: #fff; font-size: 12px; font-weight: 600;">?</span>
               </Tooltip>
             </div>
-            <button @click="goToTitleSelect" :disabled="!currentBlogger" style="padding: 10px 20px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;" :style="!currentBlogger ? { opacity: 0.5, cursor: 'not-allowed' } : {}">✨ AI 生成创作方向</button>
+            <button @click="goToTitleSelect" :disabled="!currentBlogger" style="padding: 10px 20px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;" :style="!currentBlogger ? { opacity: 0.5, cursor: 'not-allowed' } : {}">📥 订阅中心</button>
           </div>
         </div>
 
         <div v-if="filteredArticles.length === 0" style="text-align: center; padding: 60px 20px; color: #9ca3af; background: #f8fafc; border-radius: 12px; border: 1px dashed #e5e7eb;">
-          当前平台暂无相关文章数据
+          该博主暂无相关文章数据
         </div>
         <div v-else style="display: flex; flex-direction: column; gap: 12px;">
           <div

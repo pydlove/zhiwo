@@ -25,7 +25,7 @@ function goToTrack(trackId) {
     message.warning('账号已到期，请联系管理员续费')
     return
   }
-  router.push(`/track/${trackId}`)
+  router.push(`/app/track/${trackId}`)
 }
 
 const filteredTracks = computed(() => {

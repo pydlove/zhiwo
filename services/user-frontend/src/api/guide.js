@@ -7,3 +7,7 @@ export function listGuides() {
 export function getGuide(id) {
   return request.get('/guides/' + id)
 }
+
+export function listRecommendedGuides() {
+  return request.get('/guides/recommended')
+}

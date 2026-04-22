@@ -30,22 +30,22 @@ const painPoints = [
 
 const features = [
   {
-    icon: '🎯',
+    icon: '',
     title: '订阅赛道',
     desc: '选择你感兴趣的赛道，平台每日精准推送该领域爆款文章',
   },
   {
-    icon: '📥',
+    icon: '',
     title: '一键导入',
     desc: '下载平台推送的优质文章，直接导入到你的公众号后台',
   },
   {
-    icon: '✨',
+    icon: '',
     title: '绝对原创',
     desc: '每篇文章均经过AI深度改写，确保原创度，无需担心侵权',
   },
   {
-    icon: '📈',
+    icon: '',
     title: '持续收益',
     desc: '一次投入，长期受益，每年获取稳定的额外收入来源',
   },
@@ -85,7 +85,7 @@ onMounted(() => {
     <!-- Navbar -->
     <nav class="navbar">
       <div class="nav-brand" @click="goHome">
-        <img src="../assets/images/logo-green.png" class="nav-logo-img" alt="logo">
+        <img src="https://foruda.gitee.com/images/1776834561924666968/e0f84414_8060302.png" class="nav-logo-img" alt="logo">
         <span class="nav-title">公众号创作助手</span>
       </div>
       <div style="display: flex; align-items: center; gap: 16px;">
@@ -240,7 +240,7 @@ onMounted(() => {
         </div>
         <div class="features-grid">
           <div v-for="(item, i) in features" :key="i" class="feature-card">
-            <div class="feature-icon">{{ item.icon }}</div>
+            <!--<div class="feature-icon">{{ item.icon }}</div>-->
             <h3 class="feature-title">{{ item.title }}</h3>
             <p class="feature-desc">{{ item.desc }}</p>
           </div>

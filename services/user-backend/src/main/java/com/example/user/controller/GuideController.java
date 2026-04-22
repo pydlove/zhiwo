@@ -25,4 +25,9 @@ public class GuideController {
     public Result<Guide> get(@PathVariable String id) {
         return Result.ok(guideService.getById(id));
     }
+
+    @GetMapping("/recommended")
+    public Result<List<Guide>> listRecommended() {
+        return Result.ok(guideService.findRecommended());
+    }
 }

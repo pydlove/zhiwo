@@ -173,7 +173,7 @@ const revenue = computed(() => {
   if (form.value.platform !== '公众号') return null
   const reads = parseReads(form.value.readCount)
   if (reads <= 0) return 0
-  return ((reads * 20) / 6000).toFixed(2)
+  return ((reads * 5) / 1000).toFixed(2)
 })
 
 async function handleSave() {
@@ -344,7 +344,7 @@ onMounted(loadData)
           </Form.Item>
           <Form.Item label="预估收益">
             <div style="font-size: 16px; font-weight: 600; color: #f59e0b;">{{ revenue !== null ? '¥ ' + revenue : '—' }}</div>
-            <div style="font-size: 12px; color: #999;">按 6000 阅读 = 20 元 自动计算</div>
+            <div style="font-size: 12px; color: #999;">按 1000 阅读 = 5 元 自动计算</div>
           </Form.Item>
         </div>
       </template>

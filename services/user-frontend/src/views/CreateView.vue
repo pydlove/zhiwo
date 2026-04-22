@@ -10,6 +10,7 @@ import { listUserTracks, addUserTrack, removeUserTrack } from '../api/userTrack.
 import { getLatestSubscriptionPost, markSubscriptionPostUsed } from '../api/subscriptionPost.js'
 import { listHelps } from '../api/help.js'
 import { getEmailConfig, updateEmailConfig } from '../api/user.js'
+import { listRecommendedGuides } from '../api/guide.js'
 
 const router = useRouter()
 const { isMobile } = useViewport()
@@ -37,6 +38,11 @@ const helpDocs = ref([])
 const helpPreviewOpen = ref(false)
 const helpPreviewRecord = ref(null)
 
+// Recommended guides sidebar
+const recommendedGuides = ref([])
+const guidePreviewOpen = ref(false)
+const guidePreviewRecord = ref(null)
+
 async function loadHelpDocs() {
   try {
     const list = await listHelps()
@@ -50,6 +56,20 @@ async function loadHelpDocs() {
 function openHelpPreview(record) {
   helpPreviewRecord.value = record
   helpPreviewOpen.value = true
+}
+
+async function loadRecommendedGuides() {
+  try {
+    const list = await listRecommendedGuides()
+    recommendedGuides.value = (list || []).slice(0, 5)
+  } catch (e) {
+    console.error('loadRecommendedGuides error:', e)
+  }
+}
+
+function openGuidePreview(record) {
+  guidePreviewRecord.value = record
+  guidePreviewOpen.value = true
 }
 
 // Preview modal state
@@ -380,7 +400,7 @@ async function loadTracks() {
 }
 
 onMounted(() => {
-  Promise.all([loadTracks(), loadUserTracks(), loadEmailConfig()])
+  Promise.all([loadTracks(), loadUserTracks(), loadEmailConfig(), loadRecommendedGuides()])
 })
 </script>
 
@@ -486,75 +506,131 @@ onMounted(() => {
   <div v-else :style="{ maxWidth: '1200px', margin: '0 auto', padding: isMobile ? '0 0 32px' : '0 0 48px' }">
     <!-- Title Area -->
     <div :style="{ padding: isMobile ? '16px 0' : '24px 0' }">
-      <div @click="backToSelectTrack" style="font-size: 14px; color: #6b7280; margin-bottom: 16px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-        ← 返回我的赛道
+      <div @click="backToSelectTrack" style="font-size: 14px; color: #6b7280; margin-bottom: 16px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: color 0.15s;" @mouseenter="$event.currentTarget.style.color = '#2563eb'" @mouseleave="$event.currentTarget.style.color = '#6b7280'">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        返回我的赛道
       </div>
-      <h1 :style="{ fontSize: isMobile ? '20px' : '24px', fontWeight: 700, marginBottom: '6px', color: '#111827' }">
-        {{ selectedTrack?.name }} · 每日推荐
-      </h1>
-      <p style="font-size: 14px; color: #6b7280;">为您推荐该赛道今日精选文章</p>
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+        <div style="width: 6px; height: 28px; border-radius: 3px;" :style="{ background: selectedTrack?.cover?.gradient || 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%)' }"></div>
+        <h1 :style="{ fontSize: isMobile ? '22px' : '26px', fontWeight: 700, color: '#111827', margin: 0 }">
+          {{ selectedTrack?.name }} · 每日推荐
+        </h1>
+      </div>
+      <p style="font-size: 14px; color: #6b7280; margin-left: 18px;">
+        <span style="display: inline-flex; align-items: center; gap: 6px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          为您推荐该赛道今日精选文章
+        </span>
+      </p>
     </div>
 
     <!-- Two Column Layout -->
-    <div :style="{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '16px' }">
+    <div :style="{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }">
       <!-- Left: Main Content -->
       <div style="flex: 1; min-width: 0;">
-        <div v-if="loadingPost" style="text-align: center; padding: 60px; color: #9ca3af;">
-          <div style="font-size: 15px;">加载文章中...</div>
+        <div v-if="loadingPost" style="text-align: center; padding: 80px 20px; color: #9ca3af; background: #fff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 20px rgba(0,0,0,0.04);">
+          <div style="font-size: 40px; margin-bottom: 16px;">⏳</div>
+          <div style="font-size: 15px; color: #6b7280;">加载文章中...</div>
         </div>
 
-        <div v-else-if="!subscriptionPost" style="text-align: center; padding: 60px 20px; color: #9ca3af; background: #fff; border-radius: 16px; border: 1px solid #f1f5f9;">
-          <div style="font-size: 16px; margin-bottom: 8px;">暂无该赛道的推荐文章</div>
-          <div style="font-size: 13px;">管理员正在准备精彩内容，敬请期待</div>
+        <div v-else-if="!subscriptionPost" style="text-align: center; padding: 72px 20px; background: #fff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 20px rgba(0,0,0,0.04);">
+          <div style="font-size: 48px; margin-bottom: 16px;">
+            <img src="../assets/images/empty.png" alt="Empty" style="width: 80px; height: 80px;">
+          </div>
+          <div style="font-size: 17px; font-weight: 600; color: #374151; margin-bottom: 8px;">暂无该赛道的推荐文章</div>
+          <div style="font-size: 14px; color: #9ca3af;">管理员正在准备精彩内容，敬请期待</div>
         </div>
 
-        <div v-else style="background: #fff; border: 1px solid #f1f5f9; border-radius: 16px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-          <div style="font-size: 20px; font-weight: 700; color: #111827; margin-bottom: 16px; line-height: 1.4;">
-            {{ subscriptionPost.title }}
-          </div>
+        <div v-else style="background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.06);">
+          <div style="height: 5px; width: 100%;" :style="{ background: selectedTrack?.cover?.gradient || 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%)' }"></div>
+          <div style="padding: 28px 32px 32px;">
+            <div style="font-size: 21px; font-weight: 700; color: #111827; margin-bottom: 16px; line-height: 1.5;">
+              {{ subscriptionPost.title }}
+            </div>
 
-          <div v-if="subscriptionPost.description" style="font-size: 15px; color: #4b5563; line-height: 1.8; margin-bottom: 24px;">
-            {{ subscriptionPost.description }}
-          </div>
+            <div v-if="subscriptionPost.description" style="font-size: 15px; color: #4b5563; line-height: 1.8; margin-bottom: 28px;">
+              {{ subscriptionPost.description }}
+            </div>
 
-          <div :style="{ display: 'flex', gap: '10px', flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row' }">
-            <button
-              v-if="subscriptionPost.fileUrl"
-              @click="openFile"
-              style="padding: 10px 24px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px;"
-            >
-              预览文章
-            </button>
-            <button
-              v-if="subscriptionPost.fileUrl"
-              @click="downloadFile"
-              style="padding: 10px 24px; background: #fff; color: #2563eb; border: 1px solid #2563eb; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px;"
-            >
-              下载文章
-            </button>
-            <button
-              v-if="subscriptionPost.id"
-              @click="handleMarkUsed"
-              :style="{
-                padding: '10px 24px',
-                borderRadius: '8px',
-                fontSize: '14px',
-                fontWeight: 500,
-                cursor: subscriptionPost.used ? 'default' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                background: subscriptionPost.used ? '#dcfce7' : '#eff6ff',
-                color: subscriptionPost.used ? '#15803d' : '#2563eb',
-                border: subscriptionPost.used ? '1px solid #86efac' : '1px solid #2563eb',
-              }"
-            >
-              {{ subscriptionPost.used ? '已使用' : '标记已使用' }}
-            </button>
-          </div>
+            <div :style="{ display: 'flex', gap: '12px', flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row' }">
+              <button
+                v-if="subscriptionPost.fileUrl"
+                @click="openFile"
+                style="padding: 11px 26px; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: #fff; border: none; border-radius: 10px; font-size: 14px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(37,99,235,0.25); transition: all 0.15s;"
+                @mouseenter="$event.currentTarget.style.transform = 'translateY(-1px)'; $event.currentTarget.style.boxShadow = '0 4px 12px rgba(37,99,235,0.35)';"
+                @mouseleave="$event.currentTarget.style.transform = 'none'; $event.currentTarget.style.boxShadow = '0 2px 8px rgba(37,99,235,0.25)';"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                预览文章
+              </button>
+              <button
+                v-if="subscriptionPost.fileUrl"
+                @click="downloadFile"
+                style="padding: 11px 26px; background: #fff; color: #2563eb; border: 1.5px solid #2563eb; border-radius: 10px; font-size: 14px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.15s;"
+                @mouseenter="$event.currentTarget.style.background = '#eff6ff';"
+                @mouseleave="$event.currentTarget.style.background = '#fff';"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                下载文章
+              </button>
+              <button
+                v-if="subscriptionPost.id"
+                @click="handleMarkUsed"
+                :style="{
+                  padding: '11px 26px',
+                  borderRadius: '10px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: subscriptionPost.used ? 'default' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: subscriptionPost.used ? '#dcfce7' : '#fff',
+                  color: subscriptionPost.used ? '#15803d' : '#059669',
+                  border: subscriptionPost.used ? '1.5px solid #86efac' : '1.5px solid #059669',
+                  transition: 'all 0.15s',
+                }"
+                @mouseenter="if (!subscriptionPost.used) { $event.currentTarget.style.background = '#d1fae5'; }"
+                @mouseleave="if (!subscriptionPost.used) { $event.currentTarget.style.background = '#fff'; }"
+              >
+                <svg v-if="!subscriptionPost.used" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                {{ subscriptionPost.used ? '已使用' : '标记已使用' }}
+              </button>
+            </div>
 
-          <div v-if="subscriptionPost.fileName" style="margin-top: 16px; font-size: 13px; color: #9ca3af;">
-            文件：{{ subscriptionPost.fileName }}
+            <div v-if="subscriptionPost.fileName" style="margin-top: 20px; padding: 10px 14px; background: #f8fafc; border-radius: 8px; display: inline-flex; align-items: center; gap: 8px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span style="font-size: 13px; color: #6b7280;">{{ subscriptionPost.fileName }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recommended Guides -->
+        <div v-if="recommendedGuides.length" style="margin-top: 20px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.04);">
+          <div style="padding: 16px 20px 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #f1f5f9;">
+            <div style="width: 5px; height: 18px; border-radius: 3px; background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);"></div>
+            <div style="font-size: 15px; font-weight: 600; color: #111827;">创作技巧推荐</div>
+          </div>
+          <div style="padding: 14px 20px 18px;">
+            <div :style="{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '10px' }">
+              <div
+                v-for="g in recommendedGuides"
+                :key="g.id"
+                @click="openGuidePreview(g)"
+                style="padding: 14px; border-radius: 10px; cursor: pointer; font-size: 13px; color: #374151; background: linear-gradient(135deg, #fefce8 0%, #fffbeb 100%); border: 1px solid #fef08a; transition: all 0.15s;"
+                @mouseenter="$event.currentTarget.style.background = 'linear-gradient(135deg, #fef9c3 0%, #fef3c7 100%)'; $event.currentTarget.style.borderColor = '#f59e0b'; $event.currentTarget.style.transform = 'translateY(-2px)'; $event.currentTarget.style.boxShadow = '0 4px 12px rgba(245,158,11,0.15)';"
+                @mouseleave="$event.currentTarget.style.background = 'linear-gradient(135deg, #fefce8 0%, #fffbeb 100%)'; $event.currentTarget.style.borderColor = '#fef08a'; $event.currentTarget.style.transform = 'none'; $event.currentTarget.style.boxShadow = 'none';"
+              >
+                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  <span style="font-weight: 600; line-height: 1.5; color: #111827;">{{ g.title }}</span>
+                </div>
+                <div style="font-size: 12px; color: #6b7280; line-height: 1.5; margin-left: 20px;" v-if="g.description">
+                  {{ g.description.slice(0, 50) + (g.description.length > 50 ? '...' : '') }}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -562,54 +638,71 @@ onMounted(() => {
       <!-- Right: Sidebar -->
       <div :style="{ width: isMobile ? '100%' : '260px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '16px' }">
         <!-- Email Config -->
-        <div style="background: #fff; border: 1px solid #f1f5f9; border-radius: 12px; padding: 16px;">
-          <div style="font-size: 14px; font-weight: 600; color: #262626; margin-bottom: 12px;">
-            邮件订阅
-          </div>
-          <div v-if="emailConfig.canSetEmail !== 1" style="font-size: 12px; color: #9ca3af;">
-            您暂无权限设置邮箱接收
-          </div>
-          <div v-else-if="!emailConfig.email" style="font-size: 12px; color: #9ca3af;">
-            未配置邮箱，请前往个人中心设置
-          </div>
-          <div v-else style="display: flex; flex-direction: column; gap: 8px;">
-            <div style="font-size: 12px; color: #6b7280; word-break: break-all;">
-              {{ emailConfig.email }}
+        <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.04);">
+          <div style="padding: 14px 16px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #f1f5f9;">
+            <div style="width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #818cf8 0%, #6366f1 100%); display: flex; align-items: center; justify-content: center;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
             </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <Switch
-                :checked="emailConfig.emailReceive === 1"
-                :disabled="emailConfigLoading"
-                @update:checked="toggleEmailReceive"
-                size="small"
-              />
-              <span style="font-size: 12px; color: #374151;">
-                {{ emailConfig.emailReceive === 1 ? '已开启' : '已关闭' }}
-              </span>
+            <span style="font-size: 14px; font-weight: 600; color: #111827;">邮件订阅</span>
+          </div>
+          <div style="padding: 12px 16px 16px;">
+            <div v-if="emailConfig.canSetEmail !== 1" style="font-size: 13px; color: #9ca3af; display: flex; align-items: center; gap: 6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              您暂无权限设置邮箱接收
+            </div>
+            <div v-else-if="!emailConfig.email" style="font-size: 13px; color: #9ca3af; display: flex; align-items: center; gap: 6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              未配置邮箱，请前往个人中心设置
+            </div>
+            <div v-else style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="font-size: 12px; color: #6b7280; word-break: break-all; display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: #f8fafc; border-radius: 6px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                {{ emailConfig.email }}
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <Switch
+                  :checked="emailConfig.emailReceive === 1"
+                  :disabled="emailConfigLoading"
+                  @update:checked="toggleEmailReceive"
+                  size="small"
+                />
+                <span style="font-size: 13px; color: #374151; font-weight: 500;">
+                  {{ emailConfig.emailReceive === 1 ? '✓ 已开启' : '○ 已关闭' }}
+                </span>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- Help Docs -->
-        <div style="background: #fff; border: 1px solid #f1f5f9; border-radius: 12px; padding: 16px;">
-          <div style="font-size: 14px; font-weight: 600; color: #262626; margin-bottom: 12px;">
-            使用说明
+        <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.04);">
+          <div style="padding: 14px 16px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #f1f5f9;">
+            <div style="width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%); display: flex; align-items: center; justify-content: center;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <span style="font-size: 14px; font-weight: 600; color: #111827;">使用说明</span>
           </div>
-          <div v-if="!helpDocs.length" style="color: #999; font-size: 13px; text-align: center; padding: 16px 0;">
-            暂无帮助文档
-          </div>
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            <div
-              v-for="h in helpDocs"
-              :key="h.id"
-              @click="openHelpPreview(h)"
-              style="padding: 10px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; color: #595959; background: #fafafa; border: 1px solid #f0f0f0; transition: all 0.15s;"
-              @mouseenter="$event.currentTarget.style.background = '#e6f7ff'; $event.currentTarget.style.borderColor = '#91d5ff'; $event.currentTarget.style.color = '#1890ff';"
-              @mouseleave="$event.currentTarget.style.background = '#fafafa'; $event.currentTarget.style.borderColor = '#f0f0f0'; $event.currentTarget.style.color = '#595959';"
-            >
-              <div style="font-weight: 500; line-height: 1.5;">{{ h.title }}</div>
-              <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px; line-height: 1.4;" v-if="h.summary || h.content">
-                {{ (h.summary || h.content?.replace(/<[^>]+>/g, '') || '').slice(0, 40) + '...' }}
+          <div style="padding: 12px 16px 16px;">
+            <div v-if="!helpDocs.length" style="color: #9ca3af; font-size: 13px; text-align: center; padding: 16px 0; display: flex; align-items: center; justify-content: center; gap: 6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              暂无帮助文档
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div
+                v-for="h in helpDocs"
+                :key="h.id"
+                @click="openHelpPreview(h)"
+                style="padding: 12px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; color: #374151; background: #f8fafc; border: 1px solid #e2e8f0; transition: all 0.15s;"
+                @mouseenter="$event.currentTarget.style.background = '#ecfdf5'; $event.currentTarget.style.borderColor = '#6ee7b7'; $event.currentTarget.style.color = '#059669';"
+                @mouseleave="$event.currentTarget.style.background = '#f8fafc'; $event.currentTarget.style.borderColor = '#e2e8f0'; $event.currentTarget.style.color = '#374151';"
+              >
+                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  <span style="font-weight: 600;">{{ h.title }}</span>
+                </div>
+                <div style="font-size: 12px; color: #6b7280; line-height: 1.5; margin-left: 18px;" v-if="h.summary || h.content">
+                  {{ (h.summary || h.content?.replace(/<[^>]+>/g, '') || '').slice(0, 40) + '...' }}
+                </div>
               </div>
             </div>
           </div>
@@ -665,6 +758,22 @@ onMounted(() => {
     <div v-if="helpPreviewRecord" style="padding: 8px 0;">
       <Tag color="blue" style="margin-bottom: 12px;">{{ helpPreviewRecord.category }}</Tag>
       <div class="help-preview-content" style="font-size: 15px; line-height: 1.8; color: #374151; overflow-wrap: break-word;" v-html="helpPreviewRecord.content"></div>
+    </div>
+  </Modal>
+
+  <!-- Guide Preview Modal -->
+  <Modal
+    v-model:open="guidePreviewOpen"
+    :title="guidePreviewRecord?.title || '创作技巧'"
+    :footer="null"
+    :width="isMobile ? '95vw' : 720"
+  >
+    <div v-if="guidePreviewRecord" style="padding: 8px 0;">
+      <Tag color="orange" style="margin-bottom: 12px;">{{ guidePreviewRecord.category }}</Tag>
+      <div v-if="guidePreviewRecord.link" style="margin-bottom: 12px;">
+        <a :href="guidePreviewRecord.link" target="_blank" style="color: #2563eb;">打开外部链接 ↗</a>
+      </div>
+      <div class="help-preview-content" style="font-size: 15px; line-height: 1.8; color: #374151; overflow-wrap: break-word;" v-html="guidePreviewRecord.content"></div>
     </div>
   </Modal>
 </template>

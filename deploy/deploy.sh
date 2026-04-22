@@ -50,8 +50,8 @@ else
     log_error "或者配置 SSH_KEY_PATH 使用密钥登录"
     exit 1
   fi
-  SSH_CMD="sshpass -p '$SERVER_PASSWORD' ssh -o StrictHostKeyChecking=no"
-  SCP_CMD="sshpass -p '$SERVER_PASSWORD' scp -o StrictHostKeyChecking=no"
+  SSH_CMD="sshpass -p '$SERVER_PASSWORD' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=30"
+  SCP_CMD="sshpass -p '$SERVER_PASSWORD' scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 -C -v"
 fi
 
 REMOTE_HOST="$SERVER_USER@$SERVER_IP"
@@ -98,7 +98,7 @@ log_info "本地构建完成"
 
 # ============ 步骤2: 在服务器创建目录结构 ============
 log_info "准备服务器目录..."
-eval "$SSH_CMD $REMOTE_HOST 'mkdir -p /root/app/web/gzh /root/app/web/gzh-admin /root/app/gzh/user-service /root/app/gzh/admin-service /root/app/gzh/scripts'"
+eval "$SSH_CMD $REMOTE_HOST 'mkdir -p /root/app/web/gzh /root/app/web/gzh-admin /root/app/gzh/user-service /root/app/gzh/admin-service /root/app/gzh/scripts /root/app/gzh/db/migrations'"
 
 # ============ 步骤3: 上传前端静态文件 ============
 log_info "上传用户端前端到 /root/app/web/gzh/ ..."
@@ -108,17 +108,32 @@ log_info "上传管理端前端到 /root/app/web/gzh-admin/ ..."
 eval "$SCP_CMD -r $PROJECT_DIR/services/admin-frontend/dist/* $REMOTE_HOST:/root/app/web/gzh-admin/"
 
 # ============ 步骤4: 上传后端 JAR 包和生产配置 ============
-log_info "上传用户端后端 JAR..."
-eval "$SCP_CMD $PROJECT_DIR/services/user-backend/target/user-backend-1.0.0.jar $REMOTE_HOST:/root/app/gzh/user-service/"
+# 先压缩 JAR（25MB -> ~8MB，上传快 3 倍）
+log_info "压缩 JAR 包..."
+cd "$PROJECT_DIR/services/user-backend/target"
+zip -q user-backend-1.0.0.jar.zip user-backend-1.0.0.jar
+cd "$PROJECT_DIR/services/admin-backend/target"
+zip -q blogger-backend-1.0.0.jar.zip blogger-backend-1.0.0.jar
+
+log_info "上传用户端后端 JAR (压缩)..."
+eval "$SCP_CMD $PROJECT_DIR/services/user-backend/target/user-backend-1.0.0.jar.zip $REMOTE_HOST:/root/app/gzh/user-service/"
+log_info "解压用户端 JAR..."
+eval "$SSH_CMD $REMOTE_HOST 'cd /root/app/gzh/user-service/ && unzip -oq user-backend-1.0.0.jar.zip && rm -f user-backend-1.0.0.jar.zip'"
 
 log_info "上传用户端生产配置..."
 eval "$SCP_CMD $PROJECT_DIR/services/user-backend/src/main/resources/application-prod.yml $REMOTE_HOST:/root/app/gzh/user-service/"
 
-log_info "上传管理端后端 JAR..."
-eval "$SCP_CMD $PROJECT_DIR/services/admin-backend/target/blogger-backend-1.0.0.jar $REMOTE_HOST:/root/app/gzh/admin-service/"
+log_info "上传管理端后端 JAR (压缩)..."
+eval "$SCP_CMD $PROJECT_DIR/services/admin-backend/target/blogger-backend-1.0.0.jar.zip $REMOTE_HOST:/root/app/gzh/admin-service/"
+log_info "解压管理端 JAR..."
+eval "$SSH_CMD $REMOTE_HOST 'cd /root/app/gzh/admin-service/ && unzip -oq blogger-backend-1.0.0.jar.zip && rm -f blogger-backend-1.0.0.jar.zip'"
 
 log_info "上传管理端生产配置..."
 eval "$SCP_CMD $PROJECT_DIR/services/admin-backend/src/main/resources/application-prod.yml $REMOTE_HOST:/root/app/gzh/admin-service/"
+
+# 清理本地临时压缩包
+rm -f "$PROJECT_DIR/services/user-backend/target/user-backend-1.0.0.jar.zip"
+rm -f "$PROJECT_DIR/services/admin-backend/target/blogger-backend-1.0.0.jar.zip"
 
 # ============ 步骤5: 上传启停脚本与环境变量 ============
 log_info "上传环境变量文件..."
@@ -138,7 +153,15 @@ eval "$SCP_CMD $DEPLOY_DIR/scripts/status.sh $REMOTE_HOST:/root/app/gzh/scripts/
 log_info "设置脚本权限..."
 eval "$SSH_CMD $REMOTE_HOST 'chmod +x /root/app/gzh/scripts/*.sh && cp /root/app/gzh/scripts/user-service-*.sh /root/app/gzh/user-service/ && cp /root/app/gzh/scripts/admin-service-*.sh /root/app/gzh/admin-service/ && cp /root/app/gzh/scripts/start-all.sh /root/app/gzh/start-all.sh && cp /root/app/gzh/scripts/stop-all.sh /root/app/gzh/stop-all.sh && cp /root/app/gzh/scripts/status.sh /root/app/gzh/status.sh && chmod +x /root/app/gzh/start-all.sh /root/app/gzh/stop-all.sh /root/app/gzh/status.sh'"
 
-# ============ 步骤6: 停止旧服务 ============
+# ============ 步骤6: 数据库迁移 ============
+log_info "上传数据库迁移脚本..."
+eval "$SCP_CMD $PROJECT_DIR/db/migrate.sh $REMOTE_HOST:/root/app/gzh/db/"
+eval "$SCP_CMD -r $PROJECT_DIR/db/migrations/* $REMOTE_HOST:/root/app/gzh/db/migrations/"
+
+log_info "执行数据库迁移..."
+eval "$SSH_CMD $REMOTE_HOST 'chmod +x /root/app/gzh/db/migrate.sh && cd /root/app/gzh/db && bash migrate.sh prod'"
+
+# ============ 步骤7: 停止旧服务 ============
 log_info "停止旧服务..."
 eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/user-service/user-service-stop.sh || true'"
 eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/admin-service/admin-service-stop.sh || true'"

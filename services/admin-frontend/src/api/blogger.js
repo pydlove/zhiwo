@@ -18,3 +18,14 @@ export function saveBlogger(data) {
 export function deleteBlogger(id) {
   return request.delete('/bloggers/' + id)
 }
+
+export function importBloggers(excelFile, zipFile) {
+  const formData = new FormData()
+  formData.append('excel', excelFile)
+  if (zipFile) {
+    formData.append('zip', zipFile)
+  }
+  return request.post('/bloggers/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}

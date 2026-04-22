@@ -11,6 +11,7 @@ public class Guide {
     private String link;
     private Integer sortOrder;
     private String status;
+    private Integer isRecommended;
     private Integer isDeleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -31,6 +32,8 @@ public class Guide {
     public void setSortOrder(Integer sortOrder) { this.sortOrder = sortOrder; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public Integer getIsRecommended() { return isRecommended; }
+    public void setIsRecommended(Integer isRecommended) { this.isRecommended = isRecommended; }
     public Integer getIsDeleted() { return isDeleted; }
     public void setIsDeleted(Integer isDeleted) { this.isDeleted = isDeleted; }
     public LocalDateTime getCreatedAt() { return createdAt; }

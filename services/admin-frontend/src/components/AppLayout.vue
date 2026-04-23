@@ -46,6 +46,7 @@ const allMenuItems = [
   { key: '/roles', label: '角色权限', perm: 'role' },
   { key: '/config', label: '系统配置', perm: 'config' },
   { key: '/membership-plans', label: '会员权益', perm: 'membership-plan' },
+  { key: '/title-library', label: '标题库', perm: 'title-library' },
 ]
 
 const logoImage = computed(() => {

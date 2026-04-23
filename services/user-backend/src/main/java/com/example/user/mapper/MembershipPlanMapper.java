@@ -11,4 +11,7 @@ public interface MembershipPlanMapper {
 
     @Select("SELECT * FROM tu_membership_plan WHERE id = #{id}")
     MembershipPlan findById(String id);
+
+    @Select("SELECT * FROM tu_membership_plan WHERE id = #{id} AND is_active = 1")
+    MembershipPlan findActiveById(String id);
 }

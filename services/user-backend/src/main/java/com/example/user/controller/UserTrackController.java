@@ -6,6 +6,7 @@ import com.example.user.entity.UserTrack;
 import com.example.user.service.UserService;
 import com.example.user.service.UserTrackService;
 import org.springframework.web.bind.annotation.*;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -35,6 +36,9 @@ public class UserTrackController {
         User user = userService.getById(userId);
         if (user == null) {
             return Result.error("用户不存在");
+        }
+        if (user.getExpireDate() != null && user.getExpireDate().isBefore(LocalDate.now())) {
+            return Result.error("账号已到期，请联系管理员续费");
         }
         Integer trackLimit = user.getTrackLimit();
         if (trackLimit != null && trackLimit > 0) {

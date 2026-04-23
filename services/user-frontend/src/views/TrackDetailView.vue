@@ -197,7 +197,7 @@ onMounted(async () => {
           <div>
             <div style="font-size: 18px; font-weight: 600; color: #111827;">{{ currentBlogger ? currentBlogger.name + ' · 爆款文章' : '爆款文章' }}</div>
             <div v-if="currentBlogger" style="margin-top: 10px;">
-              <div style="font-size: 13px; color: #6b7280; line-height: 1.6; max-width: 600px;">
+              <div style="font-size: 13px; color: #6b7280; line-height: 1.6; max-width: 500px;">
                 {{ currentBlogger.tagline || '暂无简介' }}
               </div>
               <div style="margin-top: 6px; font-size: 13px;">

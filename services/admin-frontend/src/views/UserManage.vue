@@ -7,6 +7,7 @@ import { listTracks } from '../api/track.js'
 import { listCreations } from '../api/creation.js'
 import { listStyles } from '../api/style.js'
 import { uploadFile } from '../api/upload.js'
+import { listMembershipPlans } from '../api/membershipPlan.js'
 import request from '../api/request.js'
 
 const search = ref('')
@@ -16,6 +17,7 @@ const data = ref([])
 const allSubscriptionPosts = ref([])
 const allTracks = ref([])
 const allStyles = ref([])
+const allPlans = ref([])
 
 const columns = [
   { title: '用户名', dataIndex: 'username', key: 'username', width: 120 },
@@ -25,6 +27,7 @@ const columns = [
   { title: '可访问平台', dataIndex: 'platformLimitText', key: 'platformLimitText', width: 120 },
   { title: '状态', key: 'status', width: 75 },
   { title: '注册时间', dataIndex: 'registerTime', key: 'registerTime', width: 105 },
+  { title: '会员套餐', dataIndex: 'membershipPlanName', key: 'membershipPlanName', width: 100 },
   { title: '到期时间', dataIndex: 'expireDate', key: 'expireDate', width: 105 },
   { title: '最近登录', dataIndex: 'lastLogin', key: 'lastLogin', width: 145 },
   { title: '操作', key: 'action', width: 320 },
@@ -44,8 +47,8 @@ const creationColumns = [
 ]
 const platformOptions = ['公众号', '今日头条', '百家号']
 
-const addForm = ref({ username: '', contactType: '手机号', contact: '', password: 'Abc123456', aiLimit: 50, trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', remark: '', canSetEmail: 0 })
-const editForm = ref({ id: null, aiLimit: 50, trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', status: 1, remark: '', canSetEmail: 0 })
+const addForm = ref({ username: '', contactType: '手机号', contact: '', password: 'Abc123456', aiLimit: 50, trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined })
+const editForm = ref({ id: null, aiLimit: 50, trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', status: 1, remark: '', canSetEmail: 0, membershipPlanId: undefined })
 
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -230,9 +233,12 @@ async function saveRecommend() {
 
 async function loadData() {
   try {
-    const [uList, cList, sList, tList] = await Promise.all([listUsers(), listCreations(), listSubscriptionPosts(), listTracks()])
+    const [uList, cList, sList, tList, pList] = await Promise.all([listUsers(), listCreations(), listSubscriptionPosts(), listTracks(), listMembershipPlans()])
     allSubscriptionPosts.value = sList || []
     allTracks.value = tList || []
+    allPlans.value = pList || []
+    const planMap = {}
+    allPlans.value.forEach(p => { planMap[p.id] = p.name })
     const usageMap = {}
     ;(cList || []).forEach(c => {
       usageMap[c.userId] = (usageMap[c.userId] || 0) + 1
@@ -247,6 +253,7 @@ async function loadData() {
       aiUsageText: `${usageMap[u.id] || 0}/${u.aiLimit || 0}`,
       trackLimitText: `${u.trackLimit || 0}`,
       platformLimitText: (u.platformLimit || '').split(/[,，]/).filter(Boolean).join('、') || '全部平台',
+      membershipPlanName: planMap[u.membershipPlanId] || '-',
       trackIds: u.trackIds || [],
     }))
   } catch (e) {
@@ -266,20 +273,59 @@ function handleReset() {
   loadData()
 }
 
+function handlePlatformLimitChange(formRef, newVal) {
+  const planId = formRef.membershipPlanId
+  const limit = getPlanPlatformCount(planId)
+  if (limit > 0 && newVal.length > limit) {
+    message.warning(`该权益仅支持 ${limit} 个平台`)
+    return
+  }
+  formRef.platformLimit = newVal
+}
+
+function getPlanPlatformCount(planId) {
+  if (!planId) return 0
+  const plan = allPlans.value.find(p => p.id === planId)
+  if (!plan || !plan.permissionsJson) return 0
+  try {
+    const perms = JSON.parse(plan.permissionsJson)
+    return perms.platformCount || 0
+  } catch (e) {
+    return 0
+  }
+}
+
+function computeExpireDate(planId, fallback) {
+  if (!planId) return fallback || '2026-12-31'
+  const plan = allPlans.value.find(p => p.id === planId)
+  if (!plan || !plan.expireDays || plan.expireDays <= 0) return fallback || '2026-12-31'
+  const d = new Date()
+  d.setDate(d.getDate() + plan.expireDays)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function handleAdd() {
   addModalOpen.value = true
-  addForm.value = { username: '', contactType: '手机号', contact: '', password: 'Abc123456', aiLimit: 50, trackLimit: 0, platformLimit: [...platformOptions], expireDate: '2026-12-31', remark: '', canSetEmail: 0 }
+  addForm.value = { username: '', contactType: '手机号', contact: '', password: 'Abc123456', aiLimit: 50, trackLimit: 0, platformLimit: [...platformOptions], expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined }
 }
 
 function handleEdit(record) {
   editModalOpen.value = true
   const rawPlatforms = record.platformLimit || ''
-  editForm.value = { id: record.id, aiLimit: record.aiLimit || 50, trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [...platformOptions], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0 }
+  editForm.value = { id: record.id, aiLimit: record.aiLimit || 50, trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [...platformOptions], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0, membershipPlanId: record.membershipPlanId || undefined }
 }
 
 async function saveAdd() {
   if (!addForm.value.username || !addForm.value.contact) {
     message.warning('请填写必填项')
+    return
+  }
+  const platformCount = getPlanPlatformCount(addForm.value.membershipPlanId)
+  if (platformCount > 0 && (addForm.value.platformLimit || []).length > platformCount) {
+    message.warning(`该权益仅支持 ${platformCount} 个平台，当前已勾选 ${addForm.value.platformLimit.length} 个`)
     return
   }
   try {
@@ -293,6 +339,7 @@ async function saveAdd() {
       expireDate: addForm.value.expireDate,
       remark: addForm.value.remark,
       canSetEmail: addForm.value.canSetEmail ? 1 : 0,
+      membershipPlanId: addForm.value.membershipPlanId || undefined,
     }
     if (addForm.value.contactType === '手机号') payload.phone = addForm.value.contact
     else if (addForm.value.contactType === '邮箱') payload.email = addForm.value.contact
@@ -311,6 +358,11 @@ async function saveEdit() {
     message.error('用户ID缺失，请重新打开编辑')
     return
   }
+  const platformCount = getPlanPlatformCount(editForm.value.membershipPlanId)
+  if (platformCount > 0 && (editForm.value.platformLimit || []).length > platformCount) {
+    message.warning(`该权益仅支持 ${platformCount} 个平台，当前已勾选 ${editForm.value.platformLimit.length} 个`)
+    return
+  }
   const payload = {
     aiLimit: parseInt(editForm.value.aiLimit, 10) || 0,
     trackLimit: parseInt(editForm.value.trackLimit, 10) || 0,
@@ -319,6 +371,7 @@ async function saveEdit() {
     status: editForm.value.status,
     remark: editForm.value.remark,
     canSetEmail: editForm.value.canSetEmail ? 1 : 0,
+    membershipPlanId: editForm.value.membershipPlanId || undefined,
   }
   console.log('saveEdit payload:', payload, 'id:', editForm.value.id)
   try {
@@ -478,9 +531,14 @@ onMounted(loadData)
           <Input type="date" v-model:value="addForm.expireDate" />
         </Form.Item>
       </div>
-      <div style="font-size: 12px; color: #999; margin-top: -8px; margin-bottom: 16px;">每日限额包含标题、大纲、全文等所有 AI 生成调用；0 表示不限额。可选赛道数 0 表示不限制</div>
+      <Form.Item label="会员套餐">
+        <Select v-model:value="addForm.membershipPlanId" placeholder="请选择会员套餐" allow-clear style="width: 240px;" @change="(val) => { addForm.expireDate = computeExpireDate(val) }">
+          <Select.Option v-for="p in allPlans" :key="p.id" :value="p.id">{{ p.name }}</Select.Option>
+        </Select>
+      </Form.Item>
+      <div style="font-size: 12px; color: #999; margin-top: -8px; margin-bottom: 16px;">每日限额包含标题、大纲、全文等所有 AI 生成调用；0 表示不限额。可选赛道数 0 表示不限制。选择套餐后会自动计算到期时间</div>
       <Form.Item label="可访问平台" required>
-        <Checkbox.Group v-model:value="addForm.platformLimit" :options="platformOptions" />
+        <Checkbox.Group :value="addForm.platformLimit" :options="platformOptions" @change="(val) => handlePlatformLimitChange(addForm, val)" />
       </Form.Item>
       <Form.Item label="功能权限">
         <Checkbox v-model:checked="addForm.canSetEmail" :true-value="1" :false-value="0">允许设置邮箱接收文章</Checkbox>
@@ -510,9 +568,14 @@ onMounted(loadData)
           <Input type="date" v-model:value="editForm.expireDate" />
         </Form.Item>
       </div>
-      <div style="font-size: 12px; color: #999; margin-top: -8px; margin-bottom: 16px;">0 表示不限额或不限制赛道数</div>
+      <Form.Item label="会员套餐">
+        <Select v-model:value="editForm.membershipPlanId" placeholder="请选择会员套餐" allow-clear style="width: 240px;" @change="(val) => { editForm.expireDate = computeExpireDate(val, editForm.expireDate) }">
+          <Select.Option v-for="p in allPlans" :key="p.id" :value="p.id">{{ p.name }}</Select.Option>
+        </Select>
+      </Form.Item>
+      <div style="font-size: 12px; color: #999; margin-top: -8px; margin-bottom: 16px;">0 表示不限额或不限制赛道数。选择套餐后会自动计算到期时间</div>
       <Form.Item label="可访问平台" required>
-        <Checkbox.Group v-model:value="editForm.platformLimit" :options="platformOptions" />
+        <Checkbox.Group :value="editForm.platformLimit" :options="platformOptions" @change="(val) => handlePlatformLimitChange(editForm, val)" />
       </Form.Item>
       <Form.Item label="功能权限">
         <Checkbox v-model:checked="editForm.canSetEmail" :true-value="1" :false-value="0">允许设置邮箱接收文章</Checkbox>

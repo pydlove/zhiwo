@@ -9,6 +9,11 @@ public class MembershipPlan {
     private BigDecimal price;
     private BigDecimal originalPrice;
     private String featuresJson;
+    private Integer trackLimit;
+    private Integer aiLimit;
+    private String platformLimit;
+    private Integer expireDays;
+    private String permissionsJson;
     private Integer sortOrder;
     private Integer isActive;
     private LocalDateTime createdAt;
@@ -24,6 +29,16 @@ public class MembershipPlan {
     public void setOriginalPrice(BigDecimal originalPrice) { this.originalPrice = originalPrice; }
     public String getFeaturesJson() { return featuresJson; }
     public void setFeaturesJson(String featuresJson) { this.featuresJson = featuresJson; }
+    public Integer getTrackLimit() { return trackLimit; }
+    public void setTrackLimit(Integer trackLimit) { this.trackLimit = trackLimit; }
+    public Integer getAiLimit() { return aiLimit; }
+    public void setAiLimit(Integer aiLimit) { this.aiLimit = aiLimit; }
+    public String getPlatformLimit() { return platformLimit; }
+    public void setPlatformLimit(String platformLimit) { this.platformLimit = platformLimit; }
+    public Integer getExpireDays() { return expireDays; }
+    public void setExpireDays(Integer expireDays) { this.expireDays = expireDays; }
+    public String getPermissionsJson() { return permissionsJson; }
+    public void setPermissionsJson(String permissionsJson) { this.permissionsJson = permissionsJson; }
     public Integer getSortOrder() { return sortOrder; }
     public void setSortOrder(Integer sortOrder) { this.sortOrder = sortOrder; }
     public Integer getIsActive() { return isActive; }

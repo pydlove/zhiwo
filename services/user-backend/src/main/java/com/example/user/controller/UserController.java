@@ -1,11 +1,14 @@
 package com.example.user.controller;
 
+import com.example.user.entity.MembershipPlan;
 import com.example.user.entity.Result;
 import com.example.user.entity.User;
 import com.example.user.service.EmailService;
+import com.example.user.service.MembershipPlanService;
 import com.example.user.service.UserService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -16,11 +19,13 @@ public class UserController {
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    private final MembershipPlanService membershipPlanService;
 
-    public UserController(UserService userService, PasswordEncoder passwordEncoder, EmailService emailService) {
+    public UserController(UserService userService, PasswordEncoder passwordEncoder, EmailService emailService, MembershipPlanService membershipPlanService) {
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
+        this.membershipPlanService = membershipPlanService;
     }
 
     @GetMapping
@@ -31,6 +36,28 @@ public class UserController {
     @GetMapping("/{id}")
     public Result<User> get(@PathVariable String id) {
         return Result.ok(userService.getById(id));
+    }
+
+    @GetMapping("/{id}/plan")
+    public Result<Map<String, Object>> getUserPlan(@PathVariable String id) {
+        User user = userService.getById(id);
+        if (user == null) {
+            return Result.error("用户不存在");
+        }
+        Map<String, Object> data = new HashMap<>();
+        data.put("userId", id);
+        data.put("membershipPlanId", user.getMembershipPlanId());
+        data.put("trackLimit", user.getTrackLimit());
+        data.put("aiLimit", user.getAiLimit());
+        data.put("platformLimit", user.getPlatformLimit());
+        data.put("expireDate", user.getExpireDate());
+        if (user.getMembershipPlanId() != null && !user.getMembershipPlanId().isEmpty()) {
+            MembershipPlan plan = membershipPlanService.getById(user.getMembershipPlanId());
+            if (plan != null) {
+                data.put("plan", plan);
+            }
+        }
+        return Result.ok(data);
     }
 
     @PostMapping

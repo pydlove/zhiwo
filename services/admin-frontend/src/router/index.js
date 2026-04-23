@@ -13,6 +13,7 @@ import StyleManage from '../views/StyleManage.vue'
 import ConfigManage from '../views/ConfigManage.vue'
 import SubscriptionPostManage from '../views/SubscriptionPostManage.vue'
 import MembershipPlanManage from '../views/MembershipPlanManage.vue'
+import TitleLibraryManage from '../views/TitleLibraryManage.vue'
 const routes = [
   {
     path: '/',
@@ -32,6 +33,7 @@ const routes = [
       { path: 'config', name: 'ConfigManage', component: ConfigManage, meta: { title: '系统配置', perm: 'config' } },
       { path: 'subscription-posts', name: 'SubscriptionPostManage', component: SubscriptionPostManage, meta: { title: '订阅文章', perm: 'subscription-post' } },
       { path: 'membership-plans', name: 'MembershipPlanManage', component: MembershipPlanManage, meta: { title: '会员权益', perm: 'membership-plan' } },
+      { path: 'title-library', name: 'TitleLibraryManage', component: TitleLibraryManage, meta: { title: '标题库', perm: 'title-library' } },
     ],
   },
   { path: '/login', name: 'Login', component: () => import('../views/LoginView.vue'), meta: { title: '管理员登录' } },

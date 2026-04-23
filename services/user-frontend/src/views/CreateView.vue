@@ -3,18 +3,20 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { message, Modal, Button, Tag, Switch } from 'ant-design-vue'
 import { useViewport } from '../composables/useViewport.js'
+import { usePermissions } from '../composables/usePermissions.js'
 import { renderAsync } from 'docx-preview'
 import { usePlatformStore } from '../stores/platform.js'
 import { listTracks } from '../api/track.js'
 import { listUserTracks, addUserTrack, removeUserTrack } from '../api/userTrack.js'
 import { getLatestSubscriptionPost, markSubscriptionPostUsed } from '../api/subscriptionPost.js'
 import { listHelps } from '../api/help.js'
-import { getEmailConfig, updateEmailConfig } from '../api/user.js'
+import { useEmailConfig } from '../composables/useEmailConfig.js'
 import { listRecommendedGuides } from '../api/guide.js'
 
 const router = useRouter()
 const { isMobile } = useViewport()
 const platformStore = usePlatformStore()
+const { trackLimit, canEmailPush, canGuideAccess } = usePermissions()
 
 const step = ref('select-track')
 const tracks = ref([])
@@ -25,10 +27,6 @@ const selectedTrack = ref(null)
 
 const trackSelectModalOpen = ref(false)
 const selectedTrackIds = ref([])
-const trackLimit = computed(() => {
-  const u = JSON.parse(localStorage.getItem('user') || '{}')
-  return u.trackLimit ?? 0
-})
 
 const subscriptionPost = ref(null)
 const loadingPost = ref(false)
@@ -72,6 +70,14 @@ function openGuidePreview(record) {
   guidePreviewOpen.value = true
 }
 
+function handleGuideClick(record) {
+  if (!canGuideAccess.value) {
+    message.warning('您当前的权益暂不支持访问创作技巧内容')
+    return
+  }
+  openGuidePreview(record)
+}
+
 // Preview modal state
 const previewModalOpen = ref(false)
 const previewRecord = ref({})
@@ -89,44 +95,25 @@ const previewFileType = computed(() => {
 })
 
 const user = computed(() => JSON.parse(localStorage.getItem('user') || '{}'))
-const emailConfig = ref({ email: '', emailReceive: 0, canSetEmail: 0 })
-const emailConfigLoading = ref(false)
-
-async function loadEmailConfig() {
-  const uid = user.value.id
-  if (!uid) return
-  try {
-    const config = await getEmailConfig(uid)
-    emailConfig.value = {
-      email: config.email || '',
-      emailReceive: config.emailReceive || 0,
-      canSetEmail: config.canSetEmail || 0,
-    }
-  } catch (e) {
-    // silent fail
-  }
-}
+const { emailConfig, loading: emailConfigLoading, loadEmailConfig, saveEmailConfig } = useEmailConfig()
 
 async function toggleEmailReceive(val) {
   const uid = user.value.id
   if (!uid) return
-  if (emailConfig.value.canSetEmail !== 1) {
-    message.warning('您暂无权限设置邮箱接收，请联系管理员开通')
+  if (!canEmailPush.value) {
+    message.warning('您当前的权益暂不支持邮件每日推送')
     return
   }
   if (!emailConfig.value.email) {
     message.warning('请先前往个人中心配置邮箱地址')
     return
   }
-  emailConfigLoading.value = true
   try {
-    await updateEmailConfig(uid, { email: emailConfig.value.email, emailReceive: val })
-    emailConfig.value.emailReceive = val
-    message.success(val === 1 ? '已开启邮件订阅' : '已关闭邮件订阅')
+    const newVal = val ? 1 : 0
+    await saveEmailConfig(uid, { email: emailConfig.value.email, emailReceive: newVal })
+    message.success(newVal === 1 ? '已开启邮件订阅' : '已关闭邮件订阅')
   } catch (e) {
     message.error('设置失败')
-  } finally {
-    emailConfigLoading.value = false
   }
 }
 const isExpired = computed(() => {
@@ -610,17 +597,20 @@ onMounted(() => {
         <div v-if="recommendedGuides.length" style="margin-top: 20px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.04);">
           <div style="padding: 16px 20px 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #f1f5f9;">
             <div style="width: 5px; height: 18px; border-radius: 3px; background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);"></div>
-            <div style="font-size: 15px; font-weight: 600; color: #111827;">创作技巧推荐</div>
+            <div style="font-size: 15px; font-weight: 600; color: #111827; display: flex; align-items: center; gap: 6px;">
+              创作技巧推荐
+              <svg v-if="!canGuideAccess" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
           </div>
           <div style="padding: 14px 20px 18px;">
             <div :style="{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '10px' }">
               <div
                 v-for="g in recommendedGuides"
                 :key="g.id"
-                @click="openGuidePreview(g)"
-                style="padding: 14px; border-radius: 10px; cursor: pointer; font-size: 13px; color: #374151; background: linear-gradient(135deg, #fefce8 0%, #fffbeb 100%); border: 1px solid #fef08a; transition: all 0.15s;"
-                @mouseenter="$event.currentTarget.style.background = 'linear-gradient(135deg, #fef9c3 0%, #fef3c7 100%)'; $event.currentTarget.style.borderColor = '#f59e0b'; $event.currentTarget.style.transform = 'translateY(-2px)'; $event.currentTarget.style.boxShadow = '0 4px 12px rgba(245,158,11,0.15)';"
-                @mouseleave="$event.currentTarget.style.background = 'linear-gradient(135deg, #fefce8 0%, #fffbeb 100%)'; $event.currentTarget.style.borderColor = '#fef08a'; $event.currentTarget.style.transform = 'none'; $event.currentTarget.style.boxShadow = 'none';"
+                @click="handleGuideClick(g)"
+                :style="{ padding: '14px', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', color: '#374151', background: 'linear-gradient(135deg, #fefce8 0%, #fffbeb 100%)', border: '1px solid #fef08a', transition: 'all 0.15s', opacity: canGuideAccess ? 1 : 0.6 }"
+                @mouseenter="if (!canGuideAccess) { $event.currentTarget.style.opacity = '0.8'; } else { $event.currentTarget.style.background = 'linear-gradient(135deg, #fef9c3 0%, #fef3c7 100%)'; $event.currentTarget.style.borderColor = '#f59e0b'; $event.currentTarget.style.transform = 'translateY(-2px)'; $event.currentTarget.style.boxShadow = '0 4px 12px rgba(245,158,11,0.15)'; }"
+                @mouseleave="if (!canGuideAccess) { $event.currentTarget.style.opacity = '0.6'; } else { $event.currentTarget.style.background = 'linear-gradient(135deg, #fefce8 0%, #fffbeb 100%)'; $event.currentTarget.style.borderColor = '#fef08a'; $event.currentTarget.style.transform = 'none'; $event.currentTarget.style.boxShadow = 'none'; }"
               >
                 <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -646,9 +636,9 @@ onMounted(() => {
             <span style="font-size: 14px; font-weight: 600; color: #111827;">邮件订阅</span>
           </div>
           <div style="padding: 12px 16px 16px;">
-            <div v-if="emailConfig.canSetEmail !== 1" style="font-size: 13px; color: #9ca3af; display: flex; align-items: center; gap: 6px;">
+            <div v-if="!canEmailPush" style="font-size: 13px; color: #9ca3af; display: flex; align-items: center; gap: 6px;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              您暂无权限设置邮箱接收
+              您当前的权益暂不支持邮件每日推送
             </div>
             <div v-else-if="!emailConfig.email" style="font-size: 13px; color: #9ca3af; display: flex; align-items: center; gap: 6px;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>

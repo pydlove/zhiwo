@@ -1,9 +1,10 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
+import { message, Tooltip } from 'ant-design-vue'
 import { usePlatformStore } from '../stores/platform.js'
 import { useViewport } from '../composables/useViewport.js'
+import { usePermissions } from '../composables/usePermissions.js'
 import request from '../api/request.js'
 import { getConfigs } from '../api/config.js'
 
@@ -11,6 +12,7 @@ const route = useRoute()
 const router = useRouter()
 const platformStore = usePlatformStore()
 const { isMobile } = useViewport()
+const { plan, planData, loadPermissions, allowedPlatforms, trackLimit, canEmailPush, canOnlinePreview, canGuideAccess } = usePermissions()
 
 const activeKey = computed(() => route.path)
 const menuOpen = ref(false)
@@ -30,6 +32,55 @@ const navs = [
 
 const user = computed(() => JSON.parse(localStorage.getItem('user') || '{}'))
 const expireDate = computed(() => user.value.expireDate || '2026-12-31')
+const planName = computed(() => plan.value?.name || '')
+
+const planTagStyle = computed(() => {
+  const name = planName.value
+  if (name.includes('旗舰')) {
+    return { background: '#fef3c7', border: '1px solid #fde68a', color: '#b45309' }
+  }
+  if (name.includes('专业')) {
+    return { background: '#f3e8ff', border: '1px solid #d8b4fe', color: '#7c3aed' }
+  }
+  if (name.includes('标准')) {
+    return { background: '#dbeafe', border: '1px solid #93c5fd', color: '#2563eb' }
+  }
+  // 基础版 / 默认
+  return { background: '#f3f4f6', border: '1px solid #d1d5db', color: '#4b5563' }
+})
+
+function parseFeaturesJson(json) {
+  if (!json) return []
+  try {
+    const arr = JSON.parse(json)
+    return Array.isArray(arr) ? arr : []
+  } catch (e) {
+    return []
+  }
+}
+
+const planTooltipItems = computed(() => {
+  // 优先展示套餐配置的权益列表
+  const features = parseFeaturesJson(plan.value?.featuresJson)
+  if (features.length > 0) {
+    return features
+  }
+  // 兜底：手动拼接
+  const platforms = allowedPlatforms.value.join('、') || '-'
+  const track = trackLimit.value > 0 ? `${trackLimit.value} 个` : '不限'
+  const items = [`可用平台：${platforms}`, `赛道上限：${track}`]
+  if (canEmailPush.value) items.push('邮件每日推送')
+  if (canOnlinePreview.value) items.push('在线预览文章')
+  if (canGuideAccess.value) items.push('创作技巧学习')
+  return items
+})
+
+onMounted(() => {
+  loadConfigs()
+  if (user.value.id) {
+    loadPermissions(user.value.id)
+  }
+})
 
 const isExpired = computed(() => {
   const ed = expireDate.value
@@ -42,6 +93,10 @@ const creationPaths = ['/app/create', '/app/drafts', '/app/creations']
 function navTo(path) {
   if (creationPaths.includes(path) && isExpired.value) {
     message.warning('账号已到期，请联系管理员续费')
+    return
+  }
+  if (path === '/app/tips' && !canGuideAccess.value) {
+    message.warning('您当前的权益暂不支持访问创作技巧页面')
     return
   }
   router.push(path)
@@ -59,13 +114,14 @@ async function handlePlatformClick(p) {
       if (latest) {
         localStorage.setItem('user', JSON.stringify(latest))
       }
+      await loadPermissions(uid)
     } catch (e) {
       // ignore fetch error, fallback to localStorage
     }
   }
   const ok = platformStore.setPlatform(p)
   if (!ok) {
-    const allowed = platformStore.allowedPlatforms().join('、')
+    const allowed = (platformStore.allowedPlatforms || []).join('、')
     message.warning(`您当前的权益仅支持访问${allowed}平台，如需更多请联系管理员`)
   }
 }
@@ -82,9 +138,7 @@ async function loadConfigs() {
   }
 }
 
-onMounted(() => {
-  loadConfigs()
-})
+// removed duplicate onMounted, merged above
 </script>
 
 <template>
@@ -93,8 +147,8 @@ onMounted(() => {
     <nav v-if="!isMobile" style="background: #fff; border-bottom: 1px solid #e5e7eb; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between;">
       <div style="display: flex; align-items: center; gap: 28px;">
         <div style="font-size: 18px; font-weight: 700; color: #111827; display: flex; align-items: center; gap: 8px; cursor: pointer;" @click="navTo('/app/home')">
-          <div style="width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700; overflow: hidden;">
-            <img v-if="logoUrl" :src="logoUrl" style="width: 100%; height: 100%; object-fit: cover;">
+          <div style="width: 35px; height: 33px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700; overflow: hidden;">
+            <img v-if="logoUrl" :src="logoUrl" style="width: 35px; height: 33px;">
             <span v-else>AI</span>
           </div>
           {{ systemName }}
@@ -110,6 +164,31 @@ onMounted(() => {
         </div>
       </div>
       <div style="display: flex; align-items: center; gap: 12px;">
+        <Tooltip v-if="planName" placement="bottom" overlay-class-name="plan-tooltip">
+          <div
+            :style="{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 500, cursor: 'pointer', ...planTagStyle }"
+          >
+            <img src="../assets/images/VIP.png" style="width: 16px; height: 16px;">
+            <span>{{ planName }}</span>
+          </div>
+          <template #title>
+            <div style="max-width: 260px;">
+              <div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.2);">
+                {{ planName }}
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <div v-for="(item, i) in planTooltipItems" :key="i" style="display: flex; align-items: flex-start; gap: 6px; font-size: 12px; color: rgba(255,255,255,0.92); line-height: 1.5;">
+                  <span style="color: #86efac; font-size: 13px; line-height: 1.5; flex-shrink: 0;">✓</span>
+                  <span>{{ item }}</span>
+                </div>
+              </div>
+              <div v-if="expireDate && expireDate !== '2026-12-31'" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2); font-size: 11px; color: rgba(255,255,255,0.7); display: flex; align-items: center; gap: 4px;">
+                <span style="width: 6px; height: 6px; border-radius: 50%;" :style="{ background: isExpired ? '#f87171' : '#4ade80' }"></span>
+                有效期至 {{ expireDate }}{{ isExpired ? ' (已到期)' : '' }}
+              </div>
+            </div>
+          </template>
+        </Tooltip>
         <div
           style="display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500;"
           :style="isExpired
@@ -137,6 +216,7 @@ onMounted(() => {
           </div>
           <div v-if="menuOpen" style="position: absolute; top: 40px; right: 0; background: #fff; border: 1px solid #f1f5f9; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); min-width: 160px; padding: 6px; z-index: 50;">
             <div style="padding: 8px 14px; font-size: 12px; color: #6b7280;">
+              <div v-if="planName" style="color: #2563eb; font-weight: 500; margin-bottom: 2px;">{{ planName }}</div>
               <div>有效期至</div>
               <div style="color: #f59e0b; font-weight: 500;">{{ expireDate }}</div>
             </div>
@@ -196,6 +276,26 @@ onMounted(() => {
         </div>
         <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #f1f5f9; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b7280;">
           <span style="width: 6px; height: 6px; border-radius: 50%;" :style="{ background: isExpired ? '#ef4444' : '#22c55e' }"></span>
+          <Tooltip v-if="planName" placement="bottom" overlay-class-name="plan-tooltip">
+            <span :style="{ color: planTagStyle.color, fontWeight: 500, cursor: 'pointer' }">{{ planName }}</span>
+            <template #title>
+              <div style="max-width: 260px;">
+                <div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.2);">
+                  {{ planName }}
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                  <div v-for="(item, i) in planTooltipItems" :key="i" style="display: flex; align-items: flex-start; gap: 6px; font-size: 12px; color: rgba(255,255,255,0.92); line-height: 1.5;">
+                    <span style="color: #86efac; font-size: 13px; line-height: 1.5; flex-shrink: 0;">✓</span>
+                    <span>{{ item }}</span>
+                  </div>
+                </div>
+                <div v-if="expireDate && expireDate !== '2026-12-31'" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2); font-size: 11px; color: rgba(255,255,255,0.7); display: flex; align-items: center; gap: 4px;">
+                  <span style="width: 6px; height: 6px; border-radius: 50%;" :style="{ background: isExpired ? '#f87171' : '#4ade80' }"></span>
+                  有效期至 {{ expireDate }}{{ isExpired ? ' (已到期)' : '' }}
+                </div>
+              </div>
+            </template>
+          </Tooltip>
           <span>有效期至 {{ expireDate }}{{ isExpired ? ' 已到期' : '' }}</span>
         </div>
       </div>
@@ -206,3 +306,13 @@ onMounted(() => {
     </main>
   </div>
 </template>
+
+<style>
+.plan-tooltip .ant-tooltip-inner {
+  white-space: pre-line;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.8;
+  border-radius: 8px;
+}
+</style>

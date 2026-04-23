@@ -27,6 +27,12 @@ public class MembershipPlanService {
         if (plan.getOriginalPrice() == null) plan.setOriginalPrice(new java.math.BigDecimal("0"));
         if (plan.getSortOrder() == null) plan.setSortOrder(0);
         if (plan.getIsActive() == null) plan.setIsActive(1);
+        if (plan.getTrackLimit() == null) plan.setTrackLimit(0);
+        if (plan.getAiLimit() == null) plan.setAiLimit(0);
+        if (plan.getExpireDays() == null) plan.setExpireDays(0);
+        if (plan.getPermissionsJson() == null || plan.getPermissionsJson().isEmpty()) {
+            plan.setPermissionsJson("{}");
+        }
         if (plan.getFeaturesJson() == null || plan.getFeaturesJson().isEmpty()) {
             plan.setFeaturesJson("[]");
         }

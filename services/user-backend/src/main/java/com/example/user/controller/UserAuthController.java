@@ -1,7 +1,9 @@
 package com.example.user.controller;
 
+import com.example.user.entity.MembershipPlan;
 import com.example.user.entity.Result;
 import com.example.user.entity.User;
+import com.example.user.mapper.MembershipPlanMapper;
 import com.example.user.mapper.UserMapper;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
@@ -16,10 +18,12 @@ import java.util.Map;
 public class UserAuthController {
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final MembershipPlanMapper membershipPlanMapper;
 
-    public UserAuthController(UserMapper userMapper, PasswordEncoder passwordEncoder) {
+    public UserAuthController(UserMapper userMapper, PasswordEncoder passwordEncoder, MembershipPlanMapper membershipPlanMapper) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
+        this.membershipPlanMapper = membershipPlanMapper;
     }
 
     @PostMapping("/login")
@@ -55,6 +59,12 @@ public class UserAuthController {
         Map<String, Object> data = new HashMap<>();
         data.put("token", "user-token-" + user.getId());
         data.put("user", user);
+        if (user.getMembershipPlanId() != null && !user.getMembershipPlanId().isEmpty()) {
+            MembershipPlan plan = membershipPlanMapper.findById(user.getMembershipPlanId());
+            if (plan != null) {
+                data.put("plan", plan);
+            }
+        }
         return Result.ok(data);
     }
 }

@@ -3,11 +3,13 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useViewport } from '../composables/useViewport.js'
+import { usePermissions } from '../composables/usePermissions.js'
 import { login } from '../api/auth.js'
 import { getConfigs } from '../api/config.js'
 
 const router = useRouter()
 const { isMobile } = useViewport()
+const { loadPermissions } = usePermissions()
 const form = ref({ account: '', password: '', captcha: '' })
 const captchaCode = ref('A7K9')
 const loading = ref(false)
@@ -55,6 +57,10 @@ async function handleLogin() {
     const data = await login({ username: form.value.account, password: form.value.password })
     localStorage.setItem('token', data.token)
     localStorage.setItem('user', JSON.stringify(data.user))
+    localStorage.removeItem('plan')
+    if (data.user?.id) {
+      await loadPermissions(data.user.id)
+    }
     message.success('登录成功')
     router.push('/app/home')
   } catch (e) {
@@ -79,7 +85,7 @@ onMounted(() => {
         <img src="https://foruda.gitee.com/images/1776841720416623884/f00aea60_8060302.png" style="width: 64px; height: 64px; object-fit: contain; border-radius: 8px;">
       </div>
       <h1 style="font-size: 40px; font-weight: 700; margin-bottom: 20px; line-height: 1.2;">发现热门赛道<br/>让 AI 帮你创作爆款内容</h1>
-      <p style="font-size: 18px; opacity: 0.9; line-height: 1.6; max-width: 420px;">汇聚公众号、今日头条头部博主数据，基于爆款文章特征，AI 实时生成创作方向和优质内容。</p>
+      <p style="font-size: 18px; opacity: 0.9; line-height: 1.6; max-width: 420px;">汇聚公众号、今日头条头部博主数据，基于爆款文章特征，AI 每日给您推荐爆款文章。</p>
       <div style="margin-top: 48px; display: flex; flex-direction: column; gap: 20px;">
         <div style="display: flex; align-items: center; gap: 14px; font-size: 15px; opacity: 0.95;">
           <img src="../assets/images/saidao.png" style="width: 22px; height: 22px; object-fit: cover; border-radius: 8px;">
@@ -100,7 +106,7 @@ onMounted(() => {
     <div :style="{ width: isMobile ? '100%' : '480px', background: '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: isMobile ? '32px 24px' : '64px', boxShadow: isMobile ? 'none' : '-20px 0 60px rgba(0,0,0,0.06)' }">
       <div style="font-size: 24px; font-weight: 700; color: #111827; display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
         <div style="width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; font-weight: 700;">
-          <img v-if="logoUrl" :src="logoUrl" style="width: 36px; height: 36px; object-fit: cover; border-radius: 4px;">
+          <img v-if="logoUrl" :src="logoUrl" style="width: 41px; height: 37px; object-fit: cover; border-radius: 4px;">
           <span v-else>AI</span>
         </div>
         {{ systemName }}

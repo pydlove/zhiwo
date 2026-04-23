@@ -1,11 +1,14 @@
 package com.example.blogger.controller;
 
+import com.example.blogger.entity.MembershipPlan;
 import com.example.blogger.entity.Result;
 import com.example.blogger.entity.User;
 import com.example.blogger.entity.UserTrack;
+import com.example.blogger.service.MembershipPlanService;
 import com.example.blogger.service.UserService;
 import com.example.blogger.service.UserTrackService;
 import org.springframework.web.bind.annotation.*;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -15,10 +18,36 @@ import java.util.stream.Collectors;
 public class UserController {
     private final UserService userService;
     private final UserTrackService userTrackService;
+    private final MembershipPlanService membershipPlanService;
 
-    public UserController(UserService userService, UserTrackService userTrackService) {
+    public UserController(UserService userService, UserTrackService userTrackService, MembershipPlanService membershipPlanService) {
         this.userService = userService;
         this.userTrackService = userTrackService;
+        this.membershipPlanService = membershipPlanService;
+    }
+
+    private void syncPlanLimits(User user) {
+        String planId = user.getMembershipPlanId();
+        if (planId == null || planId.isEmpty()) {
+            return;
+        }
+        MembershipPlan plan = membershipPlanService.getById(planId);
+        if (plan == null) {
+            return;
+        }
+        // 仅当用户字段为空时，才同步套餐默认值（允许管理员手动覆盖）
+        if (user.getTrackLimit() == null || user.getTrackLimit() <= 0) {
+            user.setTrackLimit(plan.getTrackLimit());
+        }
+        if (user.getAiLimit() == null || user.getAiLimit() <= 0) {
+            user.setAiLimit(plan.getAiLimit());
+        }
+        if (user.getPlatformLimit() == null || user.getPlatformLimit().isEmpty()) {
+            user.setPlatformLimit(plan.getPlatformLimit());
+        }
+        if (user.getExpireDate() == null && plan.getExpireDays() != null && plan.getExpireDays() > 0) {
+            user.setExpireDate(LocalDate.now().plusDays(plan.getExpireDays()));
+        }
     }
 
     @GetMapping
@@ -38,6 +67,7 @@ public class UserController {
 
     @PostMapping
     public Result<Void> save(@RequestBody User user) {
+        syncPlanLimits(user);
         userService.save(user);
         return Result.ok(null);
     }
@@ -63,6 +93,8 @@ public class UserController {
         if (user.getRemark() != null) existing.setRemark(user.getRemark());
         if (user.getCanSetEmail() != null) existing.setCanSetEmail(user.getCanSetEmail());
         if (user.getEmailReceive() != null) existing.setEmailReceive(user.getEmailReceive());
+        if (user.getMembershipPlanId() != null) existing.setMembershipPlanId(user.getMembershipPlanId());
+        syncPlanLimits(existing);
         userService.save(existing);
         return Result.ok(null);
     }

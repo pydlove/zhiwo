@@ -2,11 +2,15 @@
 import { ref, onMounted, computed } from 'vue'
 import { Card, Tabs, Modal, message } from 'ant-design-vue'
 import { useViewport } from '../composables/useViewport.js'
-import { updateAvatar, updateUserTemplate, getEmailConfig, updateEmailConfig, sendTestEmail } from '../api/user.js'
+import { usePermissions } from '../composables/usePermissions.js'
+import { updateAvatar, updateUserTemplate, sendTestEmail } from '../api/user.js'
+import { useEmailConfig } from '../composables/useEmailConfig.js'
 import { listStyles } from '../api/style.js'
 import { Switch } from 'ant-design-vue'
 
 const { isMobile } = useViewport()
+const { allowedTemplates, canEmailPush, plan } = usePermissions()
+const { emailConfig, loading: emailLoading, loadEmailConfig, saveEmailConfig } = useEmailConfig()
 const activeTab = ref('template')
 
 const user = ref(JSON.parse(localStorage.getItem('user') || '{}'))
@@ -17,6 +21,15 @@ const isExpired = computed(() => {
   if (!expire) return false
   return new Date(expire + 'T23:59:59') < new Date()
 })
+
+const isStyleAllowed = (name) => {
+  const allowed = allowedTemplates.value
+  if (allowed.length === 0) return true
+  return allowed.includes(name)
+}
+
+const allowedStyles = computed(() => styles.value.filter(s => isStyleAllowed(s.name)))
+const disallowedStyles = computed(() => styles.value.filter(s => !isStyleAllowed(s.name)))
 
 async function loadStyles() {
   try {
@@ -38,6 +51,10 @@ async function loadStyles() {
 async function selectStyle(name) {
   if (!user.value.id) {
     message.error('用户未登录')
+    return
+  }
+  if (!isStyleAllowed(name)) {
+    message.warning('该样式不在您的权益范围内，如需使用请联系管理员')
     return
   }
   try {
@@ -161,53 +178,31 @@ const passwordForm = ref({
   confirmPassword: '',
 })
 
-const emailForm = ref({
-  email: '',
-  emailReceive: 0,
-  canSetEmail: 0,
-})
-const emailLoading = ref(false)
 const testEmailLoading = ref(false)
 
-async function loadEmailConfig() {
-  if (!user.value.id) return
-  try {
-    const config = await getEmailConfig(user.value.id)
-    emailForm.value.email = config.email || ''
-    emailForm.value.emailReceive = config.emailReceive || 0
-    emailForm.value.canSetEmail = config.canSetEmail || 0
-  } catch (e) {
-    console.error('加载邮箱配置失败:', e)
-    message.error('加载邮箱配置失败: ' + (e?.message || '未知错误'))
-  }
-}
-
-async function saveEmailConfig() {
+async function handleSaveEmailConfig() {
   if (!user.value.id) {
     message.error('用户未登录')
     return
   }
-  if (emailForm.value.canSetEmail !== 1) {
-    message.warning('您暂无权限设置邮箱接收')
+  if (!canEmailPush.value) {
+    message.warning('您当前的权益暂不支持邮件每日推送')
     return
   }
-  if (!emailForm.value.email) {
+  if (!emailConfig.value.email) {
     message.warning('请输入邮箱地址')
     return
   }
-  emailLoading.value = true
   try {
-    await updateEmailConfig(user.value.id, {
-      email: emailForm.value.email,
-      emailReceive: emailForm.value.emailReceive,
+    await saveEmailConfig(user.value.id, {
+      email: emailConfig.value.email,
+      emailReceive: emailConfig.value.emailReceive,
     })
-    user.value.email = emailForm.value.email
+    user.value.email = emailConfig.value.email
     localStorage.setItem('user', JSON.stringify(user.value))
     message.success('邮箱配置已保存')
   } catch (e) {
     message.error('保存失败')
-  } finally {
-    emailLoading.value = false
   }
 }
 
@@ -216,7 +211,7 @@ async function handleSendTestEmail() {
     message.error('用户未登录')
     return
   }
-  if (!emailForm.value.email) {
+  if (!emailConfig.value.email) {
     message.warning('请先填写邮箱地址')
     return
   }
@@ -280,9 +275,15 @@ onMounted(() => {
         <Tabs.TabPane key="template" tab="样式选择">
           <div style="max-width: 600px;">
             <div style="font-size: 14px; color: #6b7280; margin-bottom: 16px;">选择您的默认创作样式，下次新建文章时将自动加载该样式</div>
-            <div :style="{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px' }">
+
+            <div style="font-size: 13px; font-weight: 500; color: #111827; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+              <span style="width: 4px; height: 16px; background: #2563eb; border-radius: 2px;"></span>
+              可用样式
+            </div>
+            <div v-if="allowedStyles.length === 0" style="font-size: 13px; color: #9ca3af; padding: 16px; background: #f8fafc; border-radius: 8px; margin-bottom: 24px;">暂无可用样式</div>
+            <div v-else :style="{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px' }">
               <div
-                v-for="s in styles"
+                v-for="s in allowedStyles"
                 :key="s.id"
                 :style="{
                   padding: '18px',
@@ -295,7 +296,7 @@ onMounted(() => {
               >
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;" @click="selectStyle(s.name)">
                   <div style="display: flex; align-items: center; gap: 8px;">
-                    <div style="font-size: 15px; font-weight: 600; color: '#111827';">{{ s.name }}</div>
+                    <div style="font-size: 15px; font-weight: 600; color: #111827;">{{ s.name }}</div>
                     <span v-if="s.scene" style="font-size: 11px; padding: 2px 8px; background: #f3f4f6; color: #6b7280; border-radius: 4px;">{{ s.scene.split(',').join('、') }}</span>
                   </div>
                   <div v-if="user.template === s.name" style="width: 18px; height: 18px; background: #2563eb; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px;">✓</div>
@@ -324,6 +325,45 @@ onMounted(() => {
                 </div>
               </div>
             </div>
+
+            <div v-if="disallowedStyles.length > 0">
+              <div style="font-size: 13px; font-weight: 500; color: #111827; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                <span style="width: 4px; height: 16px; background: #9ca3af; border-radius: 2px;"></span>
+                未授权样式
+              </div>
+              <div :style="{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px' }">
+                <div
+                  v-for="s in disallowedStyles"
+                  :key="s.id"
+                  :style="{
+                    padding: '18px',
+                    borderRadius: '12px',
+                    border: '1px solid #e5e7eb',
+                    background: '#fff',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                    opacity: 0.65
+                  }"
+                >
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                      <div style="font-size: 15px; font-weight: 600; color: #111827;">{{ s.name }}</div>
+                      <span v-if="s.scene" style="font-size: 11px; padding: 2px 8px; background: #f3f4f6; color: #6b7280; border-radius: 4px;">{{ s.scene.split(',').join('、') }}</span>
+                    </div>
+                  </div>
+                  <div style="font-size: 13px; color: #6b7280; line-height: 1.5; margin-bottom: 12px;">
+                    {{ s.desc || '适用于 ' + (s.scene ? s.scene.split(',').join('、') : '通用') + ' 场景的创作样式' }}
+                  </div>
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <button
+                      @click.stop="openPreview(s)"
+                      style="padding: 5px 12px; font-size: 12px; border-radius: 6px; border: 1px solid #e5e7eb; background: #fff; color: #374151; cursor: pointer; font-weight: 500;"
+                    >预览</button>
+                    <span style="font-size: 11px; padding: 2px 8px; background: #fef2f2; color: #b91c1c; border-radius: 4px; font-weight: 500; white-space: nowrap;">{{ plan?.name || '当前权益' }}不包含</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </Tabs.TabPane>
 
@@ -349,39 +389,39 @@ onMounted(() => {
 
         <Tabs.TabPane key="email" tab="邮件订阅">
           <div style="max-width: 400px; display: flex; flex-direction: column; gap: 16px;">
-            <div v-if="emailForm.canSetEmail !== 1" style="padding: 12px 16px; background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; font-size: 13px; color: #92400e;">
-              您暂无权限设置邮箱订阅文章，请联系管理员开通
+            <div v-if="!canEmailPush" style="padding: 12px 16px; background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; font-size: 13px; color: #92400e;">
+              您当前的权益暂不支持邮件每日推送
             </div>
             <div style="display: flex; flex-direction: column; gap: 6px;">
               <label style="font-size: 13px; font-weight: 500; color: #374151;">接收邮箱</label>
               <input
-                v-model="emailForm.email"
+                v-model="emailConfig.email"
                 type="email"
                 placeholder="请输入接收文章的邮箱地址"
-                :disabled="emailForm.canSetEmail !== 1"
+                :disabled="!canEmailPush"
                 style="padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; outline: none;"
               />
             </div>
             <div style="display: flex; align-items: center; gap: 12px;">
               <label style="font-size: 13px; font-weight: 500; color: #374151;">接收每日推荐文章</label>
               <Switch
-                v-model:checked="emailForm.emailReceive"
-                :disabled="emailForm.canSetEmail !== 1"
+                v-model:checked="emailConfig.emailReceive"
+                :disabled="!canEmailPush"
                 :checkedValue="1"
                 :unCheckedValue="0"
               />
             </div>
             <div style="display: flex; gap: 12px;">
               <button
-                @click="saveEmailConfig"
-                :disabled="emailLoading || emailForm.canSetEmail !== 1"
+                @click="handleSaveEmailConfig"
+                :disabled="emailLoading || !canEmailPush"
                 style="padding: 12px 24px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;"
               >
                 {{ emailLoading ? '保存中...' : '保存配置' }}
               </button>
               <button
                 @click="handleSendTestEmail"
-                :disabled="testEmailLoading || emailForm.canSetEmail !== 1 || !emailForm.email"
+                :disabled="testEmailLoading || !canEmailPush || !emailConfig.email"
                 style="padding: 12px 24px; background: #fff; color: #2563eb; border: 1px solid #2563eb; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;"
               >
                 {{ testEmailLoading ? '发送中...' : '发送测试邮件' }}

@@ -37,6 +37,9 @@ public interface CreationRecordMapper {
     @Update("UPDATE tu_creation_record SET reviewed = 1 WHERE id = #{id}")
     int markReviewed(String id);
 
+    @Select("SELECT COUNT(*) FROM tu_creation_record WHERE user_id = #{userId} AND DATE(created_at) = #{date}")
+    int countByUserIdAndDate(@Param("userId") String userId, @Param("date") String date);
+
     @Delete("DELETE FROM tu_creation_record WHERE id = #{id}")
     int delete(String id);
 }

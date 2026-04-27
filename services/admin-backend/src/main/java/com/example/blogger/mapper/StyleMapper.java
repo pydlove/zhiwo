@@ -12,6 +12,9 @@ public interface StyleMapper {
     @Select("SELECT * FROM tu_style WHERE id = #{id} AND is_deleted = 0")
     Style findById(String id);
 
+    @Select("SELECT * FROM tu_style WHERE name = #{name} AND is_deleted = 0 LIMIT 1")
+    Style findByName(String name);
+
     @Select("SELECT * FROM tu_style WHERE is_default = 1 AND is_deleted = 0 LIMIT 1")
     Style findDefault();
 

@@ -116,6 +116,8 @@ CREATE TABLE ta_user (
     role VARCHAR(50) DEFAULT '',
     can_set_email TINYINT DEFAULT 0 COMMENT '0=不允许, 1=允许设置邮箱接收文章',
     email_receive TINYINT DEFAULT 0 COMMENT '0=不接收, 1=接收邮件推送',
+    invite_code VARCHAR(20) NULL COMMENT '用户邀请码，唯一',
+    invited_by VARCHAR(64) NULL COMMENT '邀请人用户ID',
     is_deleted TINYINT DEFAULT 0 COMMENT '0=正常, 1=已删除',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP

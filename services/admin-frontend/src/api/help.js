@@ -18,3 +18,7 @@ export function saveHelp(data) {
 export function deleteHelp(id) {
   return request.delete('/helps/' + id)
 }
+
+export function sendHelpEmail(helpId, userIds) {
+  return request.post('/helps/' + helpId + '/send-email', { userIds })
+}

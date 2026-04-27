@@ -1,8 +1,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, message } from 'ant-design-vue'
-import { listHelps, saveHelp, deleteHelp } from '../api/help.js'
+import { listHelps, saveHelp, deleteHelp, sendHelpEmail } from '../api/help.js'
 import { listHelpCategories, saveHelpCategory, deleteHelpCategory } from '../api/helpCategory.js'
+import { listUsers } from '../api/user.js'
 import '@wangeditor/editor/dist/css/style.css'
 import { Editor, Toolbar } from '@wangeditor/editor-for-vue'
 import mammoth from 'mammoth'
@@ -29,7 +30,7 @@ const columns = [
   { title: '排序', dataIndex: 'sortOrder', key: 'sortOrder', width: 80 },
   { title: '状态', key: 'status', width: 100 },
   { title: '更新时间', dataIndex: 'updateTime', key: 'updateTime', width: 150 },
-  { title: '操作', key: 'action', width: 220 },
+  { title: '操作', key: 'action', width: 280 },
 ]
 
 const modalOpen = ref(false)
@@ -128,14 +129,44 @@ function triggerWordImport() {
 
 async function convertDocxToHtml(arrayBuffer) {
   const zip = await JSZip.loadAsync(arrayBuffer)
-  const xmlStr = await zip.file('word/document.xml').async('string')
-  const parser = new DOMParser()
-  const xmlDoc = parser.parseFromString(xmlStr, 'application/xml')
-  const paragraphs = xmlDoc.getElementsByTagName('w:p')
-  let html = ''
 
-  for (let i = 0; i < paragraphs.length; i++) {
-    const p = paragraphs[i]
+  // 1. Load image relationships
+  const relsPath = 'word/_rels/document.xml.rels'
+  const relsFile = zip.file(relsPath)
+  const imageMap = {}
+  if (relsFile) {
+    const relsStr = await relsFile.async('string')
+    const relsParser = new DOMParser()
+    const relsDoc = relsParser.parseFromString(relsStr, 'application/xml')
+    const rels = relsDoc.getElementsByTagName('Relationship')
+    for (let i = 0; i < rels.length; i++) {
+      const r = rels[i]
+      const id = r.getAttribute('Id')
+      const target = r.getAttribute('Target')
+      const type = r.getAttribute('Type')
+      if (type && type.includes('image') && id && target) {
+        imageMap[id] = target
+      }
+    }
+  }
+
+  // 2. Helper: extract image as base64
+  async function getImageBase64(rId) {
+    const target = imageMap[rId]
+    if (!target) return null
+    const imagePath = target.startsWith('media/') ? `word/${target}` : `word/media/${target}`
+    const imgFile = zip.file(imagePath)
+    if (!imgFile) return null
+    const blob = await imgFile.async('blob')
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result)
+      reader.readAsDataURL(blob)
+    })
+  }
+
+  // 3. Helper: parse a single paragraph into HTML
+  async function parseParagraph(p) {
     let pStyle = ''
     let headingTag = 'p'
     const pPr = p.getElementsByTagName('w:pPr')[0]
@@ -157,40 +188,81 @@ async function convertDocxToHtml(arrayBuffer) {
     }
 
     let pHtml = ''
-    const runs = p.getElementsByTagName('w:r')
-    for (let j = 0; j < runs.length; j++) {
-      const r = runs[j]
-      const rPr = r.getElementsByTagName('w:rPr')[0]
-      let tag = 'span'
-      let style = ''
+    const children = p.childNodes
+    for (let j = 0; j < children.length; j++) {
+      const node = children[j]
+      if (node.nodeName === 'w:r') {
+        const r = node
+        const rPr = r.getElementsByTagName('w:rPr')[0]
+        let tag = 'span'
+        let style = ''
 
-      if (rPr) {
-        if (rPr.getElementsByTagName('w:b').length) tag = 'strong'
-        if (rPr.getElementsByTagName('w:i').length) {
-          tag = tag === 'strong' ? 'strong' : 'em'
-          if (tag === 'strong') style += 'font-style: italic;'
+        if (rPr) {
+          if (rPr.getElementsByTagName('w:b').length) tag = 'strong'
+          if (rPr.getElementsByTagName('w:i').length) {
+            tag = tag === 'strong' ? 'strong' : 'em'
+            if (tag === 'strong') style += 'font-style: italic;'
+          }
+          if (rPr.getElementsByTagName('w:u').length) style += 'text-decoration: underline;'
+          if (rPr.getElementsByTagName('w:strike').length) style += 'text-decoration: line-through;'
+
+          const color = rPr.getElementsByTagName('w:color')[0]
+          if (color) {
+            const val = color.getAttribute('w:val')
+            if (val) style += `color: #${val};`
+          }
         }
-        if (rPr.getElementsByTagName('w:u').length) style += 'text-decoration: underline;'
-        if (rPr.getElementsByTagName('w:strike').length) style += 'text-decoration: line-through;'
 
-        const color = rPr.getElementsByTagName('w:color')[0]
-        if (color) {
-          const val = color.getAttribute('w:val')
-          if (val) style += `color: #${val};`
+        // Check for inline image in this run
+        const drawing = r.getElementsByTagName('w:drawing')[0]
+        const pict = r.getElementsByTagName('w:pict')[0]
+        if (drawing || pict) {
+          const imgNode = drawing || pict
+          const blips = imgNode.getElementsByTagName('a:blip')
+          for (let b = 0; b < blips.length; b++) {
+            const embed = blips[b].getAttribute('r:embed')
+            if (embed) {
+              const dataUrl = await getImageBase64(embed)
+              if (dataUrl) {
+                pHtml += `<img src="${dataUrl}" style="max-width:100%;height:auto;display:block;margin:12px 0;" />`
+              }
+            }
+          }
+          // Also check for v:imagedata (older format)
+          const vImages = imgNode.getElementsByTagName('v:imagedata')
+          for (let b = 0; b < vImages.length; b++) {
+            const embed = vImages[b].getAttribute('r:id')
+            if (embed) {
+              const dataUrl = await getImageBase64(embed)
+              if (dataUrl) {
+                pHtml += `<img src="${dataUrl}" style="max-width:100%;height:auto;display:block;margin:12px 0;" />`
+              }
+            }
+          }
         }
-      }
 
-      const texts = r.getElementsByTagName('w:t')
-      let text = ''
-      for (let k = 0; k < texts.length; k++) text += texts[k].textContent
-      if (text) {
-        const styleAttr = style ? ` style="${style}"` : ''
-        pHtml += `<${tag}${styleAttr}>${text}</${tag}>`
+        const texts = r.getElementsByTagName('w:t')
+        let text = ''
+        for (let k = 0; k < texts.length; k++) text += texts[k].textContent
+        if (text) {
+          const styleAttr = style ? ` style="${style}"` : ''
+          pHtml += `<${tag}${styleAttr}>${text}</${tag}>`
+        }
       }
     }
 
     const pStyleAttr = pStyle ? ` style="${pStyle}"` : ''
-    html += `<${headingTag}${pStyleAttr}>${pHtml}</${headingTag}>`
+    return `<${headingTag}${pStyleAttr}>${pHtml}</${headingTag}>`
+  }
+
+  // 4. Parse document.xml
+  const xmlStr = await zip.file('word/document.xml').async('string')
+  const parser = new DOMParser()
+  const xmlDoc = parser.parseFromString(xmlStr, 'application/xml')
+  const paragraphs = xmlDoc.getElementsByTagName('w:p')
+  let html = ''
+  for (let i = 0; i < paragraphs.length; i++) {
+    html += await parseParagraph(paragraphs[i])
   }
   return html
 }
@@ -291,6 +363,55 @@ function closePreview() {
   previewRecord.value = null
 }
 
+// Email push
+const emailModalOpen = ref(false)
+const emailHelpRecord = ref(null)
+const selectedUserIds = ref([])
+const allUsers = ref([])
+const emailSending = ref(false)
+
+async function openEmailModal(record) {
+  emailHelpRecord.value = record
+  selectedUserIds.value = []
+  emailModalOpen.value = true
+  try {
+    const userList = await listUsers()
+    allUsers.value = (userList || [])
+      .filter(u => u.status === 1 && u.email)
+      .map(u => ({ id: u.id, username: u.username, email: u.email }))
+  } catch (e) {
+    message.error('加载用户列表失败')
+  }
+}
+
+function closeEmailModal() {
+  emailModalOpen.value = false
+  emailHelpRecord.value = null
+  selectedUserIds.value = []
+}
+
+async function handleSendEmail() {
+  if (selectedUserIds.value.length === 0) {
+    message.warning('请选择至少一个用户')
+    return
+  }
+  emailSending.value = true
+  try {
+    const result = await sendHelpEmail(emailHelpRecord.value.id, selectedUserIds.value)
+    const { success = 0, failed = 0 } = result
+    if (failed === 0) {
+      message.success(`推送成功，共发送 ${success} 封邮件`)
+    } else {
+      message.success(`发送完成，成功 ${success} 封，失败 ${failed} 封`)
+    }
+    closeEmailModal()
+  } catch (e) {
+    message.error(e?.message || '推送失败')
+  } finally {
+    emailSending.value = false
+  }
+}
+
 // Category management
 const categoryModalOpen = ref(false)
 const categoryForm = ref({ name: '', color: 'blue', sortOrder: 1 })
@@ -379,6 +500,7 @@ onMounted(() => {
         <template v-if="column.key === 'action'">
           <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
           <a style="margin-right: 12px;" @click="openPreview(record)">预览</a>
+          <a style="margin-right: 12px; color: #722ed1;" @click="openEmailModal(record)">推送邮件</a>
           <a style="margin-right: 12px;" :style="{ color: record.status === '已上架' ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
             {{ record.status === '已上架' ? '下架' : '上架' }}
           </a>
@@ -431,6 +553,34 @@ onMounted(() => {
       <Tag :color="categoryColorMap[previewRecord.category] || 'default'" style="margin-bottom: 16px;">{{ previewRecord.category }}</Tag>
       <div class="help-preview-content" style="font-size: 15px; line-height: 1.8; color: #374151; overflow-wrap: break-word;" v-html="previewRecord.content"></div>
     </div>
+  </Modal>
+
+  <!-- Email Push Modal -->
+  <Modal
+    v-model:open="emailModalOpen"
+    :title="emailHelpRecord ? `推送帮助文档：${emailHelpRecord.title}` : '推送帮助文档'"
+    :mask-closable="false"
+    :confirm-loading="emailSending"
+    @ok="handleSendEmail"
+    @cancel="closeEmailModal"
+    :width="560"
+  >
+    <Form layout="vertical" style="margin-top: 12px;">
+      <Form.Item label="选择用户" required>
+        <Select
+          v-model:value="selectedUserIds"
+          mode="multiple"
+          placeholder="请选择要推送的用户（仅显示有邮箱的活跃用户）"
+          style="width: 100%;"
+          :max-tag-count="3"
+        >
+          <Select.Option v-for="u in allUsers" :key="u.id" :value="u.id">{{ u.username }}（{{ u.email }}）</Select.Option>
+        </Select>
+      </Form.Item>
+      <div v-if="emailHelpRecord" style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 12px; font-size: 13px; color: #52c41a;">
+        即将推送文档「{{ emailHelpRecord.title }}」给 {{ selectedUserIds.length }} 位用户
+      </div>
+    </Form>
   </Modal>
 
   <!-- Category Management Modal -->

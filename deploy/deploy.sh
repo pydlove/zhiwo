@@ -143,15 +143,18 @@ eval "$SSH_CMD $REMOTE_HOST 'chmod 600 /root/app/gzh/.env'"
 log_info "上传启停脚本..."
 eval "$SCP_CMD $DEPLOY_DIR/scripts/user-service-start.sh $REMOTE_HOST:/root/app/gzh/scripts/"
 eval "$SCP_CMD $DEPLOY_DIR/scripts/user-service-stop.sh $REMOTE_HOST:/root/app/gzh/scripts/"
+eval "$SCP_CMD $DEPLOY_DIR/scripts/user-service-restart.sh $REMOTE_HOST:/root/app/gzh/scripts/"
 eval "$SCP_CMD $DEPLOY_DIR/scripts/admin-service-start.sh $REMOTE_HOST:/root/app/gzh/scripts/"
 eval "$SCP_CMD $DEPLOY_DIR/scripts/admin-service-stop.sh $REMOTE_HOST:/root/app/gzh/scripts/"
+eval "$SCP_CMD $DEPLOY_DIR/scripts/admin-service-restart.sh $REMOTE_HOST:/root/app/gzh/scripts/"
 eval "$SCP_CMD $DEPLOY_DIR/scripts/start-all.sh $REMOTE_HOST:/root/app/gzh/scripts/"
 eval "$SCP_CMD $DEPLOY_DIR/scripts/stop-all.sh $REMOTE_HOST:/root/app/gzh/scripts/"
+eval "$SCP_CMD $DEPLOY_DIR/scripts/restart-all.sh $REMOTE_HOST:/root/app/gzh/scripts/"
 eval "$SCP_CMD $DEPLOY_DIR/scripts/status.sh $REMOTE_HOST:/root/app/gzh/scripts/"
 
 # 远程设置脚本权限并复制到服务目录
 log_info "设置脚本权限..."
-eval "$SSH_CMD $REMOTE_HOST 'chmod +x /root/app/gzh/scripts/*.sh && cp /root/app/gzh/scripts/user-service-*.sh /root/app/gzh/user-service/ && cp /root/app/gzh/scripts/admin-service-*.sh /root/app/gzh/admin-service/ && cp /root/app/gzh/scripts/start-all.sh /root/app/gzh/start-all.sh && cp /root/app/gzh/scripts/stop-all.sh /root/app/gzh/stop-all.sh && cp /root/app/gzh/scripts/status.sh /root/app/gzh/status.sh && chmod +x /root/app/gzh/start-all.sh /root/app/gzh/stop-all.sh /root/app/gzh/status.sh'"
+eval "$SSH_CMD $REMOTE_HOST 'chmod +x /root/app/gzh/scripts/*.sh && cp /root/app/gzh/scripts/user-service-*.sh /root/app/gzh/user-service/ && cp /root/app/gzh/scripts/admin-service-*.sh /root/app/gzh/admin-service/ && cp /root/app/gzh/scripts/start-all.sh /root/app/gzh/start-all.sh && cp /root/app/gzh/scripts/stop-all.sh /root/app/gzh/stop-all.sh && cp /root/app/gzh/scripts/restart-all.sh /root/app/gzh/restart-all.sh && cp /root/app/gzh/scripts/status.sh /root/app/gzh/status.sh && chmod +x /root/app/gzh/start-all.sh /root/app/gzh/stop-all.sh /root/app/gzh/restart-all.sh /root/app/gzh/status.sh'"
 
 # ============ 步骤6: 数据库迁移 ============
 log_info "上传数据库迁移脚本..."
@@ -163,11 +166,18 @@ eval "$SSH_CMD $REMOTE_HOST 'chmod +x /root/app/gzh/db/migrate.sh && cd /root/ap
 
 # ============ 步骤7: 停止旧服务 ============
 log_info "停止旧服务..."
-eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/user-service/user-service-stop.sh || true'"
-eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/admin-service/admin-service-stop.sh || true'"
+eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/user-service/user-service-stop.sh'"
+eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/admin-service/admin-service-stop.sh'"
 
 # 等待端口释放
 sleep 2
+
+# 再次检查端口是否还有残留，如果有则强制清理
+log_info "检查端口释放状态..."
+eval "$SSH_CMD $REMOTE_HOST 'lsof -t -i:8080 >/dev/null 2>&1 && { echo \"清理 admin 残留进程...\"; kill -9 \$(lsof -t -i:8080) 2>/dev/null; } || true'"
+eval "$SSH_CMD $REMOTE_HOST 'lsof -t -i:8082 >/dev/null 2>&1 && { echo \"清理 user 残留进程...\"; kill -9 \$(lsof -t -i:8082) 2>/dev/null; } || true'"
+
+sleep 1
 
 # ============ 步骤7: 启动新服务 ============
 log_info "启动用户端后端..."

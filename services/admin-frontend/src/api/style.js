@@ -14,3 +14,7 @@ export function saveStyle(data) {
 export function deleteStyle(id) {
   return request.delete('/styles/' + id)
 }
+
+export function exportStyles(data) {
+  return request.post('/styles/export', data)
+}

@@ -11,3 +11,20 @@ export function getUserTracks(userId) {
 export function removeUserTrack(userId, trackId) {
   return request.delete('/users/' + userId + '/tracks/' + trackId)
 }
+
+export function exportUsers(params) {
+  const query = new URLSearchParams()
+  if (params.keyword) query.append('keyword', params.keyword)
+  if (params.status !== undefined && params.status !== null) query.append('status', params.status)
+  return request.get('/users/export?' + query.toString(), {
+    responseType: 'blob'
+  })
+}
+
+export function importUsers(excelFile) {
+  const formData = new FormData()
+  formData.append('excel', excelFile)
+  return request.post('/users/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}

@@ -62,4 +62,44 @@ public class AdminAuthController {
         data.put("permissions", role != null ? role.getPermissions() : "[]");
         return Result.ok(data);
     }
+
+    @PostMapping("/change-password")
+    public Result<Void> changePassword(@RequestBody Map<String, String> req) {
+        String adminId = req.get("adminId");
+        String oldPassword = req.get("oldPassword");
+        String newPassword = req.get("newPassword");
+
+        if (adminId == null || adminId.isEmpty()) {
+            return Result.error("未登录");
+        }
+        if (oldPassword == null || oldPassword.isEmpty()) {
+            return Result.error("请输入当前密码");
+        }
+        if (newPassword == null || newPassword.isEmpty()) {
+            return Result.error("请输入新密码");
+        }
+        if (newPassword.length() < 6) {
+            return Result.error("新密码长度不能少于6位");
+        }
+
+        Admin admin = adminMapper.findById(adminId);
+        if (admin == null) {
+            return Result.error("管理员不存在");
+        }
+
+        String storedPassword = admin.getPassword();
+        boolean matched;
+        if (storedPassword != null && storedPassword.startsWith("$2a$")) {
+            matched = passwordEncoder.matches(oldPassword, storedPassword);
+        } else {
+            matched = oldPassword.equals(storedPassword);
+        }
+
+        if (!matched) {
+            return Result.error("当前密码错误");
+        }
+
+        adminMapper.updatePassword(adminId, passwordEncoder.encode(newPassword));
+        return Result.ok(null);
+    }
 }

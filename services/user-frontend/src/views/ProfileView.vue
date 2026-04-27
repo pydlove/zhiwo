@@ -4,9 +4,26 @@ import { Card, Tabs, Modal, message } from 'ant-design-vue'
 import { useViewport } from '../composables/useViewport.js'
 import { usePermissions } from '../composables/usePermissions.js'
 import { updateAvatar, updateUserTemplate, sendTestEmail } from '../api/user.js'
+import { changePassword as changePasswordApi } from '../api/auth.js'
 import { useEmailConfig } from '../composables/useEmailConfig.js'
 import { listStyles } from '../api/style.js'
 import { Switch } from 'ant-design-vue'
+import { CopyOutlined, CheckOutlined } from '@ant-design/icons-vue'
+
+function doCopy(text) {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.style.cssText = 'position:fixed;left:-9999px;top:0;'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  let success = false
+  try {
+    success = document.execCommand('copy')
+  } catch (e) {}
+  document.body.removeChild(textarea)
+  return success
+}
 
 const { isMobile } = useViewport()
 const { allowedTemplates, canEmailPush, plan } = usePermissions()
@@ -15,6 +32,18 @@ const activeTab = ref('template')
 
 const user = ref(JSON.parse(localStorage.getItem('user') || '{}'))
 const styles = ref([])
+const copied = ref(false)
+
+async function copyInviteCode() {
+  if (!user.value.inviteCode) return
+  if (doCopy(user.value.inviteCode)) {
+    copied.value = true
+    message.success('邀请码已复制')
+    setTimeout(() => { copied.value = false }, 2000)
+  } else {
+    message.error('复制失败，请手动复制')
+  }
+}
 
 const isExpired = computed(() => {
   const expire = user.value.expireDate
@@ -226,7 +255,7 @@ async function handleSendTestEmail() {
   }
 }
 
-function changePassword() {
+async function changePassword() {
   if (!passwordForm.value.oldPassword || !passwordForm.value.newPassword || !passwordForm.value.confirmPassword) {
     message.warning('请填写完整信息')
     return
@@ -235,14 +264,23 @@ function changePassword() {
     message.warning('两次输入的新密码不一致')
     return
   }
-  message.success('密码修改成功')
-  passwordForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+  try {
+    await changePasswordApi({
+      userId: user.value.id,
+      oldPassword: passwordForm.value.oldPassword,
+      newPassword: passwordForm.value.newPassword,
+    })
+    message.success('密码修改成功')
+    passwordForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+  } catch (e) {
+    message.error(e?.message || e?.response?.data?.msg || '修改失败')
+  }
 }
 
 onMounted(() => {
   user.value = JSON.parse(localStorage.getItem('user') || '{}')
   loadStyles()
-  loadEmailConfig()
+  loadEmailConfig(user.value.id)
 })
 </script>
 
@@ -269,6 +307,20 @@ onMounted(() => {
             <div style="font-size: 13px; color: #6b7280;">账号：{{ user.username || '-' }} · 注册时间：{{ user.createdAt ? user.createdAt.slice(0,10) : '-' }}</div>
           </div>
         </div>
+      </div>
+
+      <!-- 邀请码 -->
+      <div v-if="user.inviteCode" style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 10px; margin-bottom: 20px;">
+        <div style="font-size: 13px; color: #0369a1; font-weight: 500; white-space: nowrap;">我的邀请码</div>
+        <div style="font-family: monospace; font-size: 16px; font-weight: 600; color: #0284c7; letter-spacing: 2px; flex: 1;">{{ user.inviteCode }}</div>
+        <button
+          @click="copyInviteCode"
+          style="padding: 6px 14px; font-size: 12px; border-radius: 6px; border: 1px solid #7dd3fc; background: #fff; color: #0284c7; cursor: pointer; font-weight: 500; display: flex; align-items: center; gap: 4px;"
+        >
+          <CopyOutlined v-if="!copied" />
+          <CheckOutlined v-else />
+          {{ copied ? '已复制' : '复制' }}
+        </button>
       </div>
 
       <Tabs v-model:activeKey="activeTab">

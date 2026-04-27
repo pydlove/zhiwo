@@ -36,7 +36,7 @@ async function handleLogin() {
     <Card style="width: 360px; border-radius: 2px;">
       <div style="text-align: center; margin-bottom: 24px;">
         <div style="width: 48px; height: 48px; border-radius: 4px; background: #1890ff; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 600; margin: 0 auto 12px;">A</div>
-        <div style="font-size: 20px; font-weight: 500; color: #262626;">Aicloud 后台管理</div>
+        <div style="font-size: 20px; font-weight: 500; color: #262626;">知我公众号创作助手 后台管理</div>
       </div>
       <Form layout="vertical">
         <Form.Item label="管理员账号">

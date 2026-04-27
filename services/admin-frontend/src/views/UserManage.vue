@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Checkbox, Upload } from 'ant-design-vue'
-import { listUsers, getUserTracks, removeUserTrack } from '../api/user.js'
+import { listUsers, getUserTracks, removeUserTrack, exportUsers, importUsers } from '../api/user.js'
 import { listSubscriptionPosts, saveSubscriptionPost } from '../api/subscriptionPost.js'
 import { listTracks } from '../api/track.js'
 import { listCreations } from '../api/creation.js'
@@ -22,15 +22,16 @@ const allPlans = ref([])
 const columns = [
   { title: '用户名', dataIndex: 'username', key: 'username', width: 120 },
   { title: '联系方式', dataIndex: 'contact', key: 'contact', width: 150 },
-  { title: 'AI 日限额', dataIndex: 'aiUsageText', key: 'aiUsageText', width: 95 },
   { title: '可选赛道', dataIndex: 'trackLimitText', key: 'trackLimitText', width: 90 },
   { title: '可访问平台', dataIndex: 'platformLimitText', key: 'platformLimitText', width: 120 },
   { title: '状态', key: 'status', width: 75 },
   { title: '注册时间', dataIndex: 'registerTime', key: 'registerTime', width: 105 },
   { title: '会员套餐', dataIndex: 'membershipPlanName', key: 'membershipPlanName', width: 100 },
   { title: '到期时间', dataIndex: 'expireDate', key: 'expireDate', width: 105 },
+  { title: '默认样式', dataIndex: 'template', key: 'template', width: 100 },
+  { title: '邀请码', dataIndex: 'inviteCode', key: 'inviteCode', width: 110 },
   { title: '最近登录', dataIndex: 'lastLogin', key: 'lastLogin', width: 145 },
-  { title: '操作', key: 'action', width: 320 },
+  { title: '操作', key: 'action', width: 380 },
 ]
 
 const addModalOpen = ref(false)
@@ -47,8 +48,8 @@ const creationColumns = [
 ]
 const platformOptions = ['公众号', '今日头条', '百家号']
 
-const addForm = ref({ username: '', contactType: '手机号', contact: '', password: 'Abc123456', aiLimit: 50, trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined })
-const editForm = ref({ id: null, aiLimit: 50, trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', status: 1, remark: '', canSetEmail: 0, membershipPlanId: undefined })
+const addForm = ref({ username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined })
+const editForm = ref({ id: null, trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', status: 1, remark: '', canSetEmail: 0, membershipPlanId: undefined, template: '' })
 
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -82,6 +83,11 @@ const recommendUploading = ref(false)
 const previewMode = ref(false)
 const previewContent = ref('')
 const previewLoading = ref(false)
+
+// Import modal state
+const importModalOpen = ref(false)
+const importExcelFile = ref(null)
+const importLoading = ref(false)
 
 const selectedRecommendTrack = computed(() => {
   return recommendUserTracks.value.find(t => t.id === selectedRecommendTrackId.value) || null
@@ -233,16 +239,19 @@ async function saveRecommend() {
 
 async function loadData() {
   try {
-    const [uList, cList, sList, tList, pList] = await Promise.all([listUsers(), listCreations(), listSubscriptionPosts(), listTracks(), listMembershipPlans()])
+    const [uList, cList, sList, tList, pList, styleList] = await Promise.all([listUsers(), listCreations(), listSubscriptionPosts(), listTracks(), listMembershipPlans(), listStyles().catch(() => [])])
     allSubscriptionPosts.value = sList || []
     allTracks.value = tList || []
     allPlans.value = pList || []
+    allStyles.value = styleList || []
     const planMap = {}
     allPlans.value.forEach(p => { planMap[p.id] = p.name })
     const usageMap = {}
     ;(cList || []).forEach(c => {
       usageMap[c.userId] = (usageMap[c.userId] || 0) + 1
     })
+    const userNameMap = {}
+    uList.forEach(u => { userNameMap[u.id] = u.username })
     data.value = uList.map(u => ({
       ...u,
       contact: u.phone || u.email || u.wxId || '-',
@@ -250,11 +259,12 @@ async function loadData() {
       registerTime: u.createdAt ? u.createdAt.slice(0, 10) : '-',
       expireDate: u.expireDate || '-',
       lastLogin: u.lastLogin ? u.lastLogin.slice(0, 16).replace('T', ' ') : '-',
-      aiUsageText: `${usageMap[u.id] || 0}/${u.aiLimit || 0}`,
       trackLimitText: `${u.trackLimit || 0}`,
       platformLimitText: (u.platformLimit || '').split(/[,，]/).filter(Boolean).join('、') || '全部平台',
       membershipPlanName: planMap[u.membershipPlanId] || '-',
       trackIds: u.trackIds || [],
+      template: u.template || '-',
+      invitedByName: u.invitedBy ? (userNameMap[u.invitedBy] || u.invitedBy) : '-',
     }))
   } catch (e) {
     message.error('加载失败')
@@ -271,6 +281,69 @@ function handleReset() {
   statusFilter.value = undefined
   currentPage.value = 1
   loadData()
+}
+
+async function handleExport() {
+  try {
+    const status = statusFilter.value === '正常' ? 1 : statusFilter.value === '已禁用' ? 0 : undefined
+    const blob = await exportUsers({
+      keyword: search.value.trim() || undefined,
+      status: status,
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = '用户列表_' + new Date().toISOString().slice(0, 10) + '.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    message.success('导出成功')
+  } catch (e) {
+    message.error('导出失败')
+  }
+}
+
+function openImportModal() {
+  importModalOpen.value = true
+  importExcelFile.value = null
+}
+
+function handleImportFileChange(e) {
+  importExcelFile.value = e.target.files?.[0] || null
+}
+
+async function handleImport() {
+  if (!importExcelFile.value) {
+    message.warning('请选择 Excel 文件')
+    return
+  }
+  importLoading.value = true
+  try {
+    const result = await importUsers(importExcelFile.value)
+    message.success(`导入完成：成功 ${result.success || 0} 条，跳过 ${result.skip || 0} 条`)
+    importModalOpen.value = false
+    loadData()
+  } catch (e) {
+    message.error(e?.message || '导入失败')
+  } finally {
+    importLoading.value = false
+  }
+}
+
+function downloadTemplate() {
+  const headers = ['用户名', '手机号', '邮箱', '微信号', '可选赛道数', '可访问平台', '到期时间', '会员套餐', '默认样式', '状态', '备注']
+  const sample = ['示例用户', '13800138000', 'user@example.com', 'wxid_xxx', '3', '公众号,今日头条', '2026-12-31', '基础版', '基础风格', '正常', '']
+  const csvContent = [headers.join(','), sample.join(',')].join('\n')
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = '用户导入模板.csv'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
 function handlePlatformLimitChange(formRef, newVal) {
@@ -309,13 +382,13 @@ function computeExpireDate(planId, fallback) {
 
 function handleAdd() {
   addModalOpen.value = true
-  addForm.value = { username: '', contactType: '手机号', contact: '', password: 'Abc123456', aiLimit: 50, trackLimit: 0, platformLimit: [...platformOptions], expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined }
+  addForm.value = { username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: ['公众号'], template: '基础风格', expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined }
 }
 
 function handleEdit(record) {
   editModalOpen.value = true
   const rawPlatforms = record.platformLimit || ''
-  editForm.value = { id: record.id, aiLimit: record.aiLimit || 50, trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [...platformOptions], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0, membershipPlanId: record.membershipPlanId || undefined }
+  editForm.value = { id: record.id, trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : ['公众号'], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0, membershipPlanId: record.membershipPlanId || undefined, template: record.template || '', inviteCode: record.inviteCode || '', invitedBy: record.invitedBy || '' }
 }
 
 async function saveAdd() {
@@ -333,13 +406,13 @@ async function saveAdd() {
       username: addForm.value.username,
       password: addForm.value.password,
       status: 1,
-      aiLimit: parseInt(addForm.value.aiLimit, 10) || 0,
       trackLimit: parseInt(addForm.value.trackLimit, 10) || 0,
       platformLimit: (addForm.value.platformLimit || []).join(','),
       expireDate: addForm.value.expireDate,
       remark: addForm.value.remark,
       canSetEmail: addForm.value.canSetEmail ? 1 : 0,
       membershipPlanId: addForm.value.membershipPlanId || undefined,
+      template: addForm.value.template || '基础风格',
     }
     if (addForm.value.contactType === '手机号') payload.phone = addForm.value.contact
     else if (addForm.value.contactType === '邮箱') payload.email = addForm.value.contact
@@ -364,7 +437,6 @@ async function saveEdit() {
     return
   }
   const payload = {
-    aiLimit: parseInt(editForm.value.aiLimit, 10) || 0,
     trackLimit: parseInt(editForm.value.trackLimit, 10) || 0,
     platformLimit: (editForm.value.platformLimit || []).join(','),
     expireDate: editForm.value.expireDate,
@@ -372,6 +444,9 @@ async function saveEdit() {
     remark: editForm.value.remark,
     canSetEmail: editForm.value.canSetEmail ? 1 : 0,
     membershipPlanId: editForm.value.membershipPlanId || undefined,
+    template: editForm.value.template || undefined,
+    inviteCode: editForm.value.inviteCode || undefined,
+    invitedBy: editForm.value.invitedBy || undefined,
   }
   console.log('saveEdit payload:', payload, 'id:', editForm.value.id)
   try {
@@ -403,6 +478,47 @@ async function resetPassword(record) {
   } catch (e) {
     message.error('重置失败')
   }
+}
+
+function copyAccountInfo(record) {
+  const text = `【知我公众号创作助手】账号开通通知
+
+登录地址：https://www.mmshuo.tech/login
+用户名：${record.username || '-'}
+密码：Abc123456
+联系方式：${record.contact || '-'}
+套餐：${record.membershipPlanName || '-'}
+到期时间：${record.expireDate || '-'}
+可访问平台：${record.platformLimitText || '全部平台'}
+可选赛道数：${record.trackLimitText || '-'}
+
+首次登录后请尽快修改密码。`
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      message.success('开户信息已复制到剪贴板')
+    }).catch(() => {
+      fallbackCopy(text)
+    })
+  } else {
+    fallbackCopy(text)
+  }
+}
+
+function fallbackCopy(text) {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  try {
+    document.execCommand('copy')
+    message.success('开户信息已复制到剪贴板')
+  } catch {
+    message.error('复制失败，请手动复制')
+  }
+  document.body.removeChild(textarea)
 }
 
 async function viewCreations(record) {
@@ -476,7 +592,9 @@ onMounted(loadData)
       </Select>
       <Button type="primary" @click="handleSearch">查询</Button>
       <Button @click="handleReset">重置</Button>
-      <Button type="primary" style="margin-left: auto;" @click="handleAdd">+ 新增用户</Button>
+      <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
+      <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
+      <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
     </div>
 
     <Table :columns="columns" :data-source="paginatedData" :pagination="false" row-key="id">
@@ -487,6 +605,7 @@ onMounted(loadData)
         <template v-if="column.key === 'action'">
           <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
           <a style="margin-right: 12px;" @click="resetPassword(record)">重置密码</a>
+          <a style="margin-right: 12px;" @click="copyAccountInfo(record)">复制信息</a>
           <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
           <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
           <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
@@ -520,10 +639,7 @@ onMounted(loadData)
         <Input v-model:value="addForm.password" readonly />
         <div style="font-size: 12px; color: #999; margin-top: 4px;">系统将自动生成初始密码，用户首次登录后建议修改</div>
       </Form.Item>
-      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
-        <Form.Item label="每日 AI 生成限额" required>
-          <Input type="number" v-model:value="addForm.aiLimit" min="0" />
-        </Form.Item>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <Form.Item label="可选赛道数" required>
           <Input type="number" v-model:value="addForm.trackLimit" min="0" />
         </Form.Item>
@@ -536,7 +652,7 @@ onMounted(loadData)
           <Select.Option v-for="p in allPlans" :key="p.id" :value="p.id">{{ p.name }}</Select.Option>
         </Select>
       </Form.Item>
-      <div style="font-size: 12px; color: #999; margin-top: -8px; margin-bottom: 16px;">每日限额包含标题、大纲、全文等所有 AI 生成调用；0 表示不限额。可选赛道数 0 表示不限制。选择套餐后会自动计算到期时间</div>
+      <div style="font-size: 12px; color: #999; margin-top: -8px; margin-bottom: 16px;">可选赛道数 0 表示不限制。选择套餐后会自动计算到期时间</div>
       <Form.Item label="可访问平台" required>
         <Checkbox.Group :value="addForm.platformLimit" :options="platformOptions" @change="(val) => handlePlatformLimitChange(addForm, val)" />
       </Form.Item>
@@ -557,10 +673,18 @@ onMounted(loadData)
       <Form.Item label="联系方式">
         <Input :value="data.find(d => d.id === editForm.id)?.contact" disabled />
       </Form.Item>
-      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
-        <Form.Item label="每日 AI 生成限额" required>
-          <Input type="number" v-model:value="editForm.aiLimit" min="0" />
+      <Form.Item label="用户邮箱">
+        <Input :value="data.find(d => d.id === editForm.id)?.email || '未设置'" disabled />
+      </Form.Item>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <Form.Item label="邀请码">
+          <Input :value="editForm.inviteCode || '自动生成中'" disabled />
         </Form.Item>
+        <Form.Item label="邀请人">
+          <Input :value="data.find(d => d.id === editForm.id)?.invitedByName || '无'" disabled />
+        </Form.Item>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <Form.Item label="可选赛道数" required>
           <Input type="number" v-model:value="editForm.trackLimit" min="0" />
         </Form.Item>
@@ -573,9 +697,15 @@ onMounted(loadData)
           <Select.Option v-for="p in allPlans" :key="p.id" :value="p.id">{{ p.name }}</Select.Option>
         </Select>
       </Form.Item>
-      <div style="font-size: 12px; color: #999; margin-top: -8px; margin-bottom: 16px;">0 表示不限额或不限制赛道数。选择套餐后会自动计算到期时间</div>
+      <div style="font-size: 12px; color: #999; margin-top: -8px; margin-bottom: 16px;">0 表示不限制赛道数。选择套餐后会自动计算到期时间</div>
       <Form.Item label="可访问平台" required>
         <Checkbox.Group :value="editForm.platformLimit" :options="platformOptions" @change="(val) => handlePlatformLimitChange(editForm, val)" />
+      </Form.Item>
+      <Form.Item label="默认样式">
+        <Select v-model:value="editForm.template" placeholder="请选择默认样式" allow-clear style="width: 240px;">
+          <Select.Option v-for="s in allStyles" :key="s.id" :value="s.name">{{ s.name }}</Select.Option>
+        </Select>
+        <div style="font-size: 12px; color: #999; margin-top: 4px;">用户在创作文章时使用的默认排版风格</div>
       </Form.Item>
       <Form.Item label="功能权限">
         <Checkbox v-model:checked="editForm.canSetEmail" :true-value="1" :false-value="0">允许设置邮箱接收文章</Checkbox>
@@ -759,5 +889,34 @@ onMounted(loadData)
         </div>
       </div>
     </div>
+  </Modal>
+
+  <!-- Import Modal -->
+  <Modal
+    v-model:open="importModalOpen"
+    title="批量导入用户"
+    :mask-closable="false"
+    :confirm-loading="importLoading"
+    @ok="handleImport"
+    :width="560"
+  >
+    <Form layout="vertical" style="margin-top: 12px;">
+      <div style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 12px; font-size: 13px; color: #52c41a; margin-bottom: 16px;">
+        <div style="font-weight: 600; margin-bottom: 8px;">导入说明</div>
+        <div>1. 下载模板，按格式填写用户信息</div>
+        <div>2. Excel 列顺序：用户名 | 手机号 | 邮箱 | 微信号 | 可选赛道数 | 可访问平台 | 到期时间 | 会员套餐 | 默认样式 | 状态 | 备注</div>
+        <div>3. 用户名重复时会覆盖更新该用户，不重复则新增</div>
+        <div>4. 新增用户初始密码为 Abc123456</div>
+      </div>
+      <Button size="small" @click="downloadTemplate">下载导入模板</Button>
+      <Form.Item label="Excel 文件" required style="margin-top: 16px;">
+        <input
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          style="display: block; margin-top: 8px;"
+          @change="handleImportFileChange"
+        />
+      </Form.Item>
+    </Form>
   </Modal>
 </template>

@@ -18,7 +18,7 @@ const activeKey = computed(() => route.path)
 const menuOpen = ref(false)
 const mobileMenuOpen = ref(false)
 
-const systemName = ref('Aicloud')
+const systemName = ref('知我公众号创作助手')
 const logoUrl = ref('')
 
 const platforms = platformStore.platforms
@@ -26,7 +26,6 @@ const platforms = platformStore.platforms
 const navs = [
   { key: '/app/home', label: '首页' },
   { key: '/app/create', label: '订阅中心' },
-  { key: '/app/help', label: '帮助文档' },
   { key: '/app/tips', label: '创作技巧' },
 ]
 
@@ -130,7 +129,7 @@ async function loadConfigs() {
   try {
     const data = await getConfigs()
     if (data) {
-      systemName.value = data.systemName || 'Aicloud'
+      systemName.value = data.systemName || '知我公众号创作助手'
       logoUrl.value = data.logoUrl || ''
     }
   } catch (e) {
@@ -231,27 +230,27 @@ async function loadConfigs() {
     </nav>
 
     <!-- Mobile Nav -->
-    <nav v-else style="background: #fff; border-bottom: 1px solid #e5e7eb; padding: 0 16px; height: 52px; display: flex; align-items: center; justify-content: space-between;">
-      <div style="font-size: 17px; font-weight: 700; color: #111827; display: flex; align-items: center; gap: 8px; cursor: pointer;" @click="navTo('/app/home')">
-        <div style="width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 700; overflow: hidden;">
+    <nav v-else style="background: #fff; border-bottom: 1px solid #e5e7eb; padding: 0 12px; height: 52px; display: flex; align-items: center; justify-content: space-between;">
+      <div style="font-size: 16px; font-weight: 700; color: #111827; display: flex; align-items: center; gap: 6px; cursor: pointer; flex: 1; min-width: 0;" @click="navTo('/app/home')">
+        <div style="width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 700; overflow: hidden; flex-shrink: 0;">
           <img v-if="logoUrl" :src="logoUrl" style="width: 100%; height: 100%; object-fit: cover;">
           <span v-else>AI</span>
         </div>
-        {{ systemName }}
+        <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ systemName }}</span>
       </div>
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <div style="display: flex; background: #f3f4f6; border-radius: 6px; padding: 2px; gap: 2px;">
+      <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+        <div style="display: flex; background: #f3f4f6; border-radius: 6px; padding: 2px; gap: 2px; overflow-x: auto; max-width: 130px; scrollbar-width: none;">
           <span
             v-for="p in platforms"
             :key="p"
             @click="handlePlatformClick(p)"
-            style="padding: 3px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; font-weight: 500; transition: all 0.15s;"
+            style="padding: 3px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; font-weight: 500; transition: all 0.15s; white-space: nowrap; flex-shrink: 0;"
             :style="platformStore.current === p
               ? { background: '#fff', color: '#2563eb', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }
               : { color: '#6b7280' }"
           >{{ p }}</span>
         </div>
-        <div @click.stop="mobileMenuOpen = !mobileMenuOpen" style="width: 32px; height: 32px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer;">
+        <div @click.stop="mobileMenuOpen = !mobileMenuOpen" style="width: 32px; height: 32px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer; flex-shrink: 0;">
           <span style="display: block; width: 18px; height: 2px; background: #374151; border-radius: 1px; transition: all 0.2s;" :style="mobileMenuOpen ? { transform: 'rotate(45deg) translate(4px, 4px)' } : {}"></span>
           <span style="display: block; width: 18px; height: 2px; background: #374151; border-radius: 1px; transition: all 0.2s;" :style="mobileMenuOpen ? { opacity: 0 } : {}"></span>
           <span style="display: block; width: 18px; height: 2px; background: #374151; border-radius: 1px; transition: all 0.2s;" :style="mobileMenuOpen ? { transform: 'rotate(-45deg) translate(4px, -4px)' } : {}"></span>

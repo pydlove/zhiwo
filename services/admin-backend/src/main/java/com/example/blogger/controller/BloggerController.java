@@ -227,6 +227,83 @@ public class BloggerController {
         dir.delete();
     }
 
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> exportBloggers(
+            @RequestParam(required = false) String trackId,
+            @RequestParam(required = false) String platform,
+            @RequestParam(required = false) String keyword) {
+        try {
+            List<Blogger> bloggers;
+            if (trackId != null && !trackId.isEmpty()) {
+                bloggers = bloggerService.listByTrack(trackId);
+            } else {
+                bloggers = bloggerService.listAll();
+            }
+
+            // 过滤
+            List<Blogger> filtered = new ArrayList<>();
+            for (Blogger b : bloggers) {
+                if (platform != null && !platform.isEmpty()) {
+                    if (!platform.equals(b.getPlatform())) continue;
+                }
+                if (keyword != null && !keyword.isEmpty()) {
+                    String name = b.getName() != null ? b.getName() : "";
+                    if (!name.contains(keyword)) continue;
+                }
+                filtered.add(b);
+            }
+
+            // 查询赛道名称映射
+            Map<String, String> trackNameMap = new HashMap<>();
+            for (Blogger b : filtered) {
+                String tid = b.getTrackId();
+                if (tid != null && !tid.isEmpty() && !trackNameMap.containsKey(tid)) {
+                    Track t = trackMapper.findById(tid);
+                    trackNameMap.put(tid, t != null ? t.getName() : tid);
+                }
+            }
+
+            Workbook wb = new XSSFWorkbook();
+            Sheet sheet = wb.createSheet("博主列表");
+
+            Row header = sheet.createRow(0);
+            String[] cols = {"name", "tagline", "platform", "track", "link", "avatarFileName"};
+            for (int i = 0; i < cols.length; i++) {
+                Cell cell = header.createCell(i);
+                cell.setCellValue(cols[i]);
+            }
+
+            for (int i = 0; i < filtered.size(); i++) {
+                Blogger b = filtered.get(i);
+                Row row = sheet.createRow(i + 1);
+                row.createCell(0).setCellValue(b.getName() != null ? b.getName() : "");
+                row.createCell(1).setCellValue(b.getTagline() != null ? b.getTagline() : "");
+                row.createCell(2).setCellValue(b.getPlatform() != null ? b.getPlatform() : "");
+                row.createCell(3).setCellValue(trackNameMap.getOrDefault(b.getTrackId(), ""));
+                row.createCell(4).setCellValue(b.getLink() != null ? b.getLink() : "");
+                String avatar = b.getAvatar() != null ? b.getAvatar() : "";
+                row.createCell(5).setCellValue(avatar);
+            }
+
+            for (int i = 0; i < cols.length; i++) {
+                sheet.setColumnWidth(i, 20 * 256);
+            }
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            wb.write(out);
+            wb.close();
+
+            String fileName = "blogger_export_" + System.currentTimeMillis() + ".xlsx";
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + fileName)
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(out.toByteArray());
+
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
     @PostMapping("/parse-export")
     public ResponseEntity<byte[]> parseAndExport(
             @RequestParam String text,
@@ -263,7 +340,7 @@ public class BloggerController {
             }
 
             for (int i = 0; i < cols.length; i++) {
-                sheet.autoSizeColumn(i);
+                sheet.setColumnWidth(i, 20 * 256);
             }
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();

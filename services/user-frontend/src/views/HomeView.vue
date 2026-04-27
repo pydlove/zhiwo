@@ -392,7 +392,7 @@ onMounted(async () => {
     </div>
 
     <div style="text-align: center; padding: 32px; font-size: 13px; color: #9ca3af; margin-top: 24px;">
-      © 2026 Aicloud · 让每个人都能轻松运营公众号
+      © 2026 知我公众号创作助手 · 让每个人都能轻松运营公众号
     </div>
   </div>
 </template>

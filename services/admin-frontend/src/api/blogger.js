@@ -29,3 +29,13 @@ export function importBloggers(excelFile, zipFile) {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
 }
+
+export function exportBloggers(params) {
+  const query = new URLSearchParams()
+  if (params.trackId) query.append('trackId', params.trackId)
+  if (params.platform) query.append('platform', params.platform)
+  if (params.keyword) query.append('keyword', params.keyword)
+  return request.get('/bloggers/export?' + query.toString(), {
+    responseType: 'blob'
+  })
+}

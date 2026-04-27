@@ -23,7 +23,7 @@ public interface SubscriptionPostMapper {
     @SelectProvider(type = SqlProvider.class, method = "findByCondition")
     List<SubscriptionPost> findByCondition(Map<String, Object> params);
 
-    @Insert("INSERT INTO tu_subscription_post(id, user_id, track_id, title, description, file_url, file_name, status, is_deleted) VALUES(#{id}, #{userId}, #{trackId}, #{title}, #{description}, #{fileUrl}, #{fileName}, #{status}, 0)")
+    @Insert("INSERT INTO tu_subscription_post(id, user_id, track_id, title, description, file_url, file_name, status, used, is_deleted) VALUES(#{id}, #{userId}, #{trackId}, #{title}, #{description}, #{fileUrl}, #{fileName}, #{status}, #{used}, 0)")
     int insert(SubscriptionPost p);
 
     @Update("UPDATE tu_subscription_post SET user_id=#{userId}, track_id=#{trackId}, title=#{title}, description=#{description}, file_url=#{fileUrl}, file_name=#{fileName}, status=#{status} WHERE id=#{id}")

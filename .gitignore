@@ -33,7 +33,7 @@ services/*/.vscode/
 services/*/node_modules/
 
 # --- 日志 ---
-logs/
+docs/logs/
 *.log
 services/*/*.log
 

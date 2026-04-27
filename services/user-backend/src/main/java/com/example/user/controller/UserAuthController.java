@@ -8,6 +8,7 @@ import com.example.user.mapper.UserMapper;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -52,7 +53,7 @@ public class UserAuthController {
         }
 
         if (user.getStatus() == null || user.getStatus() != 1) {
-            return Result.error("账号已被禁用");
+            return Result.error("账号待审核，请联系客服");
         }
         userMapper.updateLastLogin(user.getId(), LocalDateTime.now());
         user.setLastLogin(LocalDateTime.now());
@@ -66,5 +67,95 @@ public class UserAuthController {
             }
         }
         return Result.ok(data);
+    }
+
+    @PostMapping("/register")
+    public Result<Map<String, Object>> register(@RequestBody Map<String, String> req) {
+        String username = req.get("username");
+        String password = req.get("password");
+        String inviteCode = req.get("inviteCode");
+
+        if (username == null || username.trim().isEmpty()) {
+            return Result.error("用户名不能为空");
+        }
+        if (password == null || password.isEmpty()) {
+            return Result.error("密码不能为空");
+        }
+        if (password.length() < 6) {
+            return Result.error("密码长度不能少于6位");
+        }
+
+        User existing = userMapper.findByUsername(username.trim());
+        if (existing != null) {
+            return Result.error("用户名已被注册");
+        }
+
+        User user = new User();
+        user.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
+        user.setUsername(username.trim());
+        user.setPassword(passwordEncoder.encode(password));
+        user.setStatus(0);
+        user.setAiLimit(50);
+        user.setTrackLimit(0);
+        user.setPlatformLimit("");
+        user.setExpireDate(LocalDate.now().plusYears(1));
+        user.setCanSetEmail(0);
+        user.setEmailReceive(0);
+        user.setCreatedAt(LocalDateTime.now());
+        user.setUpdatedAt(LocalDateTime.now());
+
+        if (inviteCode != null && !inviteCode.trim().isEmpty()) {
+            User inviter = userMapper.findByInviteCode(inviteCode.trim());
+            if (inviter != null) {
+                user.setInvitedBy(inviter.getId());
+            }
+        }
+
+        userMapper.insert(user);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("token", "user-token-" + user.getId());
+        data.put("user", user);
+        return Result.ok(data);
+    }
+
+    @PostMapping("/change-password")
+    public Result<Void> changePassword(@RequestBody Map<String, String> req) {
+        String userId = req.get("userId");
+        String oldPassword = req.get("oldPassword");
+        String newPassword = req.get("newPassword");
+
+        if (userId == null || userId.isEmpty()) {
+            return Result.error("用户未登录");
+        }
+        if (oldPassword == null || oldPassword.isEmpty()) {
+            return Result.error("请输入原密码");
+        }
+        if (newPassword == null || newPassword.isEmpty()) {
+            return Result.error("请输入新密码");
+        }
+        if (newPassword.length() < 6) {
+            return Result.error("新密码长度不能少于6位");
+        }
+
+        User user = userMapper.findById(userId);
+        if (user == null) {
+            return Result.error("用户不存在");
+        }
+
+        String storedPassword = user.getPassword();
+        boolean matched;
+        if (storedPassword != null && storedPassword.startsWith("$2a$")) {
+            matched = passwordEncoder.matches(oldPassword, storedPassword);
+        } else {
+            matched = oldPassword.equals(storedPassword);
+        }
+
+        if (!matched) {
+            return Result.error("原密码错误");
+        }
+
+        userMapper.updatePassword(userId, passwordEncoder.encode(newPassword));
+        return Result.ok(null);
     }
 }

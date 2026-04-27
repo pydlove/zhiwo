@@ -6,7 +6,7 @@ import { listTracks } from '../api/track.js'
 
 const apiKey = ref('sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
 const model = ref('moonshot-v1-8k')
-const systemName = ref('Aicloud')
+const systemName = ref('知我公众号创作助手')
 const logoUrl = ref('')
 const qrCodeUrl = ref('')
 const loading = ref(false)
@@ -65,7 +65,7 @@ async function loadConfig() {
   try {
     const data = await request.get('/configs')
     if (data) {
-      systemName.value = data.systemName || 'Aicloud'
+      systemName.value = data.systemName || '知我公众号创作助手'
       logoUrl.value = data.logoUrl || ''
       qrCodeUrl.value = data.qrCodeUrl || ''
       if (data.apiKey) apiKey.value = data.apiKey

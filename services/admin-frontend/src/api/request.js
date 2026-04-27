@@ -5,8 +5,20 @@ const instance = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+instance.interceptors.request.use((config) => {
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type']
+  }
+  return config
+})
+
 instance.interceptors.response.use(
   (res) => {
+    // Skip JSON code check for blob/arraybuffer responses (file downloads)
+    const contentType = res.headers['content-type'] || ''
+    if (contentType.includes('application/vnd.openxmlformats') || contentType.includes('application/octet-stream') || res.config.responseType === 'blob') {
+      return res.data
+    }
     if (res.data.code !== 200) {
       const msg = res.data.msg || '请求失败'
       // message.error(msg) // 可在需要时引入 ant-design-vue 的 message

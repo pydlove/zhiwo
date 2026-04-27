@@ -387,7 +387,7 @@ async function loadTracks() {
 }
 
 onMounted(() => {
-  Promise.all([loadTracks(), loadUserTracks(), loadEmailConfig(), loadRecommendedGuides()])
+  Promise.all([loadTracks(), loadUserTracks(), loadEmailConfig(user.value.id), loadRecommendedGuides()])
 })
 </script>
 

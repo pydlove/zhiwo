@@ -36,9 +36,9 @@ case "$ENV" in
     ;;
 esac
 
-MYSQL="mysql -h$DB_HOST -P$DB_PORT -u$DB_USER"
-[ -n "$DB_PASS" ] && MYSQL="$MYSQL -p$DB_PASS"
-MYSQL="$MYSQL $DB_NAME"
+# 使用 MYSQL_PWD 环境变量传递密码，避免命令行特殊字符问题和安全警告
+export MYSQL_PWD="$DB_PASS"
+MYSQL="mysql -h$DB_HOST -P$DB_PORT -u$DB_USER $DB_NAME"
 
 # Ensure _schema_version table exists
 echo "Ensuring _schema_version table exists..."
@@ -70,6 +70,9 @@ for file in "$SCRIPT_DIR"/migrations/V*.sql; do
     $MYSQL < "$file"
     RAN=$((RAN + 1))
 done
+
+# 清理环境变量
+unset MYSQL_PWD
 
 if [ "$RAN" -eq 0 ]; then
     echo "No pending migrations."

@@ -1,0 +1,59 @@
+package com.example.blogger.mapper;
+
+import com.example.blogger.entity.TitleRecommendation;
+import org.apache.ibatis.annotations.*;
+import java.time.LocalDate;
+import java.util.List;
+
+@Mapper
+public interface TitleRecommendationMapper {
+
+    @Insert("INSERT INTO tu_title_recommendation(id, title_library_id, user_id, platform, track_id, recommend_date, created_at) " +
+            "VALUES(#{id}, #{titleLibraryId}, #{userId}, #{platform}, #{trackId}, #{recommendDate}, NOW())")
+    int insert(TitleRecommendation recommendation);
+
+    @Select("SELECT r.*, u.username as userName, u.template as userTemplate " +
+            "FROM tu_title_recommendation r " +
+            "LEFT JOIN tu_user u ON r.user_id = u.id AND u.is_deleted = 0 " +
+            "WHERE r.title_library_id = #{titleLibraryId} " +
+            "ORDER BY r.recommend_date DESC, r.created_at DESC " +
+            "LIMIT 1")
+    TitleRecommendation findLatestByTitleId(String titleLibraryId);
+
+    @Select("SELECT COUNT(*) FROM tu_title_recommendation " +
+            "WHERE title_library_id = #{titleLibraryId} AND recommend_date = #{date}")
+    int countByTitleAndDate(@Param("titleLibraryId") String titleLibraryId, @Param("date") LocalDate date);
+
+    @Select("SELECT COUNT(*) FROM tu_title_recommendation " +
+            "WHERE user_id = #{userId} AND recommend_date = #{date}")
+    int countByUserAndDate(@Param("userId") String userId, @Param("date") LocalDate date);
+
+    @Select("<script>" +
+            "SELECT COUNT(*) FROM tu_title_recommendation " +
+            "WHERE user_id = #{userId} AND recommend_date = #{date} " +
+            "<if test=\"platform != null and platform != ''\">AND platform = #{platform}</if> " +
+            "<if test=\"platform == null or platform == ''\">AND (platform IS NULL OR platform = '')</if> " +
+            "<if test=\"trackId != null and trackId != ''\">AND track_id = #{trackId}</if> " +
+            "<if test=\"trackId == null or trackId == ''\">AND (track_id IS NULL OR track_id = '')</if> " +
+            "</script>")
+    int countByUserPlatformTrackDate(@Param("userId") String userId,
+                                     @Param("platform") String platform,
+                                     @Param("trackId") String trackId,
+                                     @Param("date") LocalDate date);
+
+    @Delete("DELETE FROM tu_title_recommendation WHERE title_library_id = #{titleLibraryId}")
+    int deleteByTitleId(String titleLibraryId);
+
+    @Select("SELECT r.*, u.username as userName, u.template as userTemplate " +
+            "FROM tu_title_recommendation r " +
+            "LEFT JOIN tu_user u ON r.user_id = u.id AND u.is_deleted = 0 " +
+            "WHERE (r.subscription_post_id IS NULL OR r.subscription_post_id = '') " +
+            "ORDER BY r.created_at DESC")
+    List<TitleRecommendation> findTodayRecommendationsWithoutPost(@Param("date") LocalDate date);
+
+    @Update("UPDATE tu_title_recommendation SET subscription_post_id = #{subscriptionPostId} WHERE id = #{id}")
+    int updateSubscriptionPostId(@Param("id") String id, @Param("subscriptionPostId") String subscriptionPostId);
+
+    @Update("UPDATE tu_title_recommendation SET subscription_post_id = NULL WHERE subscription_post_id = #{subscriptionPostId}")
+    int clearSubscriptionPostId(@Param("subscriptionPostId") String subscriptionPostId);
+}

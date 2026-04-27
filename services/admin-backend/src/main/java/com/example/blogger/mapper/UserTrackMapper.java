@@ -6,7 +6,7 @@ import java.util.List;
 
 @Mapper
 public interface UserTrackMapper {
-    @Select("SELECT * FROM tu_user_track WHERE user_id = #{userId} ORDER BY created_at DESC")
+    @Select("SELECT * FROM tu_user_track WHERE user_id = #{userId} ORDER BY created_at ASC")
     List<UserTrack> findByUserId(String userId);
 
     @Insert("INSERT INTO tu_user_track(user_id, track_id, created_at) VALUES(#{userId}, #{trackId}, NOW())")

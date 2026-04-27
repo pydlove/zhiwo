@@ -11,9 +11,12 @@ import TrackDetailView from '../views/TrackDetailView.vue'
 import TitleSelectView from '../views/TitleSelectView.vue'
 import ProfileView from '../views/ProfileView.vue'
 import LandingView from '../views/LandingView.vue'
+import AffiliateView from '../views/AffiliateView.vue'
 
 const routes = [
-  { path: '/', name: 'Landing', component: LandingView, meta: { title: '公众号创作助手' } },
+  { path: '/', name: 'Landing', component: LandingView, meta: { title: '知我公众号创作助手' } },
+  { path: '/affiliate', name: 'Affiliate', component: AffiliateView, meta: { title: '分销活动 - 知我公众号创作助手' } },
+  { path: '/register', name: 'Register', component: LoginView, meta: { title: '注册 - 知我公众号创作助手' } },
   { path: '/login', name: 'Login', component: LoginView, meta: { title: '登录' } },
   {
     path: '/app',

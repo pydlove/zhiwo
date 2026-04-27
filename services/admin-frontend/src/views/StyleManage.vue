@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { Card, Input, Select, Button, Tag, Modal, Form, message, Checkbox } from 'ant-design-vue'
-import { listStyles, saveStyle, deleteStyle } from '../api/style.js'
+import { listStyles, saveStyle, deleteStyle, exportStyles } from '../api/style.js'
 import { listTracks } from '../api/track.js'
 import JSZip from 'jszip'
 
@@ -32,6 +32,13 @@ const designForm = ref({})
 const editingId = ref(null)
 const designImportFileName = ref('')
 const tracks = ref([])
+const exporting = ref(false)
+
+// Selection and export
+const selectedStyleIds = ref([])
+const exportModalOpen = ref(false)
+const exportTargetDir = ref('')
+const exportModalStyleIds = ref([])
 
 const filteredTracksByPlatform = computed(() => {
   const platform = designForm.value.platform
@@ -167,6 +174,41 @@ async function saveDesign() {
     loadData()
   } catch (e) {
     message.error('保存失败')
+  }
+}
+
+function openExportModal(styleIds) {
+  exportModalStyleIds.value = styleIds || []
+  exportTargetDir.value = ''
+  exportModalOpen.value = true
+}
+
+async function handleConfirmExport() {
+  exporting.value = true
+  try {
+    const payload = {
+      styleIds: exportModalStyleIds.value.length > 0 ? exportModalStyleIds.value : undefined,
+      targetDir: exportTargetDir.value || undefined,
+    }
+    const result = await exportStyles(payload)
+    message.success(`导出完成：成功 ${result.exportedCount} 个文件到 ${result.targetDir}`)
+    if (result.missingStyles && result.missingStyles.length > 0) {
+      console.warn('未找到对应 docx 的样式：', result.missingStyles)
+    }
+    exportModalOpen.value = false
+    selectedStyleIds.value = []
+  } catch (e) {
+    message.error('导出失败: ' + (e?.message || '未知错误'))
+  } finally {
+    exporting.value = false
+  }
+}
+
+function toggleSelectAll() {
+  if (selectedStyleIds.value.length === filteredTemplates.value.length) {
+    selectedStyleIds.value = []
+  } else {
+    selectedStyleIds.value = filteredTemplates.value.map(t => t.id)
   }
 }
 
@@ -428,11 +470,25 @@ onMounted(loadData)
       </Select>
       <Button type="primary" @click="handleSearch">查询</Button>
       <Button @click="handleReset">重置</Button>
+      <Button @click="toggleSelectAll">
+        {{ selectedStyleIds.length === filteredTemplates.length && filteredTemplates.length > 0 ? '取消全选' : '全选' }}
+      </Button>
+      <Button @click="openExportModal(selectedStyleIds)" :disabled="selectedStyleIds.length === 0" :loading="exporting">
+        批量导出 ({{ selectedStyleIds.length }})
+      </Button>
       <Button type="primary" style="margin-left: auto;" @click="openDesign(null)">+ 新增模板</Button>
     </div>
 
     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px;">
-      <div v-for="t in filteredTemplates" :key="t.id" style="background: #fff; border: 1px solid #f0f0f0; border-radius: 2px; overflow: hidden; transition: all 0.2s;">
+      <div v-for="t in filteredTemplates" :key="t.id" style="background: #fff; border: 1px solid #f0f0f0; border-radius: 2px; overflow: hidden; transition: all 0.2s; position: relative;">
+        <div style="position: absolute; top: 8px; left: 8px; z-index: 1;">
+          <input
+            type="checkbox"
+            :value="t.id"
+            v-model="selectedStyleIds"
+            style="width: 16px; height: 16px; cursor: pointer;"
+          />
+        </div>
         <div style="height: 160px; background: #fafafa; padding: 16px; overflow: hidden; border-bottom: 1px solid #f0f0f0;">
           <div :style="{ fontSize: '12px', fontWeight: 600, color: t.titleColor, marginBottom: '6px', fontFamily: t.fontFamily }">示例标题</div>
           <div :style="{ fontSize: '11px', lineHeight: '1.6', color: t.textColor, fontFamily: t.fontFamily }">这是一段示例正文，展示该模板的字体、行高和颜色效果...</div>
@@ -446,6 +502,7 @@ onMounted(loadData)
           <div style="display: flex; align-items: center; justify-content: space-between;">
             <Tag color="green">{{ t.status }}</Tag>
             <div style="display: flex; gap: 12px; font-size: 13px;">
+              <a @click="openExportModal([t.id])">导出</a>
               <a @click="openDesign(t)">设计</a>
               <a style="color: #f5222d;" @click="handleDelete(t)">删除</a>
             </div>
@@ -529,6 +586,22 @@ onMounted(loadData)
         </div>
       </div>
     </div>
+  </Modal>
+
+  <Modal v-model:open="exportModalOpen" title="导出样式文件" :mask-closable="false" @ok="handleConfirmExport" :confirm-loading="exporting"
+  :ok-button-props="{ disabled: exporting }"
+  >
+    <Form layout="vertical" style="margin-top: 12px;">
+      <Form.Item label="导出目录">
+        <Input v-model:value="exportTargetDir" placeholder="留空则默认导出到后端 styles/ 目录" />
+        <div style="font-size: 12px; color: #999; margin-top: 4px;">支持绝对路径，如 /Users/panyong/Desktop/styles</div>
+      </Form.Item>
+      <Form.Item label="导出数量">
+        <div style="font-size: 13px; color: #333;">
+          已选择 <strong>{{ exportModalStyleIds.length > 0 ? exportModalStyleIds.length : '全部' }}</strong> 个样式
+        </div>
+      </Form.Item>
+    </Form>
   </Modal>
 
 </template>

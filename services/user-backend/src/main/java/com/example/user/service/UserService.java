@@ -26,10 +26,31 @@ public class UserService {
         if (user.getId() == null || user.getId().isEmpty()) {
             user.setId(UUID.randomUUID().toString().replace("-", ""));
             if (user.getStatus() == null) user.setStatus(1);
+            if (user.getInviteCode() == null || user.getInviteCode().isEmpty()) {
+                user.setInviteCode(generateInviteCode());
+            }
             userMapper.insert(user);
         } else {
             userMapper.update(user);
         }
+    }
+
+    private String generateInviteCode() {
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        StringBuilder sb = new StringBuilder();
+        java.util.Random random = new java.util.Random();
+        for (int i = 0; i < 8; i++) {
+            sb.append(chars.charAt(random.nextInt(chars.length())));
+        }
+        String code = sb.toString();
+        if (userMapper.findByInviteCode(code) != null) {
+            return generateInviteCode();
+        }
+        return code;
+    }
+
+    public User getByInviteCode(String inviteCode) {
+        return userMapper.findByInviteCode(inviteCode);
     }
 
     public void delete(String id) {

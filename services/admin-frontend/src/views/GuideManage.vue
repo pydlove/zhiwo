@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, message } from 'ant-design-vue'
-import { listGuides, saveGuide, deleteGuide, batchUpdateRecommended } from '../api/guide.js'
+import { listGuides, saveGuide, deleteGuide, batchUpdateRecommended, generateGuides, exportGuides, importGuides } from '../api/guide.js'
+import { Switch } from 'ant-design-vue'
 import mammoth from 'mammoth'
 import JSZip from 'jszip'
 import '@wangeditor/editor/dist/css/style.css'
@@ -182,14 +183,44 @@ function triggerWordImport() {
 
 async function convertDocxToHtml(arrayBuffer) {
   const zip = await JSZip.loadAsync(arrayBuffer)
-  const xmlStr = await zip.file('word/document.xml').async('string')
-  const parser = new DOMParser()
-  const xmlDoc = parser.parseFromString(xmlStr, 'application/xml')
-  const paragraphs = xmlDoc.getElementsByTagName('w:p')
-  let html = ''
 
-  for (let i = 0; i < paragraphs.length; i++) {
-    const p = paragraphs[i]
+  // 1. Load image relationships
+  const relsPath = 'word/_rels/document.xml.rels'
+  const relsFile = zip.file(relsPath)
+  const imageMap = {}
+  if (relsFile) {
+    const relsStr = await relsFile.async('string')
+    const relsParser = new DOMParser()
+    const relsDoc = relsParser.parseFromString(relsStr, 'application/xml')
+    const rels = relsDoc.getElementsByTagName('Relationship')
+    for (let i = 0; i < rels.length; i++) {
+      const r = rels[i]
+      const id = r.getAttribute('Id')
+      const target = r.getAttribute('Target')
+      const type = r.getAttribute('Type')
+      if (type && type.includes('image') && id && target) {
+        imageMap[id] = target
+      }
+    }
+  }
+
+  // 2. Helper: extract image as base64
+  async function getImageBase64(rId) {
+    const target = imageMap[rId]
+    if (!target) return null
+    const imagePath = target.startsWith('media/') ? `word/${target}` : `word/media/${target}`
+    const imgFile = zip.file(imagePath)
+    if (!imgFile) return null
+    const blob = await imgFile.async('blob')
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result)
+      reader.readAsDataURL(blob)
+    })
+  }
+
+  // 3. Helper: parse a single paragraph into HTML
+  async function parseParagraph(p) {
     let pStyle = ''
     let headingTag = 'p'
     const pPr = p.getElementsByTagName('w:pPr')[0]
@@ -211,40 +242,81 @@ async function convertDocxToHtml(arrayBuffer) {
     }
 
     let pHtml = ''
-    const runs = p.getElementsByTagName('w:r')
-    for (let j = 0; j < runs.length; j++) {
-      const r = runs[j]
-      const rPr = r.getElementsByTagName('w:rPr')[0]
-      let tag = 'span'
-      let style = ''
+    const children = p.childNodes
+    for (let j = 0; j < children.length; j++) {
+      const node = children[j]
+      if (node.nodeName === 'w:r') {
+        const r = node
+        const rPr = r.getElementsByTagName('w:rPr')[0]
+        let tag = 'span'
+        let style = ''
 
-      if (rPr) {
-        if (rPr.getElementsByTagName('w:b').length) tag = 'strong'
-        if (rPr.getElementsByTagName('w:i').length) {
-          tag = tag === 'strong' ? 'strong' : 'em'
-          if (tag === 'strong') style += 'font-style: italic;'
+        if (rPr) {
+          if (rPr.getElementsByTagName('w:b').length) tag = 'strong'
+          if (rPr.getElementsByTagName('w:i').length) {
+            tag = tag === 'strong' ? 'strong' : 'em'
+            if (tag === 'strong') style += 'font-style: italic;'
+          }
+          if (rPr.getElementsByTagName('w:u').length) style += 'text-decoration: underline;'
+          if (rPr.getElementsByTagName('w:strike').length) style += 'text-decoration: line-through;'
+
+          const color = rPr.getElementsByTagName('w:color')[0]
+          if (color) {
+            const val = color.getAttribute('w:val')
+            if (val) style += `color: #${val};`
+          }
         }
-        if (rPr.getElementsByTagName('w:u').length) style += 'text-decoration: underline;'
-        if (rPr.getElementsByTagName('w:strike').length) style += 'text-decoration: line-through;'
 
-        const color = rPr.getElementsByTagName('w:color')[0]
-        if (color) {
-          const val = color.getAttribute('w:val')
-          if (val) style += `color: #${val};`
+        // Check for inline image in this run
+        const drawing = r.getElementsByTagName('w:drawing')[0]
+        const pict = r.getElementsByTagName('w:pict')[0]
+        if (drawing || pict) {
+          const imgNode = drawing || pict
+          const blips = imgNode.getElementsByTagName('a:blip')
+          for (let b = 0; b < blips.length; b++) {
+            const embed = blips[b].getAttribute('r:embed')
+            if (embed) {
+              const dataUrl = await getImageBase64(embed)
+              if (dataUrl) {
+                pHtml += `<img src="${dataUrl}" style="max-width:100%;height:auto;display:block;margin:12px 0;" />`
+              }
+            }
+          }
+          // Also check for v:imagedata (older format)
+          const vImages = imgNode.getElementsByTagName('v:imagedata')
+          for (let b = 0; b < vImages.length; b++) {
+            const embed = vImages[b].getAttribute('r:id')
+            if (embed) {
+              const dataUrl = await getImageBase64(embed)
+              if (dataUrl) {
+                pHtml += `<img src="${dataUrl}" style="max-width:100%;height:auto;display:block;margin:12px 0;" />`
+              }
+            }
+          }
         }
-      }
 
-      const texts = r.getElementsByTagName('w:t')
-      let text = ''
-      for (let k = 0; k < texts.length; k++) text += texts[k].textContent
-      if (text) {
-        const styleAttr = style ? ` style="${style}"` : ''
-        pHtml += `<${tag}${styleAttr}>${text}</${tag}>`
+        const texts = r.getElementsByTagName('w:t')
+        let text = ''
+        for (let k = 0; k < texts.length; k++) text += texts[k].textContent
+        if (text) {
+          const styleAttr = style ? ` style="${style}"` : ''
+          pHtml += `<${tag}${styleAttr}>${text}</${tag}>`
+        }
       }
     }
 
     const pStyleAttr = pStyle ? ` style="${pStyle}"` : ''
-    html += `<${headingTag}${pStyleAttr}>${pHtml}</${headingTag}>`
+    return `<${headingTag}${pStyleAttr}>${pHtml}</${headingTag}>`
+  }
+
+  // 4. Parse document.xml
+  const xmlStr = await zip.file('word/document.xml').async('string')
+  const parser = new DOMParser()
+  const xmlDoc = parser.parseFromString(xmlStr, 'application/xml')
+  const paragraphs = xmlDoc.getElementsByTagName('w:p')
+  let html = ''
+  for (let i = 0; i < paragraphs.length; i++) {
+    html += await parseParagraph(paragraphs[i])
   }
   return html
 }
@@ -346,6 +418,147 @@ function closePreview() {
   previewRecord.value = null
 }
 
+// AI 生成相关
+const generateModalOpen = ref(false)
+const generateForm = ref({ category: undefined, count: 1 })
+const generateLoading = ref(false)
+const generatedPreviewOpen = ref(false)
+const generatedGuides = ref([])
+const saveGeneratedLoading = ref(false)
+const currentPreviewGuide = ref(null)
+const currentPreviewOpen = ref(false)
+
+function openGenerateModal() {
+  generateForm.value = { category: undefined, count: 1 }
+  generateModalOpen.value = true
+}
+
+async function handleGenerate() {
+  if (!generateForm.value.category) {
+    message.warning('请选择内容类型')
+    return
+  }
+  generateLoading.value = true
+  try {
+    const list = await generateGuides(generateForm.value.category, generateForm.value.count)
+    generatedGuides.value = Array.isArray(list) ? list : []
+    generateModalOpen.value = false
+    generatedPreviewOpen.value = true
+    message.success(`成功生成 ${generatedGuides.value.length} 篇创作技巧`)
+  } catch (e) {
+    console.error('generate error:', e)
+    message.error(e.message || '生成失败，请确保服务器已安装 Claude Code CLI（npm install -g @anthropic-ai/claude-code）')
+  } finally {
+    generateLoading.value = false
+  }
+}
+
+function openCurrentPreview(guide) {
+  currentPreviewGuide.value = guide
+  currentPreviewOpen.value = true
+}
+
+function closeCurrentPreview() {
+  currentPreviewOpen.value = false
+  currentPreviewGuide.value = null
+}
+
+async function saveGeneratedGuides() {
+  if (!generatedGuides.value.length) return
+  saveGeneratedLoading.value = true
+  try {
+    for (const guide of generatedGuides.value) {
+      await saveGuide({
+        title: guide.title,
+        category: guide.category,
+        description: guide.description,
+        content: guide.content,
+        sortOrder: guide.sortOrder || 1,
+        status: guide.status || '已上架',
+        isRecommended: guide.isRecommended || 0,
+      })
+    }
+    message.success(`成功保存 ${generatedGuides.value.length} 篇创作技巧`)
+    generatedPreviewOpen.value = false
+    generatedGuides.value = []
+    loadData()
+  } catch (e) {
+    console.error('save generated error:', e)
+    message.error('保存失败')
+  } finally {
+    saveGeneratedLoading.value = false
+  }
+}
+
+// Export / Import
+async function handleExport() {
+  try {
+    let blob
+    if (selectedRowKeys.value.length > 0) {
+      blob = await exportGuides(selectedRowKeys.value)
+    } else {
+      blob = await exportGuides([])
+    }
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `创作技巧导出_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+    message.success('导出成功')
+  } catch (e) {
+    message.error('导出失败')
+  }
+}
+
+const importModalOpen = ref(false)
+const importExcelFile = ref(null)
+const importLoading = ref(false)
+
+function openImportModal() {
+  importModalOpen.value = true
+  importExcelFile.value = null
+}
+
+function onImportFileChange(e) {
+  importExcelFile.value = e.target.files?.[0] || null
+}
+
+function downloadImportTemplate() {
+  const headers = ['ID', '技巧标题', '分类', '描述', '内容', '链接', '排序', '状态', '是否推荐']
+  const csvContent = headers.join(',') + '\n,示例标题,创作技巧,描述内容,HTML内容,,1,已上架,0'
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = '创作技巧导入模板.csv'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+async function handleImport() {
+  if (!importExcelFile.value) {
+    message.warning('请选择 Excel 文件')
+    return
+  }
+  importLoading.value = true
+  try {
+    const result = await importGuides(importExcelFile.value)
+    const created = result.created || 0
+    const updated = result.updated || 0
+    message.success(`导入完成：新增 ${created} 条，更新 ${updated} 条，跳过 ${result.skip} 条`)
+    if (result.errors && result.errors.length) {
+      console.warn('导入错误：', result.errors)
+    }
+    importModalOpen.value = false
+    loadData()
+  } catch (e) {
+    message.error('导入失败')
+  } finally {
+    importLoading.value = false
+  }
+}
+
 onMounted(loadData)
 </script>
 
@@ -371,7 +584,12 @@ onMounted(loadData)
       </Select>
       <Button type="primary" @click="handleSearch">查询</Button>
       <Button @click="handleReset">重置</Button>
-      <Button type="primary" style="margin-left: auto;" @click="handleAdd">+ 新增技巧</Button>
+      <Button @click="handleExport">导出</Button>
+      <Button @click="openImportModal">导入</Button>
+      <Button type="primary" danger style="margin-left: auto;" @click="openGenerateModal">
+        <span style="margin-right: 4px;">✨</span>AI 生成
+      </Button>
+      <Button type="primary" @click="handleAdd">+ 新增技巧</Button>
     </div>
 
     <div v-if="selectedRowKeys.length > 0" style="margin-bottom: 16px; padding: 8px 12px; background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 4px; display: flex; align-items: center; gap: 12px;">
@@ -478,6 +696,96 @@ onMounted(loadData)
       </div>
       <div v-else class="guide-preview-content" style="font-size: 14px; line-height: 1.8; color: #374151; overflow-wrap: break-word;" v-html="previewRecord.content"></div>
     </div>
+  </Modal>
+
+  <!-- AI 生成配置弹窗 -->
+  <Modal v-model:open="generateModalOpen" title="AI 生成创作技巧" :mask-closable="false" :width="480" @ok="handleGenerate">
+    <Form layout="vertical" style="margin-top: 12px;">
+      <Form.Item label="内容类型" required>
+        <Select v-model:value="generateForm.category" placeholder="请选择要生成的内容类型">
+          <Select.Option value="标题技巧">标题技巧</Select.Option>
+          <Select.Option value="开头写法">开头写法</Select.Option>
+          <Select.Option value="结构模板">结构模板</Select.Option>
+          <Select.Option value="平台规则">平台规则</Select.Option>
+          <Select.Option value="创作技巧">创作技巧</Select.Option>
+          <Select.Option value="养号技巧">养号技巧</Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item label="生成数量">
+        <Select v-model:value="generateForm.count" placeholder="生成数量">
+          <Select.Option :value="1">1 篇</Select.Option>
+          <Select.Option :value="2">2 篇</Select.Option>
+          <Select.Option :value="3">3 篇</Select.Option>
+          <Select.Option :value="4">4 篇</Select.Option>
+          <Select.Option :value="5">5 篇</Select.Option>
+        </Select>
+      </Form.Item>
+      <div style="padding: 12px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; font-size: 13px; color: #52c41a;">
+        <div style="font-weight: 600; margin-bottom: 4px;">生成说明</div>
+        <div>· 调用 Claude AI 生成高质量创作技巧</div>
+        <div>· 自动匹配「中古风」排版样式</div>
+        <div>· 自动下载 16:9 配图插入内容</div>
+        <div>· 生成时间约 10-30 秒/篇</div>
+      </div>
+    </Form>
+    <template #footer>
+      <Button @click="generateModalOpen = false">取消</Button>
+      <Button type="primary" :loading="generateLoading" @click="handleGenerate">开始生成</Button>
+    </template>
+  </Modal>
+
+  <!-- 生成结果预览弹窗 -->
+  <Modal v-model:open="generatedPreviewOpen" title="生成结果预览" :mask-closable="false" :width="860" :footer="null">
+    <div style="margin-top: 12px; max-height: 70vh; overflow-y: auto;">
+      <div v-for="(guide, idx) in generatedGuides" :key="idx" style="margin-bottom: 20px; border: 1px solid #e8e8e8; border-radius: 4px; overflow: hidden;">
+        <div style="padding: 12px 16px; background: #fafafa; border-bottom: 1px solid #e8e8e8; display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <Tag :color="categoryColorMap[guide.category] || 'default'">{{ guide.category }}</Tag>
+            <span style="font-weight: 600; color: #262626;">{{ guide.title }}</span>
+          </div>
+          <Button size="small" @click="openCurrentPreview(guide)">预览内容</Button>
+        </div>
+        <div style="padding: 12px 16px; color: #595959; font-size: 13px;">
+          {{ guide.description }}
+        </div>
+      </div>
+      <div v-if="!generatedGuides.length" style="text-align: center; color: #999; padding: 40px;">暂无生成内容</div>
+    </div>
+    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e8e8e8; display: flex; justify-content: flex-end; gap: 12px;">
+      <Button @click="generatedPreviewOpen = false">关闭</Button>
+      <Button type="primary" :loading="saveGeneratedLoading" @click="saveGeneratedGuides">
+        全部保存（{{ generatedGuides.length }} 篇）
+      </Button>
+    </div>
+  </Modal>
+
+  <!-- 单篇生成内容预览 -->
+  <Modal v-model:open="currentPreviewOpen" :title="currentPreviewGuide?.title" :footer="null" :width="800" @cancel="closeCurrentPreview">
+    <div v-if="currentPreviewGuide" style="padding: 8px 0;">
+      <Tag :color="categoryColorMap[currentPreviewGuide.category] || 'default'" style="margin-bottom: 12px;">{{ currentPreviewGuide.category }}</Tag>
+      <div class="guide-preview-content" style="font-size: 14px; line-height: 1.8; color: #374151; overflow-wrap: break-word;" v-html="currentPreviewGuide.content"></div>
+    </div>
+  </Modal>
+
+  <!-- 导入 Excel 弹窗 -->
+  <Modal v-model:open="importModalOpen" title="导入创作技巧" :mask-closable="false" :width="480" @ok="handleImport">
+    <Form layout="vertical" style="margin-top: 12px;">
+      <Form.Item label="选择 Excel 文件" required>
+        <input type="file" accept=".xlsx,.xls,.csv" @change="onImportFileChange" style="display: block; margin-bottom: 8px;">
+        <div style="font-size: 12px; color: #999;">支持 .xlsx / .xls / .csv 格式，第一行为表头</div>
+      </Form.Item>
+      <div style="padding: 12px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; font-size: 13px; color: #52c41a;">
+        <div style="font-weight: 600; margin-bottom: 4px;">导入规则</div>
+        <div>· ID 列有值且存在则更新，否则新增</div>
+        <div>· 必填列：技巧标题、分类</div>
+        <div>· 状态默认值：已上架；推荐默认值：0</div>
+      </div>
+    </Form>
+    <template #footer>
+      <Button @click="importModalOpen = false">取消</Button>
+      <Button @click="downloadImportTemplate">下载模板</Button>
+      <Button type="primary" :loading="importLoading" @click="handleImport">开始导入</Button>
+    </template>
   </Modal>
 </template>
 

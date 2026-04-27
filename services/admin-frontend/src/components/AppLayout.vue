@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Layout, Menu, Dropdown, Avatar, Modal, Form, Input, message } from 'ant-design-vue'
+import request from '../api/request.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -74,7 +75,7 @@ function handleDropdownClick({ key }) {
   }
 }
 
-function handlePwdOk() {
+async function handlePwdOk() {
   if (!pwdForm.value.oldPassword || !pwdForm.value.newPassword || !pwdForm.value.confirmPassword) {
     message.warning('请填写完整密码信息')
     return
@@ -83,8 +84,18 @@ function handlePwdOk() {
     message.warning('两次输入的新密码不一致')
     return
   }
-  message.success('密码修改成功')
-  pwdModalOpen.value = false
+  try {
+    await request.post('/auth/change-password', {
+      adminId: adminUser.value.id,
+      oldPassword: pwdForm.value.oldPassword,
+      newPassword: pwdForm.value.newPassword,
+    })
+    message.success('密码修改成功')
+    pwdModalOpen.value = false
+    pwdForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e?.message || '修改失败')
+  }
 }
 </script>
 
@@ -93,7 +104,7 @@ function handlePwdOk() {
     <Layout.Sider theme="dark" width="208" style="background: #001529;">
       <div style="padding: 16px 24px 24px; font-size: 18px; font-weight: 600; color: #fff; display: flex; align-items: center; gap: 10px;">
          <img :src="logoImage" style="width: 40px; height: 40px; object-fit: cover;">
-         <span style="font-size: 16px; font-weight: 600; color: #fff;">公众号创作助手管理系统</span>
+         <span style="font-size: 16px; font-weight: 600; color: #fff;">知我公众号创作助手管理系统</span>
       </div>
       <Menu
         theme="dark"

@@ -49,7 +49,7 @@ public class EmailService {
     }
 
     public void sendTestEmail(String to) {
-        String subject = "【测试邮件】知行创作助手 - 邮件接收功能验证";
+        String subject = "【测试邮件】知我公众号创作助手 - 邮件接收功能验证";
         String html = buildTestEmailHtml();
         sendHtmlEmail(to, subject, html);
     }
@@ -80,7 +80,7 @@ public class EmailService {
                                 <tr>
                                     <td style="padding:40px 40px 20px; text-align:center;">
                                         <h1 style="margin:0 0 8px; font-size:26px; font-weight:700; color:#1a1a2e; line-height:1.3;">
-                                            知行公众号创作助手
+                                            知我公众号创作助手
                                         </h1>
                                         <p style="margin:0; font-size:16px; color:#64748b; line-height:1.6;">
                                             让 AI 成为您的副业引擎，开启内容变现新赛道
@@ -153,7 +153,7 @@ public class EmailService {
                                 <!-- 功能亮点 -->
                                 <tr>
                                     <td style="padding:0 40px 30px;">
-                                        <h3 style="margin:0 0 16px; font-size:16px; font-weight:600; color:#1e293b;">为什么选择知行？</h3>
+                                        <h3 style="margin:0 0 16px; font-size:16px; font-weight:600; color:#1e293b;">为什么选择知我？</h3>
                                         <table width="100%%" cellpadding="0" cellspacing="0" border="0">
                                             <tr>
                                                 <td style="padding:8px 0; color:#475569; font-size:14px;">
@@ -196,7 +196,7 @@ public class EmailService {
                                     <td style="padding:0 40px;">
                                         <div style="border-top:1px solid #e2e8f0; padding:20px 0; text-align:center;">
                                             <p style="margin:0 0 8px; font-size:12px; color:#94a3b8;">
-                                                知行公众号创作助手 · 让创作更简单，让变现更高效
+                                                知我公众号创作助手 · 让创作更简单，让变现更高效
                                             </p>
                                             <p style="margin:0; font-size:11px; color:#cbd5e1;">
                                                 本邮件为系统测试邮件，如您不希望接收此类邮件，可在个人中心关闭邮件推送

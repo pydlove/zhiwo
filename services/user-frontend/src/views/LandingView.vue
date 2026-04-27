@@ -3,10 +3,25 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useViewport } from '../composables/useViewport.js'
 import { listMembershipPlans } from '../api/membershipPlan.js'
+import { message } from 'ant-design-vue'
 
 const router = useRouter()
 const { isMobile } = useViewport()
 const membershipPlans = ref([])
+
+const currentUser = ref(null)
+const inviteCopied = ref(false)
+
+function checkLogin() {
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    if (user && user.id) {
+      currentUser.value = user
+    }
+  } catch (e) {
+    currentUser.value = null
+  }
+}
 
 function goLogin() {
   router.push('/login')
@@ -19,6 +34,45 @@ function goHome() {
 function scrollToMembership() {
   const el = document.getElementById('membership-section')
   if (el) el.scrollIntoView({ behavior: 'smooth' })
+}
+
+function scrollToCases() {
+  const el = document.getElementById('cases-section')
+  if (el) el.scrollIntoView({ behavior: 'smooth' })
+}
+
+function doCopy(text) {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.style.cssText = 'position:fixed;left:-9999px;top:0;'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  let success = false
+  try {
+    success = document.execCommand('copy')
+  } catch (e) {}
+  document.body.removeChild(textarea)
+  return success
+}
+
+function goAffiliate() {
+  router.push('/affiliate')
+}
+
+async function copyInviteCode() {
+  if (!currentUser.value || !currentUser.value.inviteCode) {
+    message.warning('请先登录后再复制邀请码')
+    goLogin()
+    return
+  }
+  if (doCopy(currentUser.value.inviteCode)) {
+    inviteCopied.value = true
+    message.success('邀请码已复制')
+    setTimeout(() => { inviteCopied.value = false }, 2000)
+  } else {
+    message.error('复制失败，请手动复制')
+  }
 }
 
 const painPoints = [
@@ -58,6 +112,42 @@ const stats = [
   { num: '365', label: '全年推送' },
 ]
 
+const caseStudies = [
+  {
+    tag: '新手宝妈',
+    title: '情感赛道 · 运营3个月',
+    desc: '每天花10分钟复制平台推送的文章，坚持发了一个月，流量主开始每天有稳定收入',
+    yesterday: '45.20',
+    dayRatio: '+164.64%',
+    weekRatio: '+223.32%',
+    monthTotal: '2,738.65',
+    chartData: [18, 15, 19, 17, 85, 16, 45],
+    chartLabels: ['04/16', '04/17', '04/18', '04/19', '04/20', '04/21', '04/22'],
+  },
+  {
+    tag: '上班族副业',
+    title: '职场赛道 · 运营5个月',
+    desc: '利用通勤时间发布文章，目前已有稳定读者群，广告收益稳步增长',
+    yesterday: '128.50',
+    dayRatio: '+45.20%',
+    weekRatio: '+89.60%',
+    monthTotal: '3,560.30',
+    chartData: [32, 45, 38, 52, 78, 95, 128],
+    chartLabels: ['04/16', '04/17', '04/18', '04/19', '04/20', '04/21', '04/22'],
+  },
+  {
+    tag: '退休大叔',
+    title: '健康养生赛道 · 运营2个月',
+    desc: '退休后想找点事做，跟着平台推荐发文，没想到第一月就有收益',
+    yesterday: '62.30',
+    dayRatio: '+28.50%',
+    weekRatio: '+56.80%',
+    monthTotal: '1,387.60',
+    chartData: [12, 18, 15, 22, 35, 48, 62],
+    chartLabels: ['04/16', '04/17', '04/18', '04/19', '04/20', '04/21', '04/22'],
+  },
+]
+
 function parseFeatures(plan) {
   try {
     return plan.featuresJson ? JSON.parse(plan.featuresJson) : []
@@ -75,8 +165,30 @@ async function loadMembershipPlans() {
   }
 }
 
+function getChartLine(data, w = 240, h = 64) {
+  const max = Math.max(...data) * 1.15
+  const step = w / (data.length - 1)
+  return data.map((v, i) => {
+    const x = i * step
+    const y = h - (v / max) * (h - 12) - 6
+    return `${x},${y}`
+  }).join(' ')
+}
+
+function getChartArea(data, w = 240, h = 64) {
+  const max = Math.max(...data) * 1.15
+  const step = w / (data.length - 1)
+  const points = data.map((v, i) => {
+    const x = i * step
+    const y = h - (v / max) * (h - 12) - 6
+    return `${x},${y}`
+  })
+  return `0,${h} ` + points.join(' ') + ` ${w},${h}`
+}
+
 onMounted(() => {
   loadMembershipPlans()
+  checkLogin()
 })
 </script>
 
@@ -86,10 +198,12 @@ onMounted(() => {
     <nav class="navbar">
       <div class="nav-brand" @click="goHome">
         <img src="https://foruda.gitee.com/images/1776834561924666968/e0f84414_8060302.png" class="nav-logo-img" alt="logo">
-        <span class="nav-title">公众号创作助手</span>
+        <span class="nav-title">知我公众号创作助手</span>
       </div>
       <div style="display: flex; align-items: center; gap: 16px;">
+        <a class="nav-link" @click="scrollToCases">真实案例</a>
         <a class="nav-link" @click="scrollToMembership">会员权益</a>
+        <a class="nav-link" @click="goAffiliate">分销活动</a>
         <button class="login-btn" @click="goLogin">登录</button>
       </div>
     </nav>
@@ -178,7 +292,7 @@ onMounted(() => {
         <div class="section-header">
           <span class="section-label">02 / 解决方案</span>
           <h2 class="section-title">
-            公众号创作助手<br />让创作变得前所未有的简单
+            知我公众号创作助手<br />让创作变得前所未有的简单
           </h2>
         </div>
         <div class="solution-body">
@@ -248,11 +362,89 @@ onMounted(() => {
       </div>
     </section>
 
+    <!-- Case Studies Section -->
+    <section id="cases-section" class="section cases-section">
+      <div class="section-container">
+        <div class="section-header center">
+          <span class="section-label">04 / 真实案例</span>
+          <h2 class="section-title">他们已经在赚钱了</h2>
+          <p class="section-subtitle">真实用户通过平台每日推送的文章，实现流量主收益</p>
+        </div>
+        <div class="cases-grid">
+          <div v-for="(item, i) in caseStudies" :key="i" class="case-card">
+            <div class="case-badge">{{ item.tag }}</div>
+            <div class="case-screenshot">
+              <div class="earning-card">
+                <div class="earning-header">
+                  <span class="earning-header-title">流量主收益</span>
+                  <span class="earning-header-sub">7日趋势</span>
+                </div>
+                <div class="earning-main">
+                  <div class="earning-label">昨日收入</div>
+                  <div class="earning-value">¥{{ item.yesterday }}</div>
+                </div>
+                <div class="earning-pills">
+                  <div class="earning-pill">
+                    <span class="pill-label">日环比</span>
+                    <span class="pill-value up">{{ item.dayRatio }}</span>
+                  </div>
+                  <div class="earning-pill">
+                    <span class="pill-label">周同比</span>
+                    <span class="pill-value up">{{ item.weekRatio }}</span>
+                  </div>
+                  <div class="earning-pill">
+                    <span class="pill-label">本月累计</span>
+                    <span class="pill-value">¥{{ item.monthTotal }}</span>
+                  </div>
+                </div>
+                <div class="earning-chart">
+                  <svg viewBox="0 0 240 64" class="chart-svg">
+                    <defs>
+                      <linearGradient :id="'grad' + i" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#07C160" stop-opacity="0.3" />
+                        <stop offset="100%" stop-color="#07C160" stop-opacity="0" />
+                      </linearGradient>
+                    </defs>
+                    <polygon :points="getChartArea(item.chartData)" :fill="'url(#grad' + i + ')'" />
+                    <polyline :points="getChartLine(item.chartData)" fill="none" stroke="#07C160" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    <circle v-for="(val, idx) in item.chartData" :key="idx"
+                      :cx="idx * (240 / (item.chartData.length - 1))"
+                      :cy="64 - (val / (Math.max(...item.chartData) * 1.15)) * 52 - 6"
+                      r="2.5" fill="#fff" stroke="#07C160" stroke-width="1.5" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+            <div class="case-info">
+              <div class="case-title">{{ item.title }}</div>
+              <div class="case-desc">{{ item.desc }}</div>
+            </div>
+          </div>
+        </div>
+        <p class="cases-tip">
+          * 以上数据为用户真实收益，仅供展示参考，实际收益因人而异
+        </p>
+      </div>
+    </section>
+
+    <!-- Stats Section -->
+    <section class="section stats-section">
+      <div class="stats-bg"></div>
+      <div class="section-container">
+        <div class="stats-grid">
+          <div v-for="(item, i) in stats" :key="i" class="stat-item">
+            <div class="stat-num">{{ item.num }}</div>
+            <div class="stat-label">{{ item.label }}</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Membership Section -->
     <section id="membership-section" class="section membership-section">
       <div class="section-container">
         <div class="section-header center">
-          <span class="section-label">04 / 会员权益</span>
+          <span class="section-label">05 / 会员权益</span>
           <h2 class="section-title">选择适合你的套餐</h2>
           <p class="section-subtitle">多种档位，满足不同需求，按月订阅，随时可退</p>
         </div>
@@ -282,14 +474,64 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- Stats Section -->
-    <section class="section stats-section">
-      <div class="stats-bg"></div>
+    <!-- Affiliate Section -->
+    <section id="affiliate-section" class="section affiliate-section">
       <div class="section-container">
-        <div class="stats-grid">
-          <div v-for="(item, i) in stats" :key="i" class="stat-item">
-            <div class="stat-num">{{ item.num }}</div>
-            <div class="stat-label">{{ item.label }}</div>
+        <div class="section-header center">
+          <span class="section-label">06 / 分销活动</span>
+          <h2 class="section-title">邀请好友，赚取佣金</h2>
+          <p class="section-subtitle">邀请好友注册并开通会员，您可获得好友会员费用的 30% 作为佣金</p>
+        </div>
+        <div class="affiliate-body">
+          <div class="affiliate-card">
+            <div class="affiliate-steps">
+              <div class="affiliate-step">
+                <div class="affiliate-step-num">01</div>
+                <div class="affiliate-step-title">分享邀请码</div>
+                <div class="affiliate-step-desc">将您的专属邀请码分享给好友</div>
+              </div>
+              <div class="affiliate-step-arrow">→</div>
+              <div class="affiliate-step">
+                <div class="affiliate-step-num">02</div>
+                <div class="affiliate-step-title">好友注册开通</div>
+                <div class="affiliate-step-desc">好友使用您的邀请码注册并开通会员</div>
+              </div>
+              <div class="affiliate-step-arrow">→</div>
+              <div class="affiliate-step">
+                <div class="affiliate-step-num">03</div>
+                <div class="affiliate-step-title">获得佣金返利</div>
+                <div class="affiliate-step-desc">您可获得好友会员费用的 30% 作为佣金</div>
+              </div>
+            </div>
+
+            <div class="affiliate-invite-box">
+              <div v-if="currentUser && currentUser.inviteCode" class="affiliate-invite-active">
+                <div class="affiliate-invite-label">我的专属邀请码</div>
+                <div class="affiliate-invite-code">{{ currentUser.inviteCode }}</div>
+                <button class="affiliate-copy-btn" @click="copyInviteCode">
+                  {{ inviteCopied ? '已复制 ✓' : '复制邀请码' }}
+                </button>
+              </div>
+              <div v-else class="affiliate-invite-login">
+                <div class="affiliate-invite-label">登录后即可获取专属邀请码</div>
+                <button class="affiliate-copy-btn" @click="goLogin">立即登录</button>
+              </div>
+            </div>
+
+            <div class="affiliate-contact">
+              <div class="affiliate-qr">
+                <div class="affiliate-qr-placeholder">
+                  <div style="font-size: 11px; color: #94a3b8; text-align: center;">微信客服</div>
+                  <div style="font-size: 10px; color: #cbd5e1; margin-top: 4px;">请替换二维码</div>
+                </div>
+              </div>
+              <div class="affiliate-contact-info">
+                <div class="affiliate-contact-title">联系客服参与活动</div>
+                <div class="affiliate-contact-desc">
+                  添加客服微信了解更多分销活动详情，佣金实时结算，提现无门槛
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -318,7 +560,7 @@ onMounted(() => {
       <div class="footer-content">
         <div class="footer-brand">
           <img src="../assets/images/logo-green.png" class="footer-logo-img" alt="logo">
-          <span>公众号创作助手</span>
+          <span>知我公众号创作助手</span>
         </div>
         <p class="footer-copy">让每个人都能轻松运营公众号</p>
       </div>
@@ -1109,6 +1351,365 @@ onMounted(() => {
   margin-top: 20px;
 }
 
+/* ========== Cases Section ========== */
+.cases-section {
+  background: #fff;
+}
+
+.cases-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.case-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  overflow: hidden;
+  transition: all 0.3s;
+  position: relative;
+}
+
+.case-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.08);
+  border-color: #07C160;
+}
+
+.case-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: linear-gradient(135deg, #07C160 0%, #06AD56 100%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 20px;
+  z-index: 2;
+}
+
+.case-screenshot {
+  background: #f8fafc;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+}
+
+.case-img {
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  object-fit: contain;
+}
+
+.case-info {
+  padding: 20px 24px 24px;
+}
+
+.case-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 8px;
+}
+
+.case-desc {
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.case-highlight {
+  font-size: 14px;
+  font-weight: 600;
+  color: #07C160;
+  background: #f0fdf4;
+  padding: 8px 12px;
+  border-radius: 8px;
+  display: inline-block;
+}
+
+.earning-card {
+  width: 100%;
+  max-width: 280px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.earning-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.earning-header-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.earning-header-sub {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.earning-main {
+  text-align: center;
+}
+
+.earning-label {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-bottom: 4px;
+}
+
+.earning-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: -0.02em;
+}
+
+.earning-pills {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.earning-pill {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: center;
+  flex: 1;
+}
+
+.pill-label {
+  font-size: 10px;
+  color: #9ca3af;
+  margin-bottom: 2px;
+}
+
+.pill-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.pill-value.up {
+  color: #ef4444;
+}
+
+.earning-chart {
+  margin-top: 4px;
+}
+
+.chart-svg {
+  width: 100%;
+  height: 64px;
+  overflow: visible;
+}
+
+.cases-tip {
+  text-align: center;
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 24px;
+}
+
+/* ========== Affiliate Section ========== */
+.affiliate-section {
+  background: linear-gradient(180deg, #fff 0%, #f0fdf4 100%);
+}
+
+.affiliate-body {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.affiliate-card {
+  background: #fff;
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
+  padding: 48px;
+  box-shadow: 0 8px 40px rgba(7, 193, 96, 0.08);
+}
+
+.affiliate-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  margin-bottom: 40px;
+  flex-wrap: wrap;
+}
+
+.affiliate-step {
+  text-align: center;
+  flex: 1;
+  min-width: 160px;
+}
+
+.affiliate-step-num {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #07C160 0%, #06AD56 100%);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 12px;
+}
+
+.affiliate-step-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 6px;
+}
+
+.affiliate-step-desc {
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.affiliate-step-arrow {
+  font-size: 24px;
+  color: #07C160;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.affiliate-invite-box {
+  background: linear-gradient(135deg, #f0fdf4 0%, #f6fef9 100%);
+  border: 1px solid #bbf7d0;
+  border-radius: 16px;
+  padding: 32px;
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.affiliate-invite-label {
+  font-size: 14px;
+  color: #64748b;
+  margin-bottom: 12px;
+}
+
+.affiliate-invite-code {
+  font-family: monospace;
+  font-size: 32px;
+  font-weight: 700;
+  color: #07C160;
+  letter-spacing: 4px;
+  margin-bottom: 16px;
+}
+
+.affiliate-copy-btn {
+  padding: 12px 32px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #07C160 0%, #06AD56 100%);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 16px rgba(7, 193, 96, 0.3);
+}
+
+.affiliate-copy-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(7, 193, 96, 0.4);
+}
+
+.affiliate-contact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.affiliate-qr {
+  flex-shrink: 0;
+}
+
+.affiliate-qr-img {
+  width: 140px;
+  height: 140px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  object-fit: contain;
+}
+
+.affiliate-qr-placeholder {
+  width: 140px;
+  height: 140px;
+  border-radius: 12px;
+  border: 2px dashed #cbd5e1;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.affiliate-contact-info {
+  max-width: 320px;
+}
+
+.affiliate-contact-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 8px;
+}
+
+.affiliate-contact-desc {
+  font-size: 14px;
+  color: #64748b;
+  line-height: 1.7;
+}
+
+@media (max-width: 900px) {
+  .affiliate-card {
+    padding: 28px 20px;
+  }
+
+  .affiliate-steps {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .affiliate-step-arrow {
+    transform: rotate(90deg);
+  }
+
+  .affiliate-invite-code {
+    font-size: 24px;
+  }
+
+  .affiliate-contact {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
 /* ========== Footer ========== */
 .footer {
   background: #f8fafc;
@@ -1148,7 +1749,25 @@ onMounted(() => {
 /* ========== Responsive ========== */
 @media (max-width: 900px) {
   .navbar {
-    padding: 0 20px;
+    padding: 0 16px;
+    height: 56px;
+  }
+
+  .nav-title {
+    font-size: 14px;
+    max-width: 140px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .nav-link {
+    display: none;
+  }
+
+  .login-btn {
+    padding: 6px 16px;
+    font-size: 13px;
   }
 
   .hero {
@@ -1202,7 +1821,8 @@ onMounted(() => {
 
   .pain-grid,
   .features-grid,
-  .membership-grid {
+  .membership-grid,
+  .cases-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
@@ -1242,7 +1862,8 @@ onMounted(() => {
 @media (max-width: 480px) {
   .pain-grid,
   .features-grid,
-  .membership-grid {
+  .membership-grid,
+  .cases-grid {
     grid-template-columns: 1fr;
   }
 

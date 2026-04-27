@@ -7,6 +7,10 @@ spring:
     username: root
     password: ENC(K4NdmvWSHXb1hHg5TEcMa7Gkima2Fig+dSdd++5JnV+pwZQcrY5vvu1WIU4nAC9k)
     driver-class-name: com.mysql.cj.jdbc.Driver
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 100MB
   mail:
     host: smtp.126.com
     port: 465

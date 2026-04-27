@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, message } from 'ant-design-vue'
-import { listReferencePosts, saveReferencePost, deleteReferencePost } from '../api/referencePost.js'
+import { listReferencePosts, saveReferencePost, deleteReferencePost, exportReferencePosts, importReferencePosts } from '../api/referencePost.js'
 import { listTracks } from '../api/track.js'
 
 const search = ref('')
@@ -42,6 +42,13 @@ const form = ref({
   status: '已上架',
 })
 const editingId = ref(null)
+const selectedRowKeys = ref([])
+
+const rowSelection = {
+  onChange: (keys) => {
+    selectedRowKeys.value = keys
+  },
+}
 
 const filteredTracksForModal = computed(() => {
   if (!form.value.platform) return []
@@ -194,6 +201,75 @@ function handleDelete(record) {
   })
 }
 
+// Export / Import
+async function handleExport() {
+  try {
+    let blob
+    if (selectedRowKeys.value.length > 0) {
+      blob = await exportReferencePosts(selectedRowKeys.value)
+    } else {
+      blob = await exportReferencePosts([])
+    }
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `帮助管理导出_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+    message.success('导出成功')
+  } catch (e) {
+    message.error('导出失败')
+  }
+}
+
+const importModalOpen = ref(false)
+const importExcelFile = ref(null)
+const importLoading = ref(false)
+
+function openImportModal() {
+  importModalOpen.value = true
+  importExcelFile.value = null
+}
+
+function onImportFileChange(e) {
+  importExcelFile.value = e.target.files?.[0] || null
+}
+
+function downloadImportTemplate() {
+  const headers = ['ID', '所属赛道ID', '平台', '文章标题', '原文内容', '外部链接', '排序', '状态']
+  const csvContent = headers.join(',') + '\n,赛道ID,公众号,示例标题,内容,https://example.com,1,已上架'
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = '帮助管理导入模板.csv'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+async function handleImport() {
+  if (!importExcelFile.value) {
+    message.warning('请选择 Excel 文件')
+    return
+  }
+  importLoading.value = true
+  try {
+    const result = await importReferencePosts(importExcelFile.value)
+    const created = result.created || 0
+    const updated = result.updated || 0
+    message.success(`导入完成：新增 ${created} 条，更新 ${updated} 条，跳过 ${result.skip} 条`)
+    if (result.errors && result.errors.length) {
+      console.warn('导入错误：', result.errors)
+    }
+    importModalOpen.value = false
+    loadData()
+  } catch (e) {
+    message.error('导入失败')
+  } finally {
+    importLoading.value = false
+  }
+}
+
 onMounted(loadData)
 </script>
 
@@ -213,10 +289,12 @@ onMounted(loadData)
       </Select>
       <Button type="primary" @click="handleSearch">查询</Button>
       <Button @click="handleReset">重置</Button>
+      <Button @click="handleExport">导出</Button>
+      <Button @click="openImportModal">导入</Button>
       <Button type="primary" style="margin-left: auto;" @click="handleAdd">+ 新增参考文章</Button>
     </div>
 
-    <Table :columns="columns" :data-source="filteredData" :pagination="false" row-key="id">
+    <Table :columns="columns" :data-source="filteredData" :pagination="false" row-key="id" :row-selection="rowSelection">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'trackName'">
           <span>{{ record.trackName }}</span>
@@ -289,5 +367,27 @@ onMounted(loadData)
         </Form.Item>
       </template>
     </Form>
+  </Modal>
+
+  <!-- 导入 Excel 弹窗 -->
+  <Modal v-model:open="importModalOpen" title="导入参考文章" :mask-closable="false" :width="480" @ok="handleImport">
+    <Form layout="vertical" style="margin-top: 12px;">
+      <Form.Item label="选择 Excel 文件" required>
+        <input type="file" accept=".xlsx,.xls,.csv" @change="onImportFileChange" style="display: block; margin-bottom: 8px;">
+        <div style="font-size: 12px; color: #999;">支持 .xlsx / .xls / .csv 格式，第一行为表头</div>
+      </Form.Item>
+      <div style="padding: 12px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; font-size: 13px; color: #52c41a;">
+        <div style="font-weight: 600; margin-bottom: 4px;">导入规则</div>
+        <div>· ID 列有值且存在则更新，否则新增</div>
+        <div>· 必填列：文章标题</div>
+        <div>· 状态默认值：已上架</div>
+        <div>· 所属赛道ID 需为系统中已存在的赛道</div>
+      </div>
+    </Form>
+    <template #footer>
+      <Button @click="importModalOpen = false">取消</Button>
+      <Button @click="downloadImportTemplate">下载模板</Button>
+      <Button type="primary" :loading="importLoading" @click="handleImport">开始导入</Button>
+    </template>
   </Modal>
 </template>

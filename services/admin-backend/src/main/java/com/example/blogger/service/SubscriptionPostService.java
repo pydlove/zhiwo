@@ -2,6 +2,7 @@ package com.example.blogger.service;
 
 import com.example.blogger.entity.SubscriptionPost;
 import com.example.blogger.mapper.SubscriptionPostMapper;
+import com.example.blogger.mapper.TitleRecommendationMapper;
 import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
@@ -10,9 +11,11 @@ import java.util.UUID;
 @Service
 public class SubscriptionPostService {
     private final SubscriptionPostMapper mapper;
+    private final TitleRecommendationMapper titleRecommendationMapper;
 
-    public SubscriptionPostService(SubscriptionPostMapper mapper) {
+    public SubscriptionPostService(SubscriptionPostMapper mapper, TitleRecommendationMapper titleRecommendationMapper) {
         this.mapper = mapper;
+        this.titleRecommendationMapper = titleRecommendationMapper;
     }
 
     public List<SubscriptionPost> list() {
@@ -38,6 +41,9 @@ public class SubscriptionPostService {
     public void save(SubscriptionPost p) {
         if (p.getId() == null || p.getId().isEmpty()) {
             p.setId(UUID.randomUUID().toString().replace("-", ""));
+            if (p.getStatus() == null || p.getStatus().isEmpty()) {
+                p.setStatus("已上架");
+            }
             mapper.insert(p);
         } else {
             mapper.update(p);
@@ -45,6 +51,7 @@ public class SubscriptionPostService {
     }
 
     public void delete(String id) {
+        titleRecommendationMapper.clearSubscriptionPostId(id);
         mapper.delete(id);
     }
 }

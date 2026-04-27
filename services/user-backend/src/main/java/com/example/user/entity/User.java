@@ -22,6 +22,8 @@ public class User {
     private Integer canSetEmail;
     private Integer emailReceive;
     private String membershipPlanId;
+    private String inviteCode;
+    private String invitedBy;
     private Integer isDeleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -62,6 +64,10 @@ public class User {
     public void setEmailReceive(Integer emailReceive) { this.emailReceive = emailReceive; }
     public String getMembershipPlanId() { return membershipPlanId; }
     public void setMembershipPlanId(String membershipPlanId) { this.membershipPlanId = membershipPlanId; }
+    public String getInviteCode() { return inviteCode; }
+    public void setInviteCode(String inviteCode) { this.inviteCode = inviteCode; }
+    public String getInvitedBy() { return invitedBy; }
+    public void setInvitedBy(String invitedBy) { this.invitedBy = invitedBy; }
     public Integer getIsDeleted() { return isDeleted; }
     public void setIsDeleted(Integer isDeleted) { this.isDeleted = isDeleted; }
     public LocalDateTime getCreatedAt() { return createdAt; }

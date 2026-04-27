@@ -18,7 +18,7 @@ function parseReads(val) {
 }
 
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination } from 'ant-design-vue'
-import { listPosts, savePost, deletePost } from '../api/post.js'
+import { listPosts, savePost, deletePost, exportPosts, importPosts } from '../api/post.js'
 import { listBloggers } from '../api/blogger.js'
 import { listTracks } from '../api/track.js'
 
@@ -249,6 +249,75 @@ function openPreview(record) {
   }
 }
 
+// Export / Import
+async function handleExport() {
+  try {
+    let blob
+    if (selectedRowKeys.value.length > 0) {
+      blob = await exportPosts(selectedRowKeys.value)
+    } else {
+      blob = await exportPosts([])
+    }
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `文章管理导出_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+    message.success('导出成功')
+  } catch (e) {
+    message.error('导出失败')
+  }
+}
+
+const importModalOpen = ref(false)
+const importExcelFile = ref(null)
+const importLoading = ref(false)
+
+function openImportModal() {
+  importModalOpen.value = true
+  importExcelFile.value = null
+}
+
+function onImportFileChange(e) {
+  importExcelFile.value = e.target.files?.[0] || null
+}
+
+function downloadImportTemplate() {
+  const headers = ['ID', '文章标题', '原文链接', '博主ID', '平台', '阅读量', '点赞量', '评论量', '指标JSON', '状态', '摘要', '标签']
+  const csvContent = headers.join(',') + '\n,示例标题,https://example.com,博主ID,公众号,1.2w,3.4k,1.8k,,已上架,摘要内容,标签'
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = '文章管理导入模板.csv'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+async function handleImport() {
+  if (!importExcelFile.value) {
+    message.warning('请选择 Excel 文件')
+    return
+  }
+  importLoading.value = true
+  try {
+    const result = await importPosts(importExcelFile.value)
+    const created = result.created || 0
+    const updated = result.updated || 0
+    message.success(`导入完成：新增 ${created} 条，更新 ${updated} 条，跳过 ${result.skip} 条`)
+    if (result.errors && result.errors.length) {
+      console.warn('导入错误：', result.errors)
+    }
+    importModalOpen.value = false
+    loadData()
+  } catch (e) {
+    message.error('导入失败')
+  } finally {
+    importLoading.value = false
+  }
+}
+
 onMounted(loadData)
 </script>
 
@@ -264,6 +333,8 @@ onMounted(loadData)
       </Select>
       <Button type="primary" @click="handleSearch">查询</Button>
       <Button @click="handleReset">重置</Button>
+      <Button @click="handleExport">导出</Button>
+      <Button @click="openImportModal">导入</Button>
       <Button v-if="selectedRowKeys.length" danger style="margin-left: auto;" @click="handleBatchDelete">批量删除 ({{ selectedRowKeys.length }})</Button>
       <Button type="primary" :style="selectedRowKeys.length ? { marginLeft: '12px' } : { marginLeft: 'auto' }" @click="handleAdd">+ 新增文章</Button>
     </div>
@@ -383,6 +454,28 @@ onMounted(loadData)
         <div style="font-size: 12px; color: #999; margin-top: 4px;">用户端点击文章标题将直接跳转至该链接查看原文</div>
       </Form.Item>
     </Form>
+  </Modal>
+
+  <!-- 导入 Excel 弹窗 -->
+  <Modal v-model:open="importModalOpen" title="导入文章" :mask-closable="false" :width="480" @ok="handleImport">
+    <Form layout="vertical" style="margin-top: 12px;">
+      <Form.Item label="选择 Excel 文件" required>
+        <input type="file" accept=".xlsx,.xls,.csv" @change="onImportFileChange" style="display: block; margin-bottom: 8px;">
+        <div style="font-size: 12px; color: #999;">支持 .xlsx / .xls / .csv 格式，第一行为表头</div>
+      </Form.Item>
+      <div style="padding: 12px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; font-size: 13px; color: #52c41a;">
+        <div style="font-weight: 600; margin-bottom: 4px;">导入规则</div>
+        <div>· ID 列有值且存在则更新，否则新增</div>
+        <div>· 必填列：文章标题</div>
+        <div>· 状态默认值：已上架</div>
+        <div>· 博主ID 需为系统中已存在的博主</div>
+      </div>
+    </Form>
+    <template #footer>
+      <Button @click="importModalOpen = false">取消</Button>
+      <Button @click="downloadImportTemplate">下载模板</Button>
+      <Button type="primary" :loading="importLoading" @click="handleImport">开始导入</Button>
+    </template>
   </Modal>
 
 </template>

@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>公众号创作助手 - 科技风海报</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&family=Orbitron:wght@400;700;900&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --neon: #00F0A0;
+  --neon-dim: rgba(0, 240, 160, 0.15);
+  --cyan: #00D4FF;
+  --dark: #0a0a0f;
+  --darker: #060608;
+  --gray: #1a1a24;
+  --text: #e0e0e8;
+  --text-dim: #8888a0;
+}
+
+body {
+  background: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Noto Sans SC', sans-serif;
+}
+
+.poster {
+  width: 1080px;
+  height: 1920px;
+  background: var(--dark);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 科技感网格背景 */
+.grid-bg {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 240, 160, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 240, 160, 0.03) 1px, transparent 1px);
+  background-size: 80px 80px;
+}
+
+.grid-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 50% 40% at 50% 0%, rgba(0, 240, 160, 0.08) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 30% at 80% 90%, rgba(0, 212, 255, 0.06) 0%, transparent 60%);
+}
+
+/* 顶部发光条 */
+.top-glow {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--neon), var(--cyan), transparent);
+  box-shadow: 0 0 20px rgba(0, 240, 160, 0.5);
+}
+
+/* 角落装饰 */
+.corner {
+  position: absolute;
+  width: 60px; height: 60px;
+  border: 1px solid rgba(0, 240, 160, 0.3);
+}
+.corner.tl { top: 50px; left: 50px; border-right: none; border-bottom: none; }
+.corner.tr { top: 50px; right: 50px; border-left: none; border-bottom: none; }
+.corner.bl { bottom: 50px; left: 50px; border-right: none; border-top: none; }
+.corner.br { bottom: 50px; right: 50px; border-left: none; border-top: none; }
+
+/* 扫描线效果 */
+.scanline {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, transparent, var(--neon), transparent);
+  opacity: 0.3;
+  animation: scan 4s linear infinite;
+}
+@keyframes scan {
+  0% { top: 0; }
+  100% { top: 100%; }
+}
+
+.content {
+  position: relative;
+  z-index: 2;
+  padding: 120px 70px 80px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 顶部标签 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border: 1px solid rgba(0, 240, 160, 0.3);
+  border-radius: 4px;
+  color: var(--neon);
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  margin-bottom: 60px;
+  width: fit-content;
+}
+.badge::before {
+  content: '';
+  width: 6px; height: 6px;
+  background: var(--neon);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--neon);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 主标题 */
+.hero {
+  margin-bottom: 50px;
+}
+.hero-tag {
+  font-family: 'Orbitron', monospace;
+  font-size: 14px;
+  color: var(--text-dim);
+  letter-spacing: 0.3em;
+  margin-bottom: 20px;
+}
+.main-title {
+  font-size: 88px;
+  font-weight: 900;
+  line-height: 1.15;
+  color: #fff;
+  letter-spacing: -0.02em;
+  margin-bottom: 20px;
+}
+.main-title .glow {
+  color: var(--neon);
+  text-shadow: 0 0 30px rgba(0, 240, 160, 0.4), 0 0 60px rgba(0, 240, 160, 0.2);
+}
+.subtitle {
+  font-size: 28px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  font-weight: 300;
+}
+
+/* 流程图 */
+.flow-section {
+  margin-bottom: 50px;
+}
+.flow-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--gray);
+  border-radius: 12px;
+  padding: 24px 32px;
+  border: 1px solid rgba(0, 240, 160, 0.1);
+}
+.flow-step {
+  flex: 1;
+  text-align: center;
+}
+.flow-step .num {
+  font-family: 'Orbitron', monospace;
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--neon);
+  margin-bottom: 8px;
+}
+.flow-step .label {
+  font-size: 20px;
+  color: var(--text);
+  font-weight: 500;
+}
+.flow-arrow {
+  color: var(--neon);
+  font-size: 24px;
+  opacity: 0.5;
+  padding: 0 8px;
+}
+
+/* 特性卡片 */
+.features {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  margin-bottom: 50px;
+}
+.feature-card {
+  background: var(--gray);
+  border: 1px solid rgba(0, 240, 160, 0.1);
+  border-radius: 16px;
+  padding: 32px;
+  position: relative;
+  overflow: hidden;
+}
+.feature-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 3px; height: 100%;
+  background: linear-gradient(180deg, var(--neon), transparent);
+}
+.feature-card h3 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 10px;
+}
+.feature-card p {
+  font-size: 16px;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+.feature-card .icon {
+  position: absolute;
+  top: 20px; right: 20px;
+  font-size: 40px;
+  opacity: 0.15;
+  color: var(--neon);
+}
+
+/* 数据统计 */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-bottom: 50px;
+  background: var(--gray);
+  border-radius: 16px;
+  padding: 36px 24px;
+  border: 1px solid rgba(0, 240, 160, 0.1);
+}
+.stat-box {
+  text-align: center;
+  position: relative;
+}
+.stat-box:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  right: 0; top: 20%; bottom: 20%;
+  width: 1px;
+  background: rgba(0, 240, 160, 0.1);
+}
+.stat-num {
+  font-family: 'Orbitron', monospace;
+  font-size: 44px;
+  font-weight: 700;
+  color: var(--neon);
+  text-shadow: 0 0 10px rgba(0, 240, 160, 0.3);
+}
+.stat-label {
+  font-size: 14px;
+  color: var(--text-dim);
+  margin-top: 8px;
+  letter-spacing: 0.1em;
+}
+
+/* 底部 */
+.bottom {
+  margin-top: auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 40px;
+}
+.bottom-left {
+  flex: 1;
+}
+.bottom-tag {
+  display: inline-block;
+  padding: 6px 16px;
+  background: rgba(0, 240, 160, 0.1);
+  color: var(--neon);
+  font-size: 14px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(0, 240, 160, 0.2);
+}
+.bottom-title {
+  font-size: 36px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 12px;
+}
+.bottom-desc {
+  font-size: 18px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.url-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.url-label {
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+}
+.url {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 28px;
+  background: linear-gradient(135deg, var(--neon) 0%, var(--cyan) 100%);
+  color: var(--dark);
+  font-family: 'Orbitron', monospace;
+  font-size: 22px;
+  font-weight: 700;
+  border-radius: 8px;
+  letter-spacing: 0.05em;
+  box-shadow: 0 8px 24px rgba(0, 240, 160, 0.25);
+}
+.qr-area {
+  text-align: center;
+}
+.qr-box {
+  width: 146px;
+  height: 200px;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  border: 2px solid rgba(0, 240, 160, 0.3);
+  box-shadow: 0 0 30px rgba(0, 240, 160, 0.15);
+}
+.qr-box img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.qr-label {
+  font-size: 14px;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+}
+
+.bottom-line {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--neon), var(--cyan), transparent);
+  box-shadow: 0 0 20px rgba(0, 240, 160, 0.3);
+}
+</style>
+</head>
+<body>
+<div class="poster">
+  <div class="grid-bg"></div>
+  <div class="top-glow"></div>
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
+  <div class="scanline"></div>
+
+  <div class="content">
+    <div class="badge">AI 智能创作系统 v2.0</div>
+
+    <div class="hero">
+      <div class="hero-tag">SYSTEM.ONLINE // READY</div>
+      <h1 class="main-title">
+        不写文章<br>
+        <span class="glow">也能运营公众号</span>
+      </h1>
+      <p class="subtitle">
+        全自动化内容工作流 · AI深度改写 · 365天持续推送
+      </p>
+    </div>
+
+    <div class="flow-section">
+      <div class="flow-bar">
+        <div class="flow-step">
+          <div class="num">01</div>
+          <div class="label">订阅赛道</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="num">02</div>
+          <div class="label">接收爆款</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="num">03</div>
+          <div class="label">AI改写</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="num">04</div>
+          <div class="label">一键发布</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="features">
+      <div class="feature-card">
+        <div class="icon">◎</div>
+        <h3>36+ 热门赛道</h3>
+        <p>情感 · 科技 · 职场 · 健康<br>每日精准推送至你的账户</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">◈</div>
+        <h3>100% AI原创</h3>
+        <p>深度改写引擎<br>每篇内容独一无二</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">◉</div>
+        <h3>3分钟发布</h3>
+        <p>下载 → 导入后台 → 发布<br>极速内容上线</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">◆</div>
+        <h3>持续收益</h3>
+        <p>一次配置长期运行<br>睡后收入稳定增长</p>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-num">36+</div>
+        <div class="stat-label">覆盖赛道</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-num">200+</div>
+        <div class="stat-label">优质博主</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-num">100%</div>
+        <div class="stat-label">原创率</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-num">365</div>
+        <div class="stat-label">全年无休</div>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <div class="bottom-left">
+        <div class="bottom-tag">限时注册通道已开启</div>
+        <div class="bottom-title">开启自动化创作引擎</div>
+        <div class="bottom-desc">
+          零门槛启动，让AI为你工作<br>
+          每年获取稳定额外收入
+        </div>
+        <div class="url-wrap">
+          <span class="url-label">访问入口</span>
+          <div class="url">www.mmshuo.tech</div>
+        </div>
+      </div>
+      <div class="qr-area">
+        <div class="qr-box">
+          <img src="https://foruda.gitee.com/images/1776837930116563213/c2685caf_8060302.png" alt="二维码">
+        </div>
+        <div class="qr-label">扫码体验</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-line"></div>
+</div>
+</body>
+</html>

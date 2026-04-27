@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>公众号创作助手 - 投资报告风</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&family=Noto+Serif+SC:wght@400;700;900&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --navy: #0B1628;
+  --navy-light: #132238;
+  --gold: #D4AF37;
+  --gold-light: #F4E8C1;
+  --gold-dim: rgba(212,175,55,0.15);
+  --text: #E8E4DC;
+  --text-dim: #8A8E94;
+  --green-up: #00C853;
+  --white: #FFFFFF;
+}
+
+body {
+  background: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Noto Sans SC', sans-serif;
+}
+
+.poster {
+  width: 1080px;
+  height: 1920px;
+  background: var(--navy);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 背景 */
+.bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 40% at 80% 20%, rgba(212,175,55,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 50% at 20% 80%, rgba(0,200,83,0.04) 0%, transparent 60%);
+}
+
+/* 顶部金色线 */
+.top-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, transparent 10%, var(--gold) 50%, transparent 90%);
+}
+
+/* 角落 */
+.corner {
+  position: absolute;
+  width: 40px; height: 40px;
+}
+.corner.tl { top: 50px; left: 50px; border-top: 1px solid var(--gold); border-left: 1px solid var(--gold); opacity: 0.4; }
+.corner.br { bottom: 50px; right: 50px; border-bottom: 1px solid var(--gold); border-right: 1px solid var(--gold); opacity: 0.4; }
+
+.content {
+  position: relative;
+  z-index: 2;
+  padding: 110px 80px 70px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 报告头部 */
+.report-header {
+  margin-bottom: 40px;
+}
+.doc-label {
+  font-size: 12px;
+  color: var(--gold);
+  letter-spacing: 0.3em;
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+.doc-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 64px;
+  font-weight: 900;
+  color: var(--white);
+  line-height: 1.2;
+  margin-bottom: 16px;
+}
+.doc-sub {
+  font-size: 24px;
+  color: var(--text-dim);
+  font-weight: 300;
+  line-height: 1.5;
+}
+
+/* 收益卡片 */
+.roi-cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 36px;
+}
+.roi-card {
+  background: var(--navy-light);
+  border: 1px solid rgba(212,175,55,0.12);
+  border-radius: 12px;
+  padding: 28px;
+  position: relative;
+}
+.roi-card.highlight {
+  border-color: rgba(212,175,55,0.3);
+  background: linear-gradient(135deg, var(--navy-light), rgba(212,175,55,0.05));
+}
+.roi-label {
+  font-size: 14px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+  letter-spacing: 0.05em;
+}
+.roi-value {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 44px;
+  font-weight: 900;
+  color: var(--gold);
+  line-height: 1;
+}
+.roi-value.green {
+  color: var(--green-up);
+}
+.roi-note {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 10px;
+}
+.roi-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  color: var(--green-up);
+  margin-top: 8px;
+}
+
+/* 对比表格 */
+.compare-section {
+  margin-bottom: 36px;
+}
+.compare-title {
+  font-size: 16px;
+  color: var(--gold);
+  letter-spacing: 0.2em;
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.compare-table th {
+  text-align: left;
+  padding: 14px 16px;
+  font-size: 14px;
+  color: var(--text-dim);
+  font-weight: 400;
+  border-bottom: 1px solid rgba(212,175,55,0.15);
+  letter-spacing: 0.05em;
+}
+.compare-table td {
+  padding: 16px;
+  font-size: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.compare-table td:first-child {
+  color: var(--text);
+  font-weight: 500;
+}
+.compare-table td:nth-child(2) {
+  color: var(--text-dim);
+}
+.compare-table td:nth-child(3) {
+  color: var(--green-up);
+  font-weight: 700;
+}
+.compare-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* 增长曲线装饰 */
+.growth-chart {
+  margin-bottom: 36px;
+  background: var(--navy-light);
+  border-radius: 12px;
+  padding: 28px;
+  border: 1px solid rgba(212,175,55,0.1);
+}
+.chart-title {
+  font-size: 14px;
+  color: var(--text-dim);
+  margin-bottom: 20px;
+  letter-spacing: 0.1em;
+}
+.chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  height: 120px;
+}
+.chart-bar {
+  flex: 1;
+  background: linear-gradient(180deg, var(--gold), rgba(212,175,55,0.3));
+  border-radius: 4px 4px 0 0;
+  position: relative;
+}
+.chart-bar::after {
+  content: attr(data-label);
+  position: absolute;
+  bottom: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.chart-bar:nth-child(1) { height: 25%; opacity: 0.4; }
+.chart-bar:nth-child(2) { height: 35%; opacity: 0.5; }
+.chart-bar:nth-child(3) { height: 45%; opacity: 0.6; }
+.chart-bar:nth-child(4) { height: 60%; opacity: 0.7; }
+.chart-bar:nth-child(5) { height: 78%; opacity: 0.85; }
+.chart-bar:nth-child(6) { height: 100%; }
+
+/* 底部 */
+.bottom {
+  margin-top: auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 40px;
+  padding-top: 30px;
+  border-top: 1px solid rgba(212,175,55,0.15);
+}
+.bottom-left {
+  flex: 1;
+}
+.bottom-tag {
+  display: inline-block;
+  padding: 6px 16px;
+  background: var(--gold-dim);
+  color: var(--gold);
+  font-size: 13px;
+  border-radius: 4px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(212,175,55,0.2);
+  letter-spacing: 0.1em;
+}
+.bottom-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--white);
+  margin-bottom: 10px;
+}
+.bottom-desc {
+  font-size: 16px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+.url-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.url-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  letter-spacing: 0.15em;
+}
+.url {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 28px;
+  background: linear-gradient(135deg, var(--gold) 0%, #B8960C 100%);
+  color: var(--navy);
+  font-size: 20px;
+  font-weight: 700;
+  border-radius: 8px;
+  letter-spacing: 0.05em;
+  box-shadow: 0 8px 24px rgba(212, 175, 55, 0.25);
+}
+.qr-area {
+  text-align: center;
+}
+.qr-box {
+  width: 146px;
+  height: 200px;
+  background: var(--white);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  border: 2px solid rgba(212,175,55,0.2);
+}
+.qr-box img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.qr-label {
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+}
+</style>
+</head>
+<body>
+<div class="poster">
+  <div class="bg"></div>
+  <div class="top-bar"></div>
+  <div class="corner tl"></div>
+  <div class="corner br"></div>
+
+  <div class="content">
+    <div class="report-header">
+      <div class="doc-label">INVESTMENT OPPORTUNITY REPORT</div>
+      <h1 class="doc-title">一笔值得投入的<br>内容资产</h1>
+      <p class="doc-sub">用极低的资金和时间成本，构建持续产生现金流的数字资产</p>
+    </div>
+
+    <div class="roi-cards">
+      <div class="roi-card highlight">
+        <div class="roi-label">预期年化收益效率</div>
+        <div class="roi-value">+∞</div>
+        <div class="roi-trend">▲ 边际成本趋近于零</div>
+      </div>
+      <div class="roi-card">
+        <div class="roi-label">日均投入时间</div>
+        <div class="roi-value green">3 min</div>
+        <div class="roi-note">传统写作时间的 1/60</div>
+      </div>
+      <div class="roi-card">
+        <div class="roi-label">启动资金门槛</div>
+        <div class="roi-value green">≈ 0</div>
+        <div class="roi-note">无需团队、无需设备</div>
+      </div>
+      <div class="roi-card">
+        <div class="roi-label">内容资产持有期</div>
+        <div class="roi-value">365 天/年</div>
+        <div class="roi-note">全年无休持续复利</div>
+      </div>
+    </div>
+
+    <div class="compare-section">
+      <div class="compare-title">投资回报率对比分析</div>
+      <table class="compare-table">
+        <tr>
+          <th>投资标的</th>
+          <th>传统方式</th>
+          <th>创作助手</th>
+        </tr>
+        <tr>
+          <td>时间成本</td>
+          <td>每天 3 小时写作</td>
+          <td>每天 3 分钟</td>
+        </tr>
+        <tr>
+          <td>人力成本</td>
+          <td>需专职写手/团队</td>
+          <td>AI 自动完成</td>
+        </tr>
+        <tr>
+          <td>内容产出</td>
+          <td>1 篇/天（极限）</td>
+          <td>无限量供应</td>
+        </tr>
+        <tr>
+          <td>机会成本</td>
+          <td>高：占用核心时间</td>
+          <td>极低：自动运行</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="growth-chart">
+      <div class="chart-title">内容资产价值增长趋势（示意）</div>
+      <div class="chart-bars">
+        <div class="chart-bar" data-label="M1"></div>
+        <div class="chart-bar" data-label="M2"></div>
+        <div class="chart-bar" data-label="M3"></div>
+        <div class="chart-bar" data-label="M4"></div>
+        <div class="chart-bar" data-label="M5"></div>
+        <div class="chart-bar" data-label="M6+"></div>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <div class="bottom-left">
+        <div class="bottom-tag">限时准入</div>
+        <div class="bottom-title">立即配置你的内容资产</div>
+        <div class="bottom-desc">低门槛启动，高复利持续<br>让时间为你创造复利</div>
+        <div class="url-wrap">
+          <span class="url-label">访问入口</span>
+          <div class="url">www.mmshuo.tech</div>
+        </div>
+      </div>
+      <div class="qr-area">
+        <div class="qr-box">
+          <img src="https://foruda.gitee.com/images/1776837930116563213/c2685caf_8060302.png" alt="二维码">
+        </div>
+        <div class="qr-label">扫码开户</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

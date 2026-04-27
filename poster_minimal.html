@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>公众号创作助手 - 极简风海报</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&family=Noto+Serif+SC:wght@400;700;900&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --black: #0a0a0a;
+  --gray: #666;
+  --gray-light: #999;
+  --line: #e5e5e5;
+  --bg: #fafafa;
+}
+
+body {
+  background: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Noto Sans SC', sans-serif;
+}
+
+.poster {
+  width: 1080px;
+  height: 1920px;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 极简线条装饰 */
+.line-deco {
+  position: absolute;
+  background: var(--black);
+}
+.line-deco.h1 { top: 120px; left: 80px; width: 60px; height: 2px; }
+.line-deco.v1 { top: 120px; left: 80px; width: 2px; height: 60px; }
+.line-deco.h2 { bottom: 120px; right: 80px; width: 60px; height: 2px; }
+.line-deco.v2 { bottom: 120px; right: 80px; width: 2px; height: 60px; }
+
+/* 淡色大数字背景 */
+.big-num {
+  position: absolute;
+  font-family: 'Noto Serif SC', serif;
+  font-size: 400px;
+  font-weight: 900;
+  color: rgba(0,0,0,0.02);
+  line-height: 1;
+  pointer-events: none;
+}
+.big-num.n1 { top: 200px; right: -50px; }
+.big-num.n2 { bottom: 400px; left: -80px; font-size: 300px; }
+
+.content {
+  position: relative;
+  z-index: 2;
+  padding: 160px 100px 120px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 顶部 */
+.top {
+  margin-bottom: 100px;
+}
+.brand {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--gray);
+  letter-spacing: 0.2em;
+  margin-bottom: 60px;
+}
+.brand span {
+  display: inline-block;
+  width: 32px;
+  height: 1px;
+  background: var(--black);
+  vertical-align: middle;
+  margin-right: 12px;
+}
+
+/* 主标题 */
+.main-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 100px;
+  font-weight: 900;
+  line-height: 1.12;
+  color: var(--black);
+  margin-bottom: 40px;
+  letter-spacing: -0.02em;
+}
+.main-title .light {
+  font-weight: 400;
+  color: var(--gray);
+}
+
+/* 描述 */
+.desc {
+  font-size: 22px;
+  color: var(--gray);
+  line-height: 1.8;
+  font-weight: 300;
+  max-width: 600px;
+}
+.desc strong {
+  font-weight: 500;
+  color: var(--black);
+}
+
+/* 特性列表 */
+.features {
+  margin: 80px 0;
+  border-top: 1px solid var(--line);
+}
+.feature-item {
+  display: flex;
+  align-items: baseline;
+  gap: 30px;
+  padding: 32px 0;
+  border-bottom: 1px solid var(--line);
+}
+.feature-num {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--gray-light);
+  min-width: 30px;
+}
+.feature-title {
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--black);
+  min-width: 160px;
+}
+.feature-desc {
+  font-size: 18px;
+  color: var(--gray);
+  font-weight: 300;
+  flex: 1;
+}
+
+/* 大数字 */
+.big-stat {
+  display: flex;
+  gap: 60px;
+  margin: 60px 0;
+}
+.stat-block {
+  text-align: left;
+}
+.stat-number {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 72px;
+  font-weight: 900;
+  color: var(--black);
+  line-height: 1;
+}
+.stat-name {
+  font-size: 14px;
+  color: var(--gray-light);
+  margin-top: 12px;
+  letter-spacing: 0.1em;
+}
+
+/* 底部 */
+.bottom {
+  margin-top: auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 40px;
+  padding-top: 40px;
+  border-top: 1px solid var(--line);
+}
+.bottom-left {
+  flex: 1;
+}
+.bottom-label {
+  font-size: 12px;
+  color: var(--gray-light);
+  letter-spacing: 0.2em;
+  margin-bottom: 16px;
+}
+.bottom-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--black);
+  margin-bottom: 16px;
+}
+.bottom-desc {
+  font-size: 16px;
+  color: var(--gray);
+  line-height: 1.7;
+  font-weight: 300;
+  margin-bottom: 20px;
+}
+.url-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.url-label {
+  font-size: 12px;
+  color: var(--gray-light);
+  letter-spacing: 0.15em;
+}
+.url {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 32px;
+  background: var(--black);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  border-radius: 0;
+  letter-spacing: 0.02em;
+}
+.qr-area {
+  text-align: right;
+}
+.qr-box {
+  width: 146px;
+  height: 200px;
+  background: #fff;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.qr-box img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.qr-label {
+  font-size: 12px;
+  color: var(--gray-light);
+  letter-spacing: 0.1em;
+}
+</style>
+</head>
+<body>
+<div class="poster">
+  <div class="line-deco h1"></div>
+  <div class="line-deco v1"></div>
+  <div class="line-deco h2"></div>
+  <div class="line-deco v2"></div>
+  <div class="big-num n1">01</div>
+  <div class="big-num n2">02</div>
+
+  <div class="content">
+    <div class="top">
+      <div class="brand"><span></span>公众号创作助手</div>
+    </div>
+
+    <h1 class="main-title">
+      不用写<br>
+      <span class="light">也能做好</span><br>
+      公众号
+    </h1>
+
+    <p class="desc">
+      订阅你想要的赛道，<strong>AI自动改写</strong>热门文章。<br>
+      下载、导入、发布——<strong>三分钟完成</strong>全部流程。
+    </p>
+
+    <div class="features">
+      <div class="feature-item">
+        <div class="feature-num">01</div>
+        <div class="feature-title">订阅赛道</div>
+        <div class="feature-desc">36+ 热门领域，每日精准推送</div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-num">02</div>
+        <div class="feature-title">AI改写</div>
+        <div class="feature-desc">深度改写，100% 原创保障</div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-num">03</div>
+        <div class="feature-title">一键发布</div>
+        <div class="feature-desc">下载即可导入公众号后台</div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-num">04</div>
+        <div class="feature-title">持续收益</div>
+        <div class="feature-desc">一次投入，长期稳定回报</div>
+      </div>
+    </div>
+
+    <div class="big-stat">
+      <div class="stat-block">
+        <div class="stat-number">36+</div>
+        <div class="stat-name">赛道</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-number">200+</div>
+        <div class="stat-name">博主</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-number">365</div>
+        <div class="stat-name">天</div>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <div class="bottom-left">
+        <div class="bottom-label">LIMITED ACCESS</div>
+        <div class="bottom-title">开始创作</div>
+        <div class="bottom-desc">
+          零门槛启动<br>
+          让AI为你完成内容工作
+        </div>
+        <div class="url-wrap">
+          <span class="url-label">访问入口</span>
+          <div class="url">www.mmshuo.tech</div>
+        </div>
+      </div>
+      <div class="qr-area">
+        <div class="qr-box">
+          <img src="https://foruda.gitee.com/images/1776837930116563213/c2685caf_8060302.png" alt="二维码">
+        </div>
+        <div class="qr-label">扫码体验</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

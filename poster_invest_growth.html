@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>公众号创作助手 - 财富增长风</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&family=Noto+Serif+SC:wght@400;700;900&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --green: #00B67A;
+  --green-light: #E8F9F1;
+  --green-glow: rgba(0,182,122,0.15);
+  --dark: #0A1F15;
+  --dark-card: #0D291C;
+  --text: #E6F0EB;
+  --text-dim: #7A9E8E;
+  --gold: #FFD700;
+}
+
+body {
+  background: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Noto Sans SC', sans-serif;
+}
+
+.poster {
+  width: 1080px;
+  height: 1920px;
+  background: var(--dark);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 背景 */
+.bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 50% 30% at 50% 0%, rgba(0,182,122,0.1) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 40% at 80% 100%, rgba(0,182,122,0.05) 0%, transparent 50%);
+}
+
+/* 上升曲线 SVG 背景 */
+.curve-bg {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 600px;
+  opacity: 0.08;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1080 600'%3E%3Cpath d='M0,600 L0,500 Q200,480 300,400 Q450,280 540,300 Q700,330 800,200 Q950,50 1080,80 L1080,600 Z' fill='%2300B67A'/%3E%3C/svg%3E") no-repeat bottom;
+  background-size: cover;
+}
+
+/* 顶部 */
+.top-accent {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 6px;
+  background: linear-gradient(90deg, var(--green), var(--gold), var(--green));
+}
+
+.content {
+  position: relative;
+  z-index: 2;
+  padding: 100px 70px 70px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 头部 */
+.header {
+  margin-bottom: 40px;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  background: var(--green-glow);
+  border: 1px solid rgba(0,182,122,0.25);
+  border-radius: 30px;
+  color: var(--green);
+  font-size: 14px;
+  margin-bottom: 30px;
+  letter-spacing: 0.1em;
+}
+.tag::before {
+  content: '';
+  width: 8px; height: 8px;
+  background: var(--green);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--green);
+}
+.main-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 84px;
+  font-weight: 900;
+  line-height: 1.15;
+  color: var(--text);
+  margin-bottom: 20px;
+}
+.main-title .accent {
+  color: var(--green);
+  text-shadow: 0 0 30px rgba(0,182,122,0.3);
+}
+.subtitle {
+  font-size: 26px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  font-weight: 300;
+}
+
+/* 复利公式 */
+.formula-box {
+  background: var(--dark-card);
+  border: 1px solid rgba(0,182,122,0.15);
+  border-radius: 16px;
+  padding: 32px;
+  margin-bottom: 36px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.formula-box::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--green), transparent);
+}
+.formula-label {
+  font-size: 14px;
+  color: var(--text-dim);
+  letter-spacing: 0.2em;
+  margin-bottom: 16px;
+}
+.formula {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 36px;
+  color: var(--text);
+  font-weight: 700;
+}
+.formula .highlight {
+  color: var(--green);
+  font-size: 48px;
+}
+.formula-desc {
+  font-size: 16px;
+  color: var(--text-dim);
+  margin-top: 14px;
+  line-height: 1.6;
+}
+
+/* 三个收益阶段 */
+.stages {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 36px;
+}
+.stage {
+  flex: 1;
+  background: var(--dark-card);
+  border-radius: 14px;
+  padding: 24px;
+  border: 1px solid rgba(0,182,122,0.1);
+  text-align: center;
+  position: relative;
+}
+.stage::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 20%; right: 20%;
+  height: 2px;
+  background: var(--green);
+  opacity: 0.5;
+}
+.stage-period {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+  letter-spacing: 0.1em;
+}
+.stage-return {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 36px;
+  font-weight: 900;
+  color: var(--green);
+  line-height: 1;
+}
+.stage-note {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 10px;
+}
+
+/* 成本收益清单 */
+.ledger {
+  margin-bottom: 36px;
+}
+.ledger-title {
+  font-size: 16px;
+  color: var(--green);
+  letter-spacing: 0.15em;
+  margin-bottom: 18px;
+  font-weight: 500;
+}
+.ledger-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.ledger-row:last-child {
+  border-bottom: none;
+}
+.ledger-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ledger-icon {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.ledger-icon.cost {
+  background: rgba(255,100,100,0.1);
+  color: #FF6464;
+}
+.ledger-icon.gain {
+  background: var(--green-glow);
+  color: var(--green);
+}
+.ledger-text {
+  font-size: 17px;
+  color: var(--text);
+}
+.ledger-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+.ledger-value.positive {
+  color: var(--green);
+}
+.ledger-value.negative {
+  color: #FF6464;
+}
+
+/* 底部 */
+.bottom {
+  margin-top: auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 40px;
+  padding-top: 30px;
+  border-top: 1px solid rgba(0,182,122,0.12);
+}
+.bottom-left {
+  flex: 1;
+}
+.bottom-tag {
+  display: inline-block;
+  padding: 6px 16px;
+  background: var(--green-glow);
+  color: var(--green);
+  font-size: 13px;
+  border-radius: 6px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(0,182,122,0.2);
+}
+.bottom-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.bottom-desc {
+  font-size: 16px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+.url-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.url-label {
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+}
+.url {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 28px;
+  background: linear-gradient(135deg, var(--green) 0%, #00D68F 100%);
+  color: var(--dark);
+  font-size: 22px;
+  font-weight: 700;
+  border-radius: 8px;
+  letter-spacing: 0.05em;
+  box-shadow: 0 8px 24px rgba(0, 182, 122, 0.25);
+}
+.qr-area {
+  text-align: center;
+}
+.qr-box {
+  width: 146px;
+  height: 200px;
+  background: var(--white);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  border: 2px solid rgba(0,182,122,0.25);
+  box-shadow: 0 0 20px rgba(0,182,122,0.1);
+}
+.qr-box img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.qr-label {
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+}
+</style>
+</head>
+<body>
+<div class="poster">
+  <div class="bg"></div>
+  <div class="curve-bg"></div>
+  <div class="top-accent"></div>
+
+  <div class="content">
+    <div class="header">
+      <div class="tag">低风险投资标的</div>
+      <h1 class="main-title">
+        每天 3 分钟<br>
+        <span class="accent">创造复利奇迹</span>
+      </h1>
+      <p class="subtitle">时间越长，价值越高。这不是消费，是投资。</p>
+    </div>
+
+    <div class="formula-box">
+      <div class="formula-label">财富增长公式</div>
+      <div class="formula">
+        内容资产 <span class="highlight">×</span> 时间 <span class="highlight">×</span> AI 杠杆 = <span class="highlight">∞</span>
+      </div>
+      <div class="formula-desc">
+        传统写作是线性增长，AI 创作是指数增长<br>
+        同样的时间投入，产出差距随时间指数放大
+      </div>
+    </div>
+
+    <div class="stages">
+      <div class="stage">
+        <div class="stage-period">第 1-3 个月</div>
+        <div class="stage-return">播种期</div>
+        <div class="stage-note">建立内容基础<br>积累首批粉丝</div>
+      </div>
+      <div class="stage">
+        <div class="stage-period">第 4-6 个月</div>
+        <div class="stage-return">增长期</div>
+        <div class="stage-note">内容矩阵成型<br>流量开始变现</div>
+      </div>
+      <div class="stage">
+        <div class="stage-period">第 7-12 个月</div>
+        <div class="stage-return">复利期</div>
+        <div class="stage-note">滚雪球效应<br>收益持续放大</div>
+      </div>
+    </div>
+
+    <div class="ledger">
+      <div class="ledger-title">投资收益明细表</div>
+      <div class="ledger-row">
+        <div class="ledger-item">
+          <div class="ledger-icon cost">−</div>
+          <div class="ledger-text">每日时间投入</div>
+        </div>
+        <div class="ledger-value negative">3 分钟</div>
+      </div>
+      <div class="ledger-row">
+        <div class="ledger-item">
+          <div class="ledger-icon cost">−</div>
+          <div class="ledger-text">人力成本</div>
+        </div>
+        <div class="ledger-value negative">0 元</div>
+      </div>
+      <div class="ledger-row">
+        <div class="ledger-item">
+          <div class="ledger-icon gain">+</div>
+          <div class="ledger-text">内容产出量</div>
+        </div>
+        <div class="ledger-value positive">不限量</div>
+      </div>
+      <div class="ledger-row">
+        <div class="ledger-item">
+          <div class="ledger-icon gain">+</div>
+          <div class="ledger-text">预期回报</div>
+        </div>
+        <div class="ledger-value positive">持续现金流</div>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <div class="bottom-left">
+        <div class="bottom-tag">限时开放投资席位</div>
+        <div class="bottom-title">立即开始你的复利计划</div>
+        <div class="bottom-desc">今天投入的每一分钟<br>都在为明天的收益增值</div>
+        <div class="url-wrap">
+          <span class="url-label">访问入口</span>
+          <div class="url">www.mmshuo.tech</div>
+        </div>
+      </div>
+      <div class="qr-area">
+        <div class="qr-box">
+          <img src="https://foruda.gitee.com/images/1776837930116563213/c2685caf_8060302.png" alt="二维码">
+        </div>
+        <div class="qr-label">扫码入场</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

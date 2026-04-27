@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>公众号创作助手 - 国潮风海报</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --cinnabar: #C23531;
+  --cinnabar-dark: #A62824;
+  --gold: #D4A853;
+  --gold-light: #F0E6CC;
+  --ink: #2B2B2B;
+  --ink-light: #5A5A5A;
+  --paper: #F7F3EB;
+  --paper-dark: #EDE6D6;
+}
+
+body {
+  background: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Noto Sans SC', sans-serif;
+}
+
+.poster {
+  width: 1080px;
+  height: 1920px;
+  background: var(--paper);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 宣纸纹理 */
+.rice-paper {
+  position: absolute;
+  inset: 0;
+  background:
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+}
+
+/* 水墨晕染效果 */
+.ink-wash {
+  position: absolute;
+  width: 500px; height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(43,43,43,0.04) 0%, transparent 70%);
+  top: -100px; left: -100px;
+}
+.ink-wash2 {
+  position: absolute;
+  width: 400px; height: 400px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(194,53,49,0.03) 0%, transparent 70%);
+  bottom: 300px; right: -100px;
+}
+
+/* 红色印章 */
+.seal {
+  position: absolute;
+  top: 80px; right: 80px;
+  width: 100px; height: 100px;
+  border: 3px solid var(--cinnabar);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(8deg);
+  opacity: 0.85;
+}
+.seal-text {
+  font-family: 'Ma Shan Zheng', cursive;
+  font-size: 36px;
+  color: var(--cinnabar);
+  writing-mode: vertical-rl;
+  letter-spacing: 4px;
+}
+
+/* 顶部装饰线 */
+.top-border {
+  position: absolute;
+  top: 60px; left: 60px; right: 60px;
+  height: 1px;
+  background: linear-gradient(90deg, var(--cinnabar), var(--gold), transparent);
+}
+
+/* 竖排装饰文字 */
+.vertical-deco {
+  position: absolute;
+  top: 300px; left: 40px;
+  writing-mode: vertical-rl;
+  font-family: 'Ma Shan Zheng', cursive;
+  font-size: 24px;
+  color: rgba(43,43,43,0.1);
+  letter-spacing: 0.5em;
+}
+
+.content {
+  position: relative;
+  z-index: 2;
+  padding: 150px 100px 100px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 引言 */
+.preface {
+  font-family: 'Ma Shan Zheng', cursive;
+  font-size: 24px;
+  color: var(--ink-light);
+  margin-bottom: 50px;
+  letter-spacing: 0.15em;
+}
+
+/* 主标题 */
+.hero {
+  margin-bottom: 50px;
+}
+.hero-tag {
+  font-size: 16px;
+  color: var(--cinnabar);
+  letter-spacing: 0.4em;
+  margin-bottom: 30px;
+  font-weight: 500;
+}
+.hero-tag::before {
+  content: '◆';
+  margin-right: 12px;
+  color: var(--gold);
+}
+.main-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 96px;
+  font-weight: 900;
+  line-height: 1.15;
+  color: var(--ink);
+  margin-bottom: 24px;
+  letter-spacing: 0.05em;
+}
+.main-title .red {
+  color: var(--cinnabar);
+}
+.subtitle {
+  font-family: 'Ma Shan Zheng', cursive;
+  font-size: 32px;
+  color: var(--ink-light);
+  line-height: 1.6;
+  letter-spacing: 0.1em;
+}
+
+/* 分隔 */
+.divider-ink {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 40px 0;
+}
+.divider-ink .d-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--gold), transparent);
+}
+.divider-ink .d-icon {
+  color: var(--cinnabar);
+  font-size: 18px;
+}
+
+/* 四大卖点 - 卡片式 */
+.virtues {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  margin-bottom: 50px;
+}
+.virtue-card {
+  background: rgba(255,255,255,0.5);
+  border: 1px solid rgba(212,168,83,0.2);
+  border-radius: 4px;
+  padding: 28px;
+  position: relative;
+}
+.virtue-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 3px;
+  background: linear-gradient(90deg, var(--cinnabar), var(--gold));
+}
+.virtue-num {
+  font-family: 'Ma Shan Zheng', cursive;
+  font-size: 28px;
+  color: var(--cinnabar);
+  opacity: 0.6;
+  margin-bottom: 8px;
+}
+.virtue-card h3 {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.virtue-card p {
+  font-size: 16px;
+  color: var(--ink-light);
+  line-height: 1.7;
+}
+
+/* 数据 */
+.stats-ink {
+  display: flex;
+  justify-content: space-around;
+  padding: 32px 0;
+  margin-bottom: 50px;
+  background: rgba(255,255,255,0.4);
+  border-top: 1px solid rgba(212,168,83,0.2);
+  border-bottom: 1px solid rgba(212,168,83,0.2);
+}
+.stat-ink-item {
+  text-align: center;
+}
+.stat-ink-num {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 48px;
+  font-weight: 900;
+  color: var(--cinnabar);
+}
+.stat-ink-label {
+  font-family: 'Ma Shan Zheng', cursive;
+  font-size: 20px;
+  color: var(--ink-light);
+  margin-top: 8px;
+}
+
+/* 底部 */
+.bottom {
+  margin-top: auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 40px;
+}
+.bottom-left {
+  flex: 1;
+}
+.bottom-tag {
+  display: inline-block;
+  padding: 8px 20px;
+  background: rgba(194,53,49,0.08);
+  color: var(--cinnabar);
+  font-size: 14px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(194,53,49,0.2);
+  font-family: 'Ma Shan Zheng', cursive;
+  font-size: 18px;
+  letter-spacing: 0.15em;
+}
+.bottom-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+.bottom-desc {
+  font-family: 'Ma Shan Zheng', cursive;
+  font-size: 22px;
+  color: var(--ink-light);
+  line-height: 1.6;
+  margin-bottom: 20px;
+  letter-spacing: 0.1em;
+}
+.url-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.url-label {
+  font-family: 'Ma Shan Zheng', cursive;
+  font-size: 16px;
+  color: var(--ink-light);
+  letter-spacing: 0.15em;
+}
+.url {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 28px;
+  background: var(--cinnabar);
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+  box-shadow: 0 6px 20px rgba(194, 53, 49, 0.25);
+}
+.qr-area {
+  text-align: center;
+}
+.qr-box {
+  width: 146px;
+  height: 200px;
+  background: #fff;
+  border-radius: 4px;
+  border: 2px solid rgba(194,53,49,0.15);
+  overflow: hidden;
+  margin-bottom: 12px;
+  position: relative;
+}
+.qr-box::before {
+  content: '';
+  position: absolute;
+  top: 4px; left: 4px; right: 4px; bottom: 4px;
+  border: 1px solid rgba(212,168,83,0.2);
+  pointer-events: none;
+}
+.qr-box img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.qr-label {
+  font-family: 'Ma Shan Zheng', cursive;
+  font-size: 18px;
+  color: var(--ink-light);
+  letter-spacing: 0.2em;
+}
+
+/* 底部装饰 */
+.bottom-deco {
+  position: absolute;
+  bottom: 40px; left: 60px; right: 60px;
+  height: 1px;
+  background: linear-gradient(90deg, var(--cinnabar), var(--gold), transparent);
+}
+</style>
+</head>
+<body>
+<div class="poster">
+  <div class="rice-paper"></div>
+  <div class="ink-wash"></div>
+  <div class="ink-wash2"></div>
+  <div class="top-border"></div>
+  <div class="seal">
+    <div class="seal-text">创作</div>
+  </div>
+  <div class="vertical-deco">笔墨生花</div>
+
+  <div class="content">
+    <div class="preface">工欲善其事，必先利其器</div>
+
+    <div class="hero">
+      <div class="hero-tag">全新智能创作之道</div>
+      <h1 class="main-title">
+        不善笔墨<br>
+        <span class="red">亦能行文天下</span>
+      </h1>
+      <p class="subtitle">
+        订阅赛道 · 承接爆款 · AI润色 · 一键发布<br>
+        化繁为简，事半功倍
+      </p>
+    </div>
+
+    <div class="divider-ink">
+      <div class="d-line"></div>
+      <div class="d-icon">◆</div>
+      <div class="d-line" style="background: linear-gradient(90deg, transparent, var(--gold));"></div>
+    </div>
+
+    <div class="virtues">
+      <div class="virtue-card">
+        <div class="virtue-num">壹</div>
+        <h3>订阅赛道</h3>
+        <p>三十六行，行行出爆款<br>每日精选推送至案前</p>
+      </div>
+      <div class="virtue-card">
+        <div class="virtue-num">贰</div>
+        <h3>AI原创改写</h3>
+        <p>化他山之石为我之玉<br>篇篇独立，绝无雷同</p>
+      </div>
+      <div class="virtue-card">
+        <div class="virtue-num">叁</div>
+        <h3>一键导入发布</h3>
+        <p>下载即导入，发布弹指间<br>全程不过一盏茶工夫</p>
+      </div>
+      <div class="virtue-card">
+        <div class="virtue-num">肆</div>
+        <h3>持续稳定收益</h3>
+        <p>一次投入，长久受益<br>年年岁岁，细水长流</p>
+      </div>
+    </div>
+
+    <div class="stats-ink">
+      <div class="stat-ink-item">
+        <div class="stat-ink-num">36+</div>
+        <div class="stat-ink-label">热门赛道</div>
+      </div>
+      <div class="stat-ink-item">
+        <div class="stat-ink-num">200+</div>
+        <div class="stat-ink-label">头部博主</div>
+      </div>
+      <div class="stat-ink-item">
+        <div class="stat-ink-num">100%</div>
+        <div class="stat-ink-label">原创保障</div>
+      </div>
+      <div class="stat-ink-item">
+        <div class="stat-ink-num">365</div>
+        <div class="stat-ink-label">全年推送</div>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <div class="bottom-left">
+        <div class="bottom-tag">限时开放</div>
+        <div class="bottom-title">开启你的公众号之旅</div>
+        <div class="bottom-desc">
+          此间投资，终有回报<br>
+          每年添一笔可观收入
+        </div>
+        <div class="url-wrap">
+          <span class="url-label">访问入口</span>
+          <div class="url">www.mmshuo.tech</div>
+        </div>
+      </div>
+      <div class="qr-area">
+        <div class="qr-box">
+          <img src="https://foruda.gitee.com/images/1776837930116563213/c2685caf_8060302.png" alt="二维码">
+        </div>
+        <div class="qr-label">扫码即刻体验</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-deco"></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>公众号创作助手 - 宣传海报</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --green: #07C160;
+  --green-dark: #06AD56;
+  --green-light: #E6F7ED;
+  --gold: #D4A853;
+  --cream: #FAF8F5;
+  --charcoal: #1e293b;
+  --warm-gray: #7D7067;
+}
+
+body {
+  background: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Noto Sans SC', sans-serif;
+}
+
+.poster {
+  width: 1080px;
+  height: 1920px;
+  background: var(--cream);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 顶部装饰条 */
+.top-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 12px;
+  background: linear-gradient(90deg, var(--green) 0%, var(--green-dark) 50%, var(--gold) 100%);
+}
+
+/* 背景纹理 */
+.bg-texture {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 20%, rgba(7,193,96,0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 50% at 85% 75%, rgba(212,168,83,0.05) 0%, transparent 60%);
+}
+
+.bg-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(7,193,96,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(7,193,96,0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* 左上角装饰 */
+.corner-deco {
+  position: absolute;
+  top: 60px; left: 60px;
+  width: 120px; height: 120px;
+  border-left: 3px solid var(--green);
+  border-top: 3px solid var(--green);
+  opacity: 0.4;
+}
+
+.corner-deco::after {
+  content: '';
+  position: absolute;
+  top: 20px; left: 20px;
+  width: 60px; height: 60px;
+  border-left: 1px solid var(--gold);
+  border-top: 1px solid var(--gold);
+}
+
+/* 右下角装饰 */
+.corner-deco-br {
+  position: absolute;
+  bottom: 60px; right: 60px;
+  width: 120px; height: 120px;
+  border-right: 3px solid var(--green);
+  border-bottom: 3px solid var(--green);
+  opacity: 0.4;
+}
+
+/* 主内容区 */
+.content {
+  position: relative;
+  z-index: 2;
+  padding: 140px 80px 80px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Logo区域 */
+.logo-area {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 80px;
+}
+
+.logo-icon {
+  width: 56px; height: 56px;
+  background: linear-gradient(135deg, var(--green) 0%, var(--green-dark) 100%);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  box-shadow: 0 8px 24px rgba(7,193,96,0.3);
+}
+
+.logo-text {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--charcoal);
+  letter-spacing: 0.05em;
+}
+
+.logo-sub {
+  font-size: 13px;
+  color: var(--warm-gray);
+  margin-top: 2px;
+  letter-spacing: 0.15em;
+}
+
+/* 主标题 */
+.hero-section {
+  margin-bottom: 60px;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--green);
+  letter-spacing: 0.2em;
+  margin-bottom: 28px;
+}
+
+.eyebrow::before {
+  content: '';
+  width: 32px;
+  height: 2px;
+  background: var(--green);
+}
+
+.main-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 96px;
+  font-weight: 900;
+  line-height: 1.1;
+  color: var(--charcoal);
+  letter-spacing: -0.02em;
+  margin-bottom: 24px;
+}
+
+.main-title .highlight {
+  background: linear-gradient(135deg, var(--green) 0%, var(--green-dark) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.subtitle {
+  font-size: 32px;
+  font-weight: 400;
+  color: var(--warm-gray);
+  line-height: 1.5;
+  font-family: 'Noto Serif SC', serif;
+}
+
+/* 分隔线 */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 50px 0;
+}
+
+.divider-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+}
+
+.divider-icon {
+  font-size: 20px;
+  color: var(--gold);
+}
+
+/* 卖点区域 */
+.features-section {
+  margin-bottom: 60px;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 28px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 32px;
+  background: #fff;
+  border-radius: 20px;
+  border: 1px solid rgba(7,193,96,0.08);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+  transition: transform 0.3s;
+}
+
+.feature-num {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 48px;
+  font-weight: 900;
+  color: var(--green);
+  line-height: 1;
+  opacity: 0.15;
+  min-width: 60px;
+  text-align: center;
+}
+
+.feature-content h3 {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--charcoal);
+  margin-bottom: 8px;
+}
+
+.feature-content p {
+  font-size: 18px;
+  color: var(--warm-gray);
+  line-height: 1.6;
+}
+
+/* 数据展示 */
+.stats-row {
+  display: flex;
+  justify-content: space-around;
+  padding: 40px 0;
+  margin-bottom: 60px;
+  border-top: 1px solid rgba(7,193,96,0.1);
+  border-bottom: 1px solid rgba(7,193,96,0.1);
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-num {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 56px;
+  font-weight: 900;
+  color: var(--green);
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 18px;
+  color: var(--warm-gray);
+  margin-top: 8px;
+  letter-spacing: 0.1em;
+}
+
+/* 底部 CTA */
+.bottom-section {
+  margin-top: auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 40px;
+}
+
+.cta-text {
+  flex: 1;
+}
+
+.cta-tag {
+  display: inline-block;
+  padding: 8px 20px;
+  background: var(--green-light);
+  color: var(--green);
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.cta-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--charcoal);
+  margin-bottom: 12px;
+}
+
+.cta-desc {
+  font-size: 20px;
+  color: var(--warm-gray);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.url-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.url-label {
+  font-size: 13px;
+  color: var(--warm-gray);
+  letter-spacing: 0.1em;
+}
+.url-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 28px;
+  background: linear-gradient(135deg, var(--green) 0%, var(--green-dark) 100%);
+  color: #fff;
+  font-size: 24px;
+  font-weight: 700;
+  border-radius: 12px;
+  letter-spacing: 0.05em;
+  box-shadow: 0 8px 24px rgba(7,193,96,0.3);
+}
+
+/* 二维码区域 */
+.qrcode-area {
+  text-align: center;
+}
+
+.qrcode-box {
+  width: 146px;
+  height: 200px;
+  background: #fff;
+  border-radius: 16px;
+  border: 2px solid var(--green-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+  position: relative;
+}
+
+/* 生成一个CSS二维码图案 */
+.qrcode-pattern {
+  width: 160px;
+  height: 160px;
+  background:
+    /* 定位图案 - 左上 */
+    linear-gradient(#1e293b, #1e293b) 0 0 / 40px 40px,
+    linear-gradient(#1e293b, #1e293b) 0 120px / 40px 40px,
+    linear-gradient(#1e293b, #1e293b) 120px 0 / 40px 40px,
+    linear-gradient(#1e293b, #1e293b) 10px 10px / 20px 20px,
+    linear-gradient(#1e293b, #1e293b) 10px 130px / 20px 20px,
+    linear-gradient(#1e293b, #1e293b) 130px 10px / 20px 20px,
+    /* 小点 */
+    linear-gradient(#1e293b, #1e293b) 60px 0 / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 80px 0 / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 60px 20px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 100px 20px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 60px 60px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 80px 60px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 100px 60px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 60px 80px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 80px 100px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 100px 100px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 120px 60px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 140px 80px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 120px 120px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 140px 140px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 0 60px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 20px 80px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 40px 100px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 20px 120px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 40px 140px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 60px 140px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 80px 120px / 8px 8px,
+    linear-gradient(#1e293b, #1e293b) 100px 140px / 8px 8px;
+  background-repeat: no-repeat;
+}
+
+.qrcode-label {
+  font-size: 16px;
+  color: var(--warm-gray);
+  letter-spacing: 0.1em;
+}
+
+/* 装饰文字 */
+.watermark {
+  position: absolute;
+  bottom: 200px;
+  right: -80px;
+  font-family: 'Noto Serif SC', serif;
+  font-size: 200px;
+  font-weight: 900;
+  color: rgba(7,193,96,0.03);
+  transform: rotate(-90deg);
+  white-space: nowrap;
+  pointer-events: none;
+  letter-spacing: 0.1em;
+}
+
+/* 底部细线 */
+.bottom-line {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 6px;
+  background: linear-gradient(90deg, var(--green) 0%, var(--green-dark) 50%, var(--gold) 100%);
+}
+</style>
+</head>
+<body>
+<div class="poster">
+  <div class="top-bar"></div>
+  <div class="bg-texture"></div>
+  <div class="bg-grid"></div>
+
+  <div class="corner-deco"></div>
+  <div class="corner-deco-br"></div>
+
+  <div class="watermark">创作助手</div>
+
+  <div class="content">
+    <!-- Logo -->
+    <div class="logo-area">
+      <div class="logo-icon">✍️</div>
+      <div>
+        <div class="logo-text">公众号创作助手</div>
+        <div class="logo-sub">让创作变得前所未有的简单</div>
+      </div>
+    </div>
+
+    <!-- 主标题 -->
+    <div class="hero-section">
+      <div class="eyebrow">全新智能创作方式</div>
+      <h1 class="main-title">
+        不用写文章<br>
+        <span class="highlight">也能做好公众号</span>
+      </h1>
+      <p class="subtitle">
+        订阅赛道 → 接收爆款 → AI改写 → 一键发布<br>
+        从"想写却不会写"到"不用写也能发"
+      </p>
+    </div>
+
+    <!-- 分隔线 -->
+    <div class="divider">
+      <div class="divider-line"></div>
+      <div class="divider-icon">◆</div>
+      <div class="divider-line"></div>
+    </div>
+
+    <!-- 核心卖点 -->
+    <div class="features-section">
+      <div class="features-grid">
+        <div class="feature-item">
+          <div class="feature-num">01</div>
+          <div class="feature-content">
+            <h3>订阅赛道</h3>
+            <p>36+热门赛道每日精准推送<br>爆款文章自动送到你手中</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-num">02</div>
+          <div class="feature-content">
+            <h3>AI原创改写</h3>
+            <p>每篇经过AI深度改写<br>100%原创，无需担心侵权</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-num">03</div>
+          <div class="feature-content">
+            <h3>一键导入发布</h3>
+            <p>下载即可导入公众号后台<br>整个过程仅需几分钟</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-num">04</div>
+          <div class="feature-content">
+            <h3>持续稳定收益</h3>
+            <p>一次投入，长期受益<br>每年获取稳定额外收入</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 数据 -->
+    <div class="stats-row">
+      <div class="stat-item">
+        <div class="stat-num">36+</div>
+        <div class="stat-label">热门赛道</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">200+</div>
+        <div class="stat-label">头部博主</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">100%</div>
+        <div class="stat-label">原创保障</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">365</div>
+        <div class="stat-label">全年推送</div>
+      </div>
+    </div>
+
+    <!-- 底部 CTA -->
+    <div class="bottom-section">
+      <div class="cta-text">
+        <div class="cta-tag">限时开放注册</div>
+        <div class="cta-title">开始你的公众号之旅</div>
+        <div class="cta-desc">
+          这相当于是一次投资。<br>
+          你可以通过这种方式，每年获取一笔不小的额外收入。
+        </div>
+        <div class="url-wrap">
+          <span class="url-label">访问入口</span>
+          <div class="url-text">www.mmshuo.tech</div>
+        </div>
+      </div>
+      <div class="qrcode-area">
+        <div class="qrcode-box" style="padding: 0; overflow: hidden;">
+          <img src="https://foruda.gitee.com/images/1776837930116563213/c2685caf_8060302.png" style="width: 100%; height: 100%; object-fit: cover; display: block;" alt="二维码">
+        </div>
+        <div class="qrcode-label">扫码立即体验</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-line"></div>
+</div>
+</body>
+</html>

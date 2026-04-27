@@ -147,6 +147,10 @@ function handleSearch() {
   loadData()
 }
 
+function handlePageChange() {
+  loadData()
+}
+
 function handleReset() {
   searchKeyword.value = ''
   searchPlatform.value = ''
@@ -933,7 +937,7 @@ onMounted(loadData)
         show-size-changer
         :page-size-options="['10', '20', '50']"
         :show-total="total => `共 ${total} 条`"
-        @change="handleSearch"
+        @change="handlePageChange"
       />
     </div>
   </Card>

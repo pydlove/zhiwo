@@ -12,11 +12,18 @@ public interface TitleLibraryMapper {
             "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl " +
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
-            "LEFT JOIN tu_title_recommendation r ON r.title_library_id = t.id " +
-            "LEFT JOIN tu_title_recommendation r2 ON r2.title_library_id = r.title_library_id AND r2.created_at &gt; r.created_at " +
+            "LEFT JOIN (" +
+            "  SELECT r1.title_library_id, r1.user_id, r1.recommend_date, r1.subscription_post_id " +
+            "  FROM tu_title_recommendation r1 " +
+            "  INNER JOIN (" +
+            "    SELECT title_library_id, MAX(created_at) as max_created_at " +
+            "    FROM tu_title_recommendation " +
+            "    GROUP BY title_library_id" +
+            "  ) r2 ON r1.title_library_id = r2.title_library_id AND r1.created_at = r2.max_created_at" +
+            ") r ON t.id = r.title_library_id " +
             "LEFT JOIN tu_user u ON r.user_id = u.id AND u.is_deleted = 0 " +
             "LEFT JOIN tu_subscription_post sp ON r.subscription_post_id = sp.id AND sp.is_deleted = 0 " +
-            "WHERE t.is_deleted = 0 AND r2.id IS NULL " +
+            "WHERE t.is_deleted = 0 " +
             "ORDER BY t.created_at DESC " +
             "<if test='limit != null'>LIMIT #{limit} OFFSET #{offset}</if>" +
             "</script>")
@@ -27,11 +34,18 @@ public interface TitleLibraryMapper {
             "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl " +
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
-            "LEFT JOIN tu_title_recommendation r ON r.title_library_id = t.id " +
-            "LEFT JOIN tu_title_recommendation r2 ON r2.title_library_id = r.title_library_id AND r2.created_at &gt; r.created_at " +
+            "LEFT JOIN (" +
+            "  SELECT r1.title_library_id, r1.user_id, r1.recommend_date, r1.subscription_post_id " +
+            "  FROM tu_title_recommendation r1 " +
+            "  INNER JOIN (" +
+            "    SELECT title_library_id, MAX(created_at) as max_created_at " +
+            "    FROM tu_title_recommendation " +
+            "    GROUP BY title_library_id" +
+            "  ) r2 ON r1.title_library_id = r2.title_library_id AND r1.created_at = r2.max_created_at" +
+            ") r ON t.id = r.title_library_id " +
             "LEFT JOIN tu_user u ON r.user_id = u.id AND u.is_deleted = 0 " +
             "LEFT JOIN tu_subscription_post sp ON r.subscription_post_id = sp.id AND sp.is_deleted = 0 " +
-            "WHERE t.is_deleted = 0 AND r2.id IS NULL " +
+            "WHERE t.is_deleted = 0 " +
             "AND (#{platform} IS NULL OR #{platform} = '' OR t.platform = #{platform}) " +
             "AND (#{trackId} IS NULL OR #{trackId} = '' OR t.track_id = #{trackId}) " +
             "AND (#{keyword} IS NULL OR #{keyword} = '' OR t.title LIKE CONCAT('%', #{keyword}, '%')) " +
@@ -46,10 +60,17 @@ public interface TitleLibraryMapper {
     @Select("<script>SELECT COUNT(*) " +
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
-            "LEFT JOIN tu_title_recommendation r ON r.title_library_id = t.id " +
-            "LEFT JOIN tu_title_recommendation r2 ON r2.title_library_id = r.title_library_id AND r2.created_at &gt; r.created_at " +
+            "LEFT JOIN (" +
+            "  SELECT r1.title_library_id, r1.user_id, r1.recommend_date, r1.subscription_post_id " +
+            "  FROM tu_title_recommendation r1 " +
+            "  INNER JOIN (" +
+            "    SELECT title_library_id, MAX(created_at) as max_created_at " +
+            "    FROM tu_title_recommendation " +
+            "    GROUP BY title_library_id" +
+            "  ) r2 ON r1.title_library_id = r2.title_library_id AND r1.created_at = r2.max_created_at" +
+            ") r ON t.id = r.title_library_id " +
             "LEFT JOIN tu_user u ON r.user_id = u.id AND u.is_deleted = 0 " +
-            "WHERE t.is_deleted = 0 AND r2.id IS NULL " +
+            "WHERE t.is_deleted = 0 " +
             "AND (#{platform} IS NULL OR #{platform} = '' OR t.platform = #{platform}) " +
             "AND (#{trackId} IS NULL OR #{trackId} = '' OR t.track_id = #{trackId}) " +
             "AND (#{keyword} IS NULL OR #{keyword} = '' OR t.title LIKE CONCAT('%', #{keyword}, '%')) " +
@@ -64,11 +85,18 @@ public interface TitleLibraryMapper {
             "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl " +
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
-            "LEFT JOIN tu_title_recommendation r ON r.title_library_id = t.id " +
-            "LEFT JOIN tu_title_recommendation r2 ON r2.title_library_id = r.title_library_id AND r2.created_at &gt; r.created_at " +
+            "LEFT JOIN (" +
+            "  SELECT r1.title_library_id, r1.user_id, r1.recommend_date, r1.subscription_post_id " +
+            "  FROM tu_title_recommendation r1 " +
+            "  INNER JOIN (" +
+            "    SELECT title_library_id, MAX(created_at) as max_created_at " +
+            "    FROM tu_title_recommendation " +
+            "    GROUP BY title_library_id" +
+            "  ) r2 ON r1.title_library_id = r2.title_library_id AND r1.created_at = r2.max_created_at" +
+            ") r ON t.id = r.title_library_id " +
             "LEFT JOIN tu_user u ON r.user_id = u.id AND u.is_deleted = 0 " +
             "LEFT JOIN tu_subscription_post sp ON r.subscription_post_id = sp.id AND sp.is_deleted = 0 " +
-            "WHERE t.id = #{id} AND t.is_deleted = 0 AND r2.id IS NULL")
+            "WHERE t.id = #{id} AND t.is_deleted = 0")
     TitleLibrary findById(String id);
 
     @Insert("INSERT INTO tu_title_library(id, title, description, push_date, platform, track_id, use_count, is_deleted, created_at) " +

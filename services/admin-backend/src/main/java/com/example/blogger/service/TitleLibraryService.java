@@ -6,7 +6,9 @@ import com.example.blogger.mapper.TitleLibraryMapper;
 import com.example.blogger.mapper.TitleRecommendationMapper;
 import org.springframework.stereotype.Service;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -21,11 +23,31 @@ public class TitleLibraryService {
     }
 
     public List<TitleLibrary> list() {
-        return titleLibraryMapper.findAll();
+        return titleLibraryMapper.findAll(null, null);
+    }
+
+    public Map<String, Object> listPage(int page, int pageSize) {
+        int offset = (page - 1) * pageSize;
+        List<TitleLibrary> list = titleLibraryMapper.findAll(offset, pageSize);
+        int total = titleLibraryMapper.countAll();
+        Map<String, Object> result = new HashMap<>();
+        result.put("list", list);
+        result.put("total", total);
+        return result;
     }
 
     public List<TitleLibrary> search(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate) {
-        return titleLibraryMapper.search(platform, trackId, keyword, recommendUserName, matched, pushDate);
+        return titleLibraryMapper.search(platform, trackId, keyword, recommendUserName, matched, pushDate, null, null);
+    }
+
+    public Map<String, Object> searchPage(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate, int page, int pageSize) {
+        int offset = (page - 1) * pageSize;
+        List<TitleLibrary> list = titleLibraryMapper.search(platform, trackId, keyword, recommendUserName, matched, pushDate, offset, pageSize);
+        int total = titleLibraryMapper.countSearch(platform, trackId, keyword, recommendUserName, matched, pushDate);
+        Map<String, Object> result = new HashMap<>();
+        result.put("list", list);
+        result.put("total", total);
+        return result;
     }
 
     public TitleLibrary getById(String id) {

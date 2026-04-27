@@ -257,19 +257,27 @@ public class TitleLibraryController {
     }
 
     @GetMapping
-    public Result<List<TitleLibrary>> list(
+    public Result<?> list(
             @RequestParam(value = "platform", required = false) String platform,
             @RequestParam(value = "trackId", required = false) String trackId,
             @RequestParam(value = "keyword", required = false) String keyword,
             @RequestParam(value = "recommendUserName", required = false) String recommendUserName,
             @RequestParam(value = "matched", required = false) String matched,
-            @RequestParam(value = "pushDate", required = false) String pushDate) {
+            @RequestParam(value = "pushDate", required = false) String pushDate,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "pageSize", required = false) Integer pageSize) {
         boolean hasFilter = (platform != null && !platform.isEmpty())
                 || (trackId != null && !trackId.isEmpty())
                 || (keyword != null && !keyword.isEmpty())
                 || (recommendUserName != null && !recommendUserName.isEmpty())
                 || (matched != null && !matched.isEmpty())
                 || (pushDate != null && !pushDate.isEmpty());
+        if (page != null && pageSize != null && page > 0 && pageSize > 0) {
+            if (hasFilter) {
+                return Result.ok(titleLibraryService.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, page, pageSize));
+            }
+            return Result.ok(titleLibraryService.listPage(page, pageSize));
+        }
         if (hasFilter) {
             return Result.ok(titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate));
         }

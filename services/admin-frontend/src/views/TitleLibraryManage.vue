@@ -99,15 +99,11 @@ const columns = [
 
 const currentPage = ref(1)
 const pageSize = ref(10)
-
-const filteredData = computed(() => {
-  // 后端已过滤，直接使用表格数据
-  return tableData.value
-})
+const totalCount = ref(0)
 
 const paginatedData = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  return filteredData.value.slice(start, start + pageSize.value)
+  // 服务端已分页，直接使用
+  return tableData.value
 })
 
 async function loadData() {
@@ -120,13 +116,22 @@ async function loadData() {
     if (searchUserName.value) params.recommendUserName = searchUserName.value.trim()
     if (searchMatched.value !== '' && searchMatched.value !== undefined) params.matched = searchMatched.value
     if (searchPushDate.value) params.pushDate = searchPushDate.value.format('YYYY-MM-DD')
+    params.page = currentPage.value
+    params.pageSize = pageSize.value
 
-    const [titles, trackList, userList] = await Promise.all([
+    const [result, trackList, userList] = await Promise.all([
       listTitles(params),
       listTracks().catch(() => []),
       listUsers().catch(() => []),
     ])
-    tableData.value = titles || []
+    // 后端分页返回 { list, total }，向后兼容直接返回数组的情况
+    if (result && Array.isArray(result.list)) {
+      tableData.value = result.list
+      totalCount.value = result.total || 0
+    } else {
+      tableData.value = result || []
+      totalCount.value = result?.length || 0
+    }
     tracks.value = trackList || []
     allUsers.value = (userList || []).map(u => ({ id: u.id, username: u.username, contact: u.phone || u.email || u.wxId || '-' }))
   } catch (e) {
@@ -924,10 +929,11 @@ onMounted(loadData)
       <Pagination
         v-model:current="currentPage"
         v-model:pageSize="pageSize"
-        :total="filteredData.length"
+        :total="totalCount"
         show-size-changer
         :page-size-options="['10', '20', '50']"
         :show-total="total => `共 ${total} 条`"
+        @change="handleSearch"
       />
     </div>
   </Card>

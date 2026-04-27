@@ -9,6 +9,11 @@ public interface UserTrackMapper {
     @Select("SELECT * FROM tu_user_track WHERE user_id = #{userId} ORDER BY created_at ASC")
     List<UserTrack> findByUserId(String userId);
 
+    @Select("<script>SELECT * FROM tu_user_track WHERE user_id IN " +
+            "<foreach collection='userIds' item='id' open='(' separator=',' close=')'>#{id}</foreach> " +
+            "ORDER BY user_id, created_at ASC</script>")
+    List<UserTrack> findByUserIds(@Param("userIds") List<String> userIds);
+
     @Insert("INSERT INTO tu_user_track(user_id, track_id, created_at) VALUES(#{userId}, #{trackId}, NOW())")
     int insert(UserTrack userTrack);
 

@@ -4,6 +4,7 @@ import com.example.blogger.entity.MembershipPlan;
 import com.example.blogger.entity.Result;
 import com.example.blogger.entity.User;
 import com.example.blogger.entity.UserTrack;
+import com.example.blogger.mapper.UserTrackMapper;
 import com.example.blogger.service.MembershipPlanService;
 import com.example.blogger.service.UserService;
 import com.example.blogger.service.UserTrackService;
@@ -27,11 +28,13 @@ public class UserController {
     private final UserService userService;
     private final UserTrackService userTrackService;
     private final MembershipPlanService membershipPlanService;
+    private final UserTrackMapper userTrackMapper;
 
-    public UserController(UserService userService, UserTrackService userTrackService, MembershipPlanService membershipPlanService) {
+    public UserController(UserService userService, UserTrackService userTrackService, MembershipPlanService membershipPlanService, UserTrackMapper userTrackMapper) {
         this.userService = userService;
         this.userTrackService = userTrackService;
         this.membershipPlanService = membershipPlanService;
+        this.userTrackMapper = userTrackMapper;
     }
 
     private void syncPlanLimits(User user) {
@@ -66,9 +69,18 @@ public class UserController {
     @GetMapping
     public Result<List<User>> list() {
         List<User> users = userService.list();
-        for (User u : users) {
-            List<UserTrack> tracks = userTrackService.listByUser(u.getId());
-            u.setTrackIds(tracks.stream().map(UserTrack::getTrackId).collect(Collectors.toList()));
+        // 批量查询所有用户赛道，避免 N+1
+        if (!users.isEmpty()) {
+            List<String> userIds = users.stream().map(User::getId).collect(Collectors.toList());
+            List<UserTrack> allTracks = userTrackMapper.findByUserIds(userIds);
+            Map<String, List<String>> trackMap = allTracks.stream()
+                    .collect(Collectors.groupingBy(
+                            UserTrack::getUserId,
+                            Collectors.mapping(UserTrack::getTrackId, Collectors.toList())
+                    ));
+            for (User u : users) {
+                u.setTrackIds(trackMap.getOrDefault(u.getId(), Collections.emptyList()));
+            }
         }
         return Result.ok(users);
     }

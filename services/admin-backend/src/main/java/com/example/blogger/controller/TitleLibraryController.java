@@ -331,9 +331,13 @@ public class TitleLibraryController {
                     int colOffset = hasIdColumn ? 1 : 0;
                     String id = hasIdColumn ? getCellString(row, 0) : null;
                     String title = getCellString(row, colOffset);
-                    String platform = getCellString(row, colOffset + 1);
-                    String trackName = getCellString(row, colOffset + 2);
-                    String description = getCellString(row, colOffset + 3);
+                    String description = getCellString(row, colOffset + 1);
+                    String pushDateStr = getCellString(row, colOffset + 2);
+                    String platform = getCellString(row, colOffset + 3);
+                    String trackName = getCellString(row, colOffset + 4);
+                    String recommendDateStr = getCellString(row, colOffset + 5);
+                    String recommendUserName = getCellString(row, colOffset + 6);
+                    String recommendUserTemplate = getCellString(row, colOffset + 7);
 
                     if (title == null || title.isEmpty()) {
                         skip++;
@@ -351,6 +355,15 @@ public class TitleLibraryController {
                         }
                     }
 
+                    // 按用户名查找本地用户，恢复关联
+                    String recommendUserId = null;
+                    if (recommendUserName != null && !recommendUserName.isEmpty()) {
+                        User localUser = userMapper.findByUsername(recommendUserName);
+                        if (localUser != null) {
+                            recommendUserId = localUser.getId();
+                        }
+                    }
+
                     TitleLibrary tl;
                     if (id != null && !id.isEmpty()) {
                         // Try to update existing record
@@ -361,6 +374,18 @@ public class TitleLibraryController {
                             tl.setPlatform(platform);
                             if (trackId != null) {
                                 tl.setTrackId(trackId);
+                            }
+                            if (pushDateStr != null && !pushDateStr.isEmpty()) {
+                                try { tl.setPushDate(java.time.LocalDate.parse(pushDateStr)); } catch (Exception ignored) {}
+                            }
+                            if (recommendUserId != null) {
+                                tl.setRecommendUserId(recommendUserId);
+                            }
+                            if (recommendDateStr != null && !recommendDateStr.isEmpty()) {
+                                try { tl.setRecommendDate(java.time.LocalDate.parse(recommendDateStr)); } catch (Exception ignored) {}
+                            }
+                            if (recommendUserTemplate != null && !recommendUserTemplate.isEmpty()) {
+                                tl.setRecommendUserTemplate(recommendUserTemplate);
                             }
                             titleLibraryService.save(tl);
                             updated++;
@@ -375,6 +400,18 @@ public class TitleLibraryController {
                     tl.setPlatform(platform);
                     tl.setTrackId(trackId);
                     tl.setUseCount(0);
+                    if (pushDateStr != null && !pushDateStr.isEmpty()) {
+                        try { tl.setPushDate(java.time.LocalDate.parse(pushDateStr)); } catch (Exception ignored) {}
+                    }
+                    if (recommendUserId != null) {
+                        tl.setRecommendUserId(recommendUserId);
+                    }
+                    if (recommendDateStr != null && !recommendDateStr.isEmpty()) {
+                        try { tl.setRecommendDate(java.time.LocalDate.parse(recommendDateStr)); } catch (Exception ignored) {}
+                    }
+                    if (recommendUserTemplate != null && !recommendUserTemplate.isEmpty()) {
+                        tl.setRecommendUserTemplate(recommendUserTemplate);
+                    }
                     titleLibraryService.save(tl);
                     created++;
                     success++;
@@ -425,7 +462,7 @@ public class TitleLibraryController {
             }
 
             XSSFWorkbook wb = new XSSFWorkbook();
-            String[] headers = { "ID", "标题名称", "描述", "平台", "赛道", "使用次数" };
+            String[] headers = { "ID", "标题名称", "描述", "推送日期", "平台", "赛道", "推荐日期", "关联用户", "用户样式", "使用次数" };
 
             Sheet sheet = wb.createSheet("标题库");
             Row headerRow = sheet.createRow(0);
@@ -439,9 +476,13 @@ public class TitleLibraryController {
                 row.createCell(0).setCellValue(tl.getId() != null ? tl.getId() : "");
                 row.createCell(1).setCellValue(tl.getTitle() != null ? tl.getTitle() : "");
                 row.createCell(2).setCellValue(tl.getDescription() != null ? tl.getDescription() : "");
-                row.createCell(3).setCellValue(tl.getPlatform() != null ? tl.getPlatform() : "");
-                row.createCell(4).setCellValue(tl.getTrackName() != null ? tl.getTrackName() : "");
-                row.createCell(5).setCellValue(tl.getUseCount() != null ? tl.getUseCount() : 0);
+                row.createCell(3).setCellValue(tl.getPushDate() != null ? tl.getPushDate().toString() : "");
+                row.createCell(4).setCellValue(tl.getPlatform() != null ? tl.getPlatform() : "");
+                row.createCell(5).setCellValue(tl.getTrackName() != null ? tl.getTrackName() : "");
+                row.createCell(6).setCellValue(tl.getRecommendDate() != null ? tl.getRecommendDate().toString() : "");
+                row.createCell(7).setCellValue(tl.getRecommendUserName() != null ? tl.getRecommendUserName() : "");
+                row.createCell(8).setCellValue(tl.getRecommendUserTemplate() != null ? tl.getRecommendUserTemplate() : "");
+                row.createCell(9).setCellValue(tl.getUseCount() != null ? tl.getUseCount() : 0);
             }
 
             for (int i = 0; i < headers.length; i++) {

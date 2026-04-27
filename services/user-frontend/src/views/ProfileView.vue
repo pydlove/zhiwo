@@ -36,9 +36,18 @@ const copied = ref(false)
 
 async function copyInviteCode() {
   if (!user.value.inviteCode) return
-  if (doCopy(user.value.inviteCode)) {
+  const registerUrl = window.location.origin + '/register?invite=' + encodeURIComponent(user.value.inviteCode)
+  const text = `推荐你使用知我公众号创作助手！
+
+基于 AI 的公众号爆款文章创作平台，覆盖 36+ 热门赛道，每日智能推荐，让你轻松写出 10w+。
+
+点击链接注册，开启你的爆款创作之旅：
+${registerUrl}
+
+注册后请添加客服微信审核，即可使用全部功能。`
+  if (doCopy(text)) {
     copied.value = true
-    message.success('邀请码已复制')
+    message.success('邀请文案已复制')
     setTimeout(() => { copied.value = false }, 2000)
   } else {
     message.error('复制失败，请手动复制')

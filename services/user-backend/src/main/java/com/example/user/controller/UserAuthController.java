@@ -5,6 +5,7 @@ import com.example.user.entity.Result;
 import com.example.user.entity.User;
 import com.example.user.mapper.MembershipPlanMapper;
 import com.example.user.mapper.UserMapper;
+import com.example.user.service.UserService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,11 +21,13 @@ public class UserAuthController {
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final MembershipPlanMapper membershipPlanMapper;
+    private final UserService userService;
 
-    public UserAuthController(UserMapper userMapper, PasswordEncoder passwordEncoder, MembershipPlanMapper membershipPlanMapper) {
+    public UserAuthController(UserMapper userMapper, PasswordEncoder passwordEncoder, MembershipPlanMapper membershipPlanMapper, UserService userService) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.membershipPlanMapper = membershipPlanMapper;
+        this.userService = userService;
     }
 
     @PostMapping("/login")
@@ -111,7 +114,7 @@ public class UserAuthController {
             }
         }
 
-        userMapper.insert(user);
+        userService.save(user);
 
         Map<String, Object> data = new HashMap<>();
         data.put("token", "user-token-" + user.getId());

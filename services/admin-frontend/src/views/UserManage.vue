@@ -53,6 +53,13 @@ const editForm = ref({ id: null, trackLimit: 0, platformLimit: [], expireDate: '
 
 const currentPage = ref(1)
 const pageSize = ref(10)
+const selectedRowKeys = ref([])
+
+const rowSelection = {
+  onChange: (keys) => {
+    selectedRowKeys.value = keys
+  },
+}
 
 const filteredData = computed(() => {
   let list = data.value
@@ -286,10 +293,14 @@ function handleReset() {
 async function handleExport() {
   try {
     const status = statusFilter.value === '正常' ? 1 : statusFilter.value === '已禁用' ? 0 : undefined
-    const blob = await exportUsers({
+    const params = {
       keyword: search.value.trim() || undefined,
       status: status,
-    })
+    }
+    if (selectedRowKeys.value.length > 0) {
+      params.userIds = selectedRowKeys.value
+    }
+    const blob = await exportUsers(params)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -483,7 +494,7 @@ async function resetPassword(record) {
 function copyAccountInfo(record) {
   const text = `【知我公众号创作助手】账号开通通知
 
-登录地址：https://www.mmshuo.tech/login
+登录地址：http://www.mmshuo.tech/login
 用户名：${record.username || '-'}
 密码：Abc123456
 联系方式：${record.contact || '-'}
@@ -597,7 +608,7 @@ onMounted(loadData)
       <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
     </div>
 
-    <Table :columns="columns" :data-source="paginatedData" :pagination="false" row-key="id">
+    <Table :columns="columns" :data-source="paginatedData" :pagination="false" row-key="id" :row-selection="rowSelection">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'status'">
           <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>

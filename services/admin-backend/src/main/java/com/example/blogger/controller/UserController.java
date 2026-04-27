@@ -124,11 +124,13 @@ public class UserController {
     @GetMapping("/export")
     public ResponseEntity<byte[]> exportUsers(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) Integer status) {
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) List<String> userIds) {
         try {
             List<User> users = userService.list();
             List<User> filtered = new ArrayList<>();
             for (User u : users) {
+                if (userIds != null && !userIds.isEmpty() && !userIds.contains(u.getId())) continue;
                 if (status != null && !status.equals(u.getStatus())) continue;
                 if (keyword != null && !keyword.isEmpty()) {
                     String name = u.getUsername() != null ? u.getUsername() : "";
@@ -235,7 +237,6 @@ public class UserController {
                 user.setPlatformLimit(platformLimit != null ? platformLimit : "公众号");
                 user.setExpireDate(parseDateSafe(expireDate));
                 user.setTemplate(template != null && !template.isEmpty() ? template : "基础风格");
-                user.setStatus("正常".equals(statusStr) || "1".equals(statusStr) ? 1 : 0);
                 user.setRemark(remark != null ? remark : "");
                 user.setPassword("Abc123456");
                 user.setCanSetEmail(0);
@@ -256,6 +257,15 @@ public class UserController {
                     user.setPassword(existing.getPassword());
                     user.setCanSetEmail(existing.getCanSetEmail());
                     user.setEmailReceive(existing.getEmailReceive());
+                    // 已有用户：如果导入文件未指定状态，保留原状态；否则按导入值更新
+                    if (statusStr == null || statusStr.isEmpty()) {
+                        user.setStatus(existing.getStatus() != null ? existing.getStatus() : 1);
+                    } else {
+                        user.setStatus("正常".equals(statusStr) || "1".equals(statusStr) ? 1 : 0);
+                    }
+                } else {
+                    // 新用户：未指定状态则默认正常
+                    user.setStatus(statusStr == null || statusStr.isEmpty() || "正常".equals(statusStr) || "1".equals(statusStr) ? 1 : 0);
                 }
 
                 userService.save(user);

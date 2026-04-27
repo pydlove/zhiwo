@@ -44,21 +44,24 @@ public class TitleLibraryService {
         // 处理用户关联
         String titleId = titleLibrary.getId();
         String recommendUserId = titleLibrary.getRecommendUserId();
-        if (recommendUserId != null && !recommendUserId.isEmpty()) {
-            // 先清除旧关联，再插入新关联
-            titleRecommendationMapper.deleteByTitleId(titleId);
-            TitleRecommendation rec = new TitleRecommendation();
-            rec.setId(UUID.randomUUID().toString().replace("-", ""));
-            rec.setTitleLibraryId(titleId);
-            rec.setUserId(recommendUserId);
-            rec.setPlatform(titleLibrary.getPlatform());
-            rec.setTrackId(titleLibrary.getTrackId());
-            rec.setRecommendDate(titleLibrary.getPushDate() != null ? titleLibrary.getPushDate() : LocalDate.now());
-            titleRecommendationMapper.insert(rec);
-        } else if (titleLibrary.getId() != null && !titleLibrary.getId().isEmpty()) {
-            // 编辑时清空用户关联
-            titleRecommendationMapper.deleteByTitleId(titleId);
+        if (recommendUserId != null) {
+            if (!recommendUserId.isEmpty()) {
+                // 有推荐用户：更新关联
+                titleRecommendationMapper.deleteByTitleId(titleId);
+                TitleRecommendation rec = new TitleRecommendation();
+                rec.setId(UUID.randomUUID().toString().replace("-", ""));
+                rec.setTitleLibraryId(titleId);
+                rec.setUserId(recommendUserId);
+                rec.setPlatform(titleLibrary.getPlatform());
+                rec.setTrackId(titleLibrary.getTrackId());
+                rec.setRecommendDate(titleLibrary.getRecommendDate() != null ? titleLibrary.getRecommendDate() : (titleLibrary.getPushDate() != null ? titleLibrary.getPushDate() : LocalDate.now()));
+                titleRecommendationMapper.insert(rec);
+            } else {
+                // 显式传入空字符串时才清空关联
+                titleRecommendationMapper.deleteByTitleId(titleId);
+            }
         }
+        // recommendUserId 为 null 时不处理关联，保持原样（防止导入等批量操作误删关联）
     }
 
     public void delete(String id) {

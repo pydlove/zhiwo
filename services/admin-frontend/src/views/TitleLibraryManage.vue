@@ -5,6 +5,7 @@ import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Paginati
 import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, unbindRecommendation, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail } from '../api/titleLibrary.js'
 import { listTracks } from '../api/track.js'
 import { listUsers } from '../api/user.js'
+import mammoth from 'mammoth'
 
 const tableData = ref([])
 const tracks = ref([])
@@ -628,10 +629,41 @@ async function handleCancelGeneratePost() {
 // Preview / Download post
 const previewModalOpen = ref(false)
 const previewRecord = ref(null)
+const previewHtmlContent = ref('')
+const previewLoading = ref(false)
 
-function handlePreviewPost(record) {
+async function handlePreviewPost(record) {
   previewRecord.value = record
+  previewHtmlContent.value = ''
   previewModalOpen.value = true
+  previewLoading.value = true
+
+  const fileUrl = record.subscriptionPostFileUrl
+  if (!fileUrl) {
+    previewLoading.value = false
+    return
+  }
+
+  const url = fileUrl.startsWith('http') ? fileUrl : apiBaseUrl + fileUrl
+  const ext = (fileUrl.split('.').pop() || '').toLowerCase()
+
+  try {
+    if (ext === 'docx' || ext === 'doc') {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('文件获取失败')
+      const arrayBuffer = await res.arrayBuffer()
+      const result = await mammoth.convertToHtml({ arrayBuffer })
+      previewHtmlContent.value = result.value
+    } else {
+      // 其他格式直接用 iframe
+      previewHtmlContent.value = ''
+    }
+  } catch (e) {
+    message.error('文件预览失败：' + (e.message || '未知错误'))
+    previewHtmlContent.value = ''
+  } finally {
+    previewLoading.value = false
+  }
 }
 
 function handleDownloadPost(record) {
@@ -1007,13 +1039,17 @@ onMounted(loadData)
 
   <Modal v-model:open="previewModalOpen" title="文章预览" :footer="null" :mask-closable="true" width="720">
     <div v-if="previewRecord" style="margin-top: 12px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <div style="font-size: 16px; font-weight: 600;">{{ previewRecord.subscriptionPostTitle }}</div>
-        <Button size="small" @click="handleDownloadPost(previewRecord)">下载 HTML</Button>
-      </div>
+      <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">{{ previewRecord.subscriptionPostTitle }}</div>
       <div style="border: 1px solid #f0f0f0; border-radius: 6px; background: #fafafa; min-height: 360px; max-height: 560px; overflow: auto;">
+        <div v-if="previewLoading" style="padding: 24px; text-align: center; color: #999;">正在加载预览...</div>
+        <div
+          v-else-if="previewHtmlContent"
+          class="article-preview-content"
+          style="padding: 20px; background: #fff; font-size: 15px; line-height: 1.8; color: #374151;"
+          v-html="previewHtmlContent"
+        />
         <iframe
-          v-if="previewRecord.subscriptionPostFileUrl"
+          v-else-if="previewRecord.subscriptionPostFileUrl"
           :src="previewRecord.subscriptionPostFileUrl.startsWith('http') ? previewRecord.subscriptionPostFileUrl : (apiBaseUrl + previewRecord.subscriptionPostFileUrl)"
           style="width: 100%; height: 560px; border: 0;"
         />

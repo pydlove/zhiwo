@@ -182,7 +182,7 @@ public class EmailService {
                                 <!-- CTA 按钮 -->
                                 <tr>
                                     <td style="padding:0 40px 40px; text-align:center;">
-                                        <a href="https://www.mmshuo.tech/" style="display:inline-block; background-color:#07C160; color:#ffffff !important; text-decoration:none; padding:16px 48px; border-radius:10px; font-size:16px; font-weight:600;">
+                                        <a href="http://www.mmshuo.tech/" style="display:inline-block; background-color:#07C160; color:#ffffff !important; text-decoration:none; padding:16px 48px; border-radius:10px; font-size:16px; font-weight:600;">
                                             立即开启内容变现 →
                                         </a>
                                         <p style="margin:16px 0 0; font-size:12px; color:#94a3b8;">

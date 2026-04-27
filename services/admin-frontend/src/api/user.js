@@ -16,6 +16,9 @@ export function exportUsers(params) {
   const query = new URLSearchParams()
   if (params.keyword) query.append('keyword', params.keyword)
   if (params.status !== undefined && params.status !== null) query.append('status', params.status)
+  if (params.userIds && params.userIds.length > 0) {
+    params.userIds.forEach(id => query.append('userIds', id))
+  }
   return request.get('/users/export?' + query.toString(), {
     responseType: 'blob'
   })

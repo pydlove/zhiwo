@@ -25,8 +25,7 @@ public class UserService {
                 do {
                     code = generateInviteCode();
                 } while (userMapper.findByInviteCode(code) != null);
-                user.setInviteCode(code);
-                userMapper.update(user);
+                userMapper.updateInviteCode(user.getId(), code);
                 generated++;
             }
         }

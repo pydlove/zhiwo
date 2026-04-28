@@ -46,6 +46,8 @@ public class TitleLibraryController {
     private final SubscriptionPostService subscriptionPostService;
     private final PromptTemplateMapper promptTemplateMapper;
     private final EmailService emailService;
+    private final EmailPushLogMapper emailPushLogMapper;
+    private final SubscriptionPostMapper subscriptionPostMapper;
 
     // Async generate task storage (for titles)
     private final ConcurrentHashMap<String, Map<String, Object>> generateTasks = new ConcurrentHashMap<>();
@@ -62,7 +64,9 @@ public class TitleLibraryController {
                                   StyleMapper styleMapper,
                                   SubscriptionPostService subscriptionPostService,
                                   PromptTemplateMapper promptTemplateMapper,
-                                  EmailService emailService) {
+                                  EmailService emailService,
+                                  EmailPushLogMapper emailPushLogMapper,
+                                  SubscriptionPostMapper subscriptionPostMapper) {
         this.titleLibraryService = titleLibraryService;
         this.trackMapper = trackMapper;
         this.userMapper = userMapper;
@@ -73,6 +77,8 @@ public class TitleLibraryController {
         this.subscriptionPostService = subscriptionPostService;
         this.promptTemplateMapper = promptTemplateMapper;
         this.emailService = emailService;
+        this.emailPushLogMapper = emailPushLogMapper;
+        this.subscriptionPostMapper = subscriptionPostMapper;
     }
 
     @PostConstruct
@@ -1064,6 +1070,7 @@ public class TitleLibraryController {
                     user.getUsername(),
                     trackName,
                     titleLib.getTitle(),
+                    titleLib.getPlatform(),
                     articleFile,
                     post.getFileName()
             );
@@ -1165,6 +1172,7 @@ public class TitleLibraryController {
                             user.getUsername(),
                             trackName,
                             titleLib.getTitle(),
+                            titleLib.getPlatform(),
                             articleFile,
                             post.getFileName()
                     );
@@ -1186,6 +1194,152 @@ public class TitleLibraryController {
         } catch (Exception e) {
             e.printStackTrace();
             return Result.error("批量发送失败：" + e.getMessage());
+        }
+    }
+
+    // ========== 右侧面板：未推荐用户 / 未推送用户 ==========
+
+    @GetMapping("/unrecommended-users")
+    public Result<List<Map<String, Object>>> listUnrecommendedUsers(@RequestParam String date) {
+        try {
+            LocalDate pushDate = LocalDate.parse(date);
+            List<Map<String, Object>> users = titleLibraryService.findUnrecommendedUsers(pushDate);
+            return Result.ok(users);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("查询失败：" + e.getMessage());
+        }
+    }
+
+    @GetMapping("/unpushed-users")
+    public Result<List<Map<String, Object>>> listUnpushedUsers(@RequestParam String date) {
+        try {
+            LocalDate pushDate = LocalDate.parse(date);
+            List<Map<String, Object>> users = titleLibraryService.findUnpushedUsers(pushDate);
+            return Result.ok(users);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("查询失败：" + e.getMessage());
+        }
+    }
+
+    @PostMapping("/batch-push-email")
+    public Result<Map<String, Object>> batchPushEmail(@RequestBody Map<String, Object> body) {
+        try {
+            String dateStr = (String) body.get("date");
+            @SuppressWarnings("unchecked")
+            List<String> userIds = (List<String>) body.get("userIds");
+            if (dateStr == null || dateStr.isEmpty()) {
+                return Result.error("日期不能为空");
+            }
+            if (userIds == null || userIds.isEmpty()) {
+                return Result.error("请选择要推送的用户");
+            }
+
+            LocalDate pushDate = LocalDate.parse(dateStr);
+            int total = userIds.size();
+            int success = 0;
+            int failed = 0;
+            List<Map<String, String>> errors = new ArrayList<>();
+
+            for (String userId : userIds) {
+                try {
+                    User user = userMapper.findById(userId);
+                    if (user == null) {
+                        failed++;
+                        errors.add(Map.of("userId", userId, "reason", "用户不存在"));
+                        continue;
+                    }
+                    if (user.getStatus() == null || user.getStatus() != 1) {
+                        failed++;
+                        errors.add(Map.of("user", user.getUsername(), "reason", "用户已禁用"));
+                        continue;
+                    }
+                    if (user.getEmail() == null || user.getEmail().isEmpty()) {
+                        failed++;
+                        errors.add(Map.of("user", user.getUsername(), "reason", "用户未设置邮箱"));
+                        continue;
+                    }
+
+                    // 查找用户当日最新推荐（有关联文章的）
+                    TitleRecommendation rec = titleRecommendationMapper.findLatestByUserAndDate(userId, pushDate);
+                    if (rec == null || rec.getSubscriptionPostId() == null || rec.getSubscriptionPostId().isEmpty()) {
+                        failed++;
+                        errors.add(Map.of("user", user.getUsername(), "reason", "当日没有关联文章的推荐"));
+                        continue;
+                    }
+
+                    SubscriptionPost post = subscriptionPostMapper.findById(rec.getSubscriptionPostId());
+                    if (post == null) {
+                        failed++;
+                        errors.add(Map.of("user", user.getUsername(), "reason", "关联文章不存在"));
+                        continue;
+                    }
+
+                    String fileUrl = post.getFileUrl();
+                    if (fileUrl == null || fileUrl.isEmpty()) {
+                        failed++;
+                        errors.add(Map.of("user", user.getUsername(), "reason", "文章文件路径为空"));
+                        continue;
+                    }
+
+                    String filePath = fileUrl.startsWith("/")
+                            ? System.getProperty("user.dir") + fileUrl
+                            : fileUrl;
+                    File articleFile = new File(filePath);
+                    if (!articleFile.exists()) {
+                        String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
+                        articleFile = new File(articlesDir + File.separator + post.getFileName());
+                    }
+                    if (!articleFile.exists()) {
+                        failed++;
+                        errors.add(Map.of("user", user.getUsername(), "reason", "文章文件不存在"));
+                        continue;
+                    }
+
+                    Track userTrack = trackMapper.findById(rec.getTrackId());
+                    String trackName = userTrack != null ? userTrack.getName() : "";
+
+                    TitleLibrary titleLib = titleLibraryService.getById(rec.getTitleLibraryId());
+                    String articleTitle = titleLib != null ? titleLib.getTitle() : post.getTitle();
+                    String platform = titleLib != null && titleLib.getPlatform() != null ? titleLib.getPlatform() : "";
+
+                    emailService.sendDailyRecommendEmail(
+                            user.getEmail(),
+                            user.getUsername(),
+                            trackName,
+                            articleTitle,
+                            platform,
+                            articleFile,
+                            post.getFileName()
+                    );
+
+                    // 记录推送日志
+                    EmailPushLog log = new EmailPushLog();
+                    log.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
+                    log.setUserId(userId);
+                    log.setPushDate(pushDate);
+                    log.setType("daily_recommend");
+                    log.setTitleLibraryId(rec.getTitleLibraryId());
+                    emailPushLogMapper.insert(log);
+
+                    success++;
+                } catch (Exception e) {
+                    failed++;
+                    errors.add(Map.of("userId", userId, "reason", e.getMessage()));
+                }
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("total", total);
+            result.put("success", success);
+            result.put("failed", failed);
+            result.put("errors", errors);
+            return Result.ok(result);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("批量推送失败：" + e.getMessage());
         }
     }
 

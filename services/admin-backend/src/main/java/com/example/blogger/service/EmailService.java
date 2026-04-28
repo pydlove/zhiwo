@@ -166,9 +166,9 @@ public class EmailService {
      * 发送每日推荐文章邮件（带附件）
      */
     public void sendDailyRecommendEmail(String to, String userName, String trackName, String articleTitle,
-                                         File articleFile, String fileName) {
+                                         String platform, File articleFile, String fileName) {
         String subject = "【每日推荐】" + articleTitle + " —— 知我公众号创作助手";
-        String html = buildDailyRecommendHtml(userName, trackName, articleTitle);
+        String html = buildDailyRecommendHtml(userName, trackName, articleTitle, platform);
         sendHtmlEmailWithAttachment(to, subject, html, articleFile, fileName);
     }
 
@@ -269,9 +269,10 @@ public class EmailService {
             """.formatted(displayName, activityTitle, activityContent, qrCodeHtml);
     }
 
-    private String buildDailyRecommendHtml(String userName, String trackName, String articleTitle) {
+    private String buildDailyRecommendHtml(String userName, String trackName, String articleTitle, String platform) {
         String displayName = userName != null && !userName.isEmpty() ? userName : "创作者";
         String displayTrack = trackName != null && !trackName.isEmpty() ? trackName : "精选赛道";
+        String displayPlatform = platform != null && !platform.isEmpty() ? platform : "公众号";
         return """
             <!DOCTYPE html>
             <html>
@@ -309,7 +310,8 @@ public class EmailService {
                                         </p>
                                         <div style="background:#f8fafc; border-radius:12px; padding:20px 24px; border-left:4px solid #2563eb;">
                                             <p style="margin:0 0 8px; font-size:13px; color:#6b7280;">文章标题</p>
-                                            <p style="margin:0; font-size:17px; font-weight:600; color:#111827; line-height:1.5;">%s</p>
+                                            <p style="margin:0 0 12px; font-size:17px; font-weight:600; color:#111827; line-height:1.5;">%s</p>
+                                            <p style="margin:0; font-size:13px; color:#6b7280;">发布平台：<strong style="color:#2563eb;">%s</strong></p>
                                         </div>
                                     </td>
                                 </tr>
@@ -347,6 +349,6 @@ public class EmailService {
                 </table>
             </body>
             </html>
-            """.formatted(displayName, displayTrack, articleTitle);
+            """.formatted(displayName, displayTrack, articleTitle, displayPlatform);
     }
 }

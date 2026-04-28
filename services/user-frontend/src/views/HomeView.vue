@@ -26,11 +26,23 @@ const isExpired = computed(() => {
 
 const subscribedTrackIds = computed(() => new Set(userTracks.value.map(ut => ut.trackId)))
 
-// 超出 trackLimit 的历史订阅自动冻结（按订阅顺序，先订的先保留）
+// 当前平台已订阅的赛道数量（按平台独立计算限制）
+const platformSubscribedCount = computed(() => {
+  return userTracks.value.filter(ut => {
+    const track = tracks.value.find(t => t.id === ut.trackId)
+    return track && platformStore.trackMatches(track.platforms)
+  }).length
+})
+
+// 超出 trackLimit 的历史订阅自动冻结（按平台独立计算）
 const frozenTrackIds = computed(() => {
   const limit = trackLimit.value
   if (limit <= 0) return new Set()
-  const frozen = userTracks.value.slice(limit)
+  const platformTracks = userTracks.value.filter(ut => {
+    const track = tracks.value.find(t => t.id === ut.trackId)
+    return track && platformStore.trackMatches(track.platforms)
+  })
+  const frozen = platformTracks.slice(limit)
   return new Set(frozen.map(ut => ut.trackId))
 })
 
@@ -58,7 +70,7 @@ async function subscribeTrack(track) {
     return false
   }
   const limit = trackLimit.value
-  if (limit > 0 && subscribedTrackIds.value.size >= limit) {
+  if (limit > 0 && platformSubscribedCount.value >= limit) {
     message.warning(`您当前的权益最多可选择 ${limit} 个赛道，如需更多请联系管理员`)
     return false
   }
@@ -94,10 +106,10 @@ function goToTrack(track) {
   }
   // 未订阅：根据权益判断
   const limit = trackLimit.value
-  if (limit > 0 && subscribedTrackIds.value.size >= limit) {
+  if (limit > 0 && platformSubscribedCount.value >= limit) {
     Modal.confirm({
       title: '订阅额度已满',
-      content: `您当前权益最多支持 ${limit} 个赛道，已订阅 ${subscribedTrackIds.value.size} 个（含冻结）。如需订阅新赛道，请先取消部分现有订阅或升级套餐。`,
+      content: `您当前权益在${platformStore.current}平台最多支持 ${limit} 个赛道，已订阅 ${platformSubscribedCount.value} 个（含冻结）。如需订阅新赛道，请先取消部分现有订阅或升级套餐。`,
       okText: '知道了',
       cancelButtonProps: { style: { display: 'none' } },
     })
@@ -106,7 +118,7 @@ function goToTrack(track) {
   if (limit > 0) {
     Modal.confirm({
       title: `订阅「${track.name}」赛道？`,
-      content: `您当前权益最多支持 ${limit} 个赛道。订阅后如需更换，请先取消现有订阅。`,
+      content: `您当前权益在${platformStore.current}平台最多支持 ${limit} 个赛道。订阅后如需更换，请先取消现有订阅。`,
       okText: '确认订阅',
       cancelText: '取消',
       async onOk() {
@@ -257,7 +269,7 @@ onMounted(async () => {
     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
       <h2 style="font-size: 18px; font-weight: 600; color: #111827; margin: 0;">我的订阅</h2>
       <span v-if="trackLimit > 0" style="font-size: 12px; color: #6b7280; background: #f1f5f9; padding: 2px 10px; border-radius: 4px;">
-        {{ subscribedTrackIds.size }} / {{ trackLimit }} 个赛道
+        {{ platformSubscribedCount }} / {{ trackLimit }} 个赛道
       </span>
       <span v-if="hasFrozenTracks" style="font-size: 12px; color: #b45309; background: #fef3c7; padding: 2px 10px; border-radius: 4px; display: flex; align-items: center; gap: 4px;">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>

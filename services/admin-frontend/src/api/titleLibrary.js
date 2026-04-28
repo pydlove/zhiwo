@@ -132,3 +132,15 @@ export function getDefaultPromptTemplate(type) {
 export function savePromptTemplate(data) {
   return request.post('/prompt-templates', data)
 }
+
+export function listUnrecommendedUsers(date) {
+  return request.get('/title-library/unrecommended-users', { params: { date } })
+}
+
+export function listUnpushedUsers(date) {
+  return request.get('/title-library/unpushed-users', { params: { date } })
+}
+
+export function batchPushEmail(data) {
+  return request.post('/title-library/batch-push-email', data)
+}

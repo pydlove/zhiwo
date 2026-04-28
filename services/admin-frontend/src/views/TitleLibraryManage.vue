@@ -1,8 +1,8 @@
 <script setup>
 import { ref, onMounted, computed, h } from 'vue'
 import dayjs from 'dayjs'
-import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Descriptions, DatePicker } from 'ant-design-vue'
-import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, unbindRecommendation, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail } from '../api/titleLibrary.js'
+import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Descriptions, DatePicker, Tabs } from 'ant-design-vue'
+import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, unbindRecommendation, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, listUnpushedUsers, batchPushEmail } from '../api/titleLibrary.js'
 import { listTracks } from '../api/track.js'
 import { listUsers } from '../api/user.js'
 import mammoth from 'mammoth'
@@ -29,6 +29,85 @@ const searchUserName = ref('')
 const searchMatched = ref('')
 const searchPushDate = ref(null)
 
+// 右侧面板
+const panelDate = ref(dayjs())
+const activePanelTab = ref('unrecommended')
+const unrecommendedUsers = ref([])
+const unpushedUsers = ref([])
+const panelLoading = ref(false)
+const panelPushLoading = ref(false)
+const selectedPushUserIds = ref([])
+
+const panelPushRowSelection = {
+  onChange: (keys) => {
+    selectedPushUserIds.value = keys
+  },
+}
+
+const unrecommendedColumns = [
+  { title: '用户名', dataIndex: 'username', ellipsis: true },
+  { title: '联系方式', key: 'contact', customRender: ({ record }) => record.phone || record.email || record.wxId || '-' },
+  { title: '订阅信息', dataIndex: 'subscriptions', ellipsis: true },
+]
+
+const unpushedColumns = [
+  { title: '用户名', dataIndex: 'username', ellipsis: true },
+  { title: '邮箱', dataIndex: 'email', ellipsis: true },
+]
+
+async function loadPanelData() {
+  const dateStr = panelDate.value.format('YYYY-MM-DD')
+  panelLoading.value = true
+  try {
+    const [unrec, unp] = await Promise.all([
+      listUnrecommendedUsers(dateStr).catch(() => []),
+      listUnpushedUsers(dateStr).catch(() => []),
+    ])
+    unrecommendedUsers.value = unrec || []
+    unpushedUsers.value = unp || []
+  } catch (e) {
+    message.error('面板数据加载失败')
+  } finally {
+    panelLoading.value = false
+  }
+}
+
+function onPanelDateChange() {
+  loadPanelData()
+}
+
+async function handleBatchPushEmail() {
+  if (selectedPushUserIds.value.length === 0) {
+    message.warning('请选择要推送的用户')
+    return
+  }
+  Modal.confirm({
+    title: '确认批量推送邮件？',
+    content: `将向 ${selectedPushUserIds.value.length} 位用户发送当日推荐文章邮件，确认吗？`,
+    async onOk() {
+      panelPushLoading.value = true
+      try {
+        const result = await batchPushEmail({
+          date: panelDate.value.format('YYYY-MM-DD'),
+          userIds: selectedPushUserIds.value,
+        })
+        const { success = 0, failed = 0 } = result
+        if (failed === 0) {
+          message.success(`推送成功，共发送 ${success} 封邮件`)
+        } else {
+          message.success(`推送完成：成功 ${success} 封，失败 ${failed} 封`)
+        }
+        selectedPushUserIds.value = []
+        loadPanelData()
+      } catch (e) {
+        message.error(e?.response?.data?.msg || e?.message || '推送失败')
+      } finally {
+        panelPushLoading.value = false
+      }
+    },
+  })
+}
+
 const platformOptions = [
   { label: '公众号', value: '公众号' },
   { label: '今日头条', value: '今日头条' },
@@ -38,37 +117,38 @@ const platformOptions = [
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
 
 const columns = [
-  { title: '标题内容', dataIndex: 'title', ellipsis: true, width: 260 },
-  { title: '描述', dataIndex: 'description', ellipsis: true, width: 150 },
-  { title: '推荐日期', dataIndex: 'pushDate', width: 100 },
-  { title: '平台', dataIndex: 'platform', width: 90 },
-  { title: '赛道', dataIndex: 'trackName', width: 100 },
-  { title: '使用次数', dataIndex: 'useCount', width: 80, align: 'center' },
+  { title: '标题内容', dataIndex: 'title', ellipsis: true, width: 150 },
+  { title: '描述', dataIndex: 'description', ellipsis: true, width: 120 },
+  { title: '推荐日期', dataIndex: 'pushDate', width: 90 },
+  { title: '平台', dataIndex: 'platform', width: 80 },
+  { title: '赛道', dataIndex: 'trackName', ellipsis: true, width: 90 },
+  { title: '使用次数', dataIndex: 'useCount', width: 70, align: 'center' },
   {
     title: '关联用户',
     dataIndex: 'recommendUserName',
-    width: 110,
+    ellipsis: true,
+    width: 100,
     customRender: ({ record }) => {
       if (!record.recommendUserName) return h('span', { style: 'color: #999;' }, '未匹配')
       return h(Button, {
         type: 'link',
         size: 'small',
-        style: 'padding: 0;',
+        style: 'padding: 0; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block;',
         onClick: () => handleViewUser(record),
       }, () => record.recommendUserName)
     },
   },
-  { title: '用户样式', dataIndex: 'recommendUserTemplate', width: 100 },
+  { title: '用户样式', dataIndex: 'recommendUserTemplate', ellipsis: true, width: 90 },
   {
     title: '关联文章',
     key: 'post',
-    width: 160,
+    width: 140,
     customRender: ({ record }) => {
       if (!record.subscriptionPostTitle) return h('span', { style: 'color: #999;' }, '未生成')
       return h(Button, {
         type: 'link',
         size: 'small',
-        style: 'padding: 0; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;',
+        style: 'padding: 0; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block;',
         onClick: () => handlePreviewPost(record),
       }, () => record.subscriptionPostTitle)
     },
@@ -76,7 +156,7 @@ const columns = [
   {
     title: '操作',
     key: 'action',
-    width: 200,
+    width: 180,
     align: 'center',
     customRender: ({ record }) => {
       const btns = [
@@ -119,12 +199,8 @@ async function loadData() {
     params.page = currentPage.value
     params.pageSize = pageSize.value
 
-    const [result, trackList, userList] = await Promise.all([
-      listTitles(params),
-      listTracks().catch(() => []),
-      listUsers().catch(() => []),
-    ])
-    // 后端分页返回 { list, total }，向后兼容直接返回数组的情况
+    // 1. 先加载核心数据（标题列表），拿到立刻渲染表格
+    const result = await listTitles(params)
     if (result && Array.isArray(result.list)) {
       tableData.value = result.list
       totalCount.value = result.total || 0
@@ -132,12 +208,21 @@ async function loadData() {
       tableData.value = result || []
       totalCount.value = result?.length || 0
     }
-    tracks.value = trackList || []
-    allUsers.value = (userList || []).map(u => ({ id: u.id, username: u.username, contact: u.phone || u.email || u.wxId || '-' }))
+    loading.value = false
+
+    // 2. 后台异步加载赛道和用户列表，不阻塞表格显示
+    Promise.all([
+      listTracks().catch(() => []),
+      listUsers().catch(() => []),
+    ]).then(([trackList, userList]) => {
+      tracks.value = trackList || []
+      allUsers.value = (userList || []).map(u => ({ id: u.id, username: u.username, contact: u.phone || u.email || u.wxId || '-' }))
+    }).catch(() => {
+      // 辅助数据加载失败不影响主表格
+    })
   } catch (e) {
     console.error('loadData error:', e)
     message.error('加载失败: ' + (e?.message || '未知错误'))
-  } finally {
     loading.value = false
   }
 }
@@ -874,32 +959,35 @@ onMounted(loadData)
 </script>
 
 <template>
-  <Card title="标题库管理" :bordered="false">
-    <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
-      <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
-      <Select v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear>
-        <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value">{{ p.label }}</Select.Option>
-      </Select>
-      <Select v-model:value="searchTrack" placeholder="选择赛道" style="width: 160px;" allowClear>
-        <Select.Option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
-      </Select>
-      <Input v-model:value="searchUserName" placeholder="关联用户" style="width: 140px;" @pressEnter="handleSearch" />
-      <Select v-model:value="searchMatched" placeholder="匹配状态" style="width: 130px;" allowClear>
-        <Select.Option value="1">已匹配</Select.Option>
-        <Select.Option value="0">未匹配</Select.Option>
-      </Select>
-      <DatePicker v-model:value="searchPushDate" placeholder="推荐日期" style="width: 140px;" />
-      <Button type="primary" @click="handleSearch">查询</Button>
-      <Button @click="handleReset">重置</Button>
-      <Button style="margin-left: auto;" @click="openImportModal">导入标题</Button>
-      <Button @click="handleExportTitleList">导出标题</Button>
-      <Button type="primary" ghost :loading="matching" @click="handleMatchToday">匹配今日推荐</Button>
-      <Button @click="openGenerateModal">生成标题</Button>
-      <Button type="primary" ghost :disabled="selectedRowKeys.length === 0" @click="handleBatchSendEmail">批量发邮件</Button>
-      <Button @click="openExportRuleModal">导出</Button>
-      <Button @click="openImportArticleModal">导入文章</Button>
-      <Button type="primary" @click="handleAdd">+ 新增标题</Button>
-    </div>
+  <div style="display: flex; gap: 16px;">
+    <!-- 左侧主内容 -->
+    <div style="flex: 1; min-width: 0;">
+      <Card title="标题库管理" :bordered="false">
+        <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+          <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
+          <Select v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear>
+            <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value">{{ p.label }}</Select.Option>
+          </Select>
+          <Select v-model:value="searchTrack" placeholder="选择赛道" style="width: 160px;" allowClear>
+            <Select.Option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          </Select>
+          <Input v-model:value="searchUserName" placeholder="关联用户" style="width: 140px;" @pressEnter="handleSearch" />
+          <Select v-model:value="searchMatched" placeholder="匹配状态" style="width: 130px;" allowClear>
+            <Select.Option value="1">已匹配</Select.Option>
+            <Select.Option value="0">未匹配</Select.Option>
+          </Select>
+          <DatePicker v-model:value="searchPushDate" placeholder="推荐日期" style="width: 140px;" />
+          <Button type="primary" @click="handleSearch">查询</Button>
+          <Button @click="handleReset">重置</Button>
+          <Button style="margin-left: auto;" @click="openImportModal">导入标题</Button>
+          <Button @click="handleExportTitleList">导出标题</Button>
+          <Button type="primary" ghost :loading="matching" @click="handleMatchToday">匹配今日推荐</Button>
+          <Button @click="openGenerateModal">生成标题</Button>
+          <Button type="primary" ghost :disabled="selectedRowKeys.length === 0" @click="handleBatchSendEmail">批量发邮件</Button>
+          <Button @click="openExportRuleModal">导出</Button>
+          <Button @click="openImportArticleModal">导入文章</Button>
+          <Button type="primary" @click="handleAdd">+ 新增标题</Button>
+        </div>
 
     <div v-if="generating" style="background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -927,20 +1015,85 @@ onMounted(loadData)
       <div style="font-size: 12px; color: #389e0d; margin-top: 4px; text-align: right;">{{ generatePostProgress }}%</div>
     </div>
 
-    <Table :columns="columns" :data-source="paginatedData" :pagination="false" row-key="id" :loading="loading" :row-selection="rowSelection" />
+    <Table :columns="columns" :data-source="paginatedData" :pagination="false" row-key="id" :loading="loading" :row-selection="rowSelection" :scroll="{ x: 'max-content' }" />
 
-    <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
-      <Pagination
-        v-model:current="currentPage"
-        v-model:pageSize="pageSize"
-        :total="totalCount"
-        show-size-changer
-        :page-size-options="['10', '20', '50']"
-        :show-total="total => `共 ${total} 条`"
-        @change="handlePageChange"
-      />
+        <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+          <Pagination
+            v-model:current="currentPage"
+            v-model:pageSize="pageSize"
+            :total="totalCount"
+            show-size-changer
+            :page-size-options="['10', '20', '50']"
+            :show-total="total => `共 ${total} 条`"
+            @change="handlePageChange"
+          />
+        </div>
+      </Card>
     </div>
-  </Card>
+
+    <!-- 右侧用户面板 -->
+    <div style="width: 380px; flex-shrink: 0;">
+      <Card :bordered="false" style="height: 100%;">
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 15px; font-weight: 600; margin-bottom: 12px;">用户推荐/推送监控</div>
+          <DatePicker
+            v-model:value="panelDate"
+            style="width: 100%;"
+            @change="onPanelDateChange"
+          />
+        </div>
+
+        <Tabs v-model:activeKey="activePanelTab">
+          <!-- Tab 1: 未推荐用户 -->
+          <Tabs.TabPane key="unrecommended" :tab="`未推荐用户 (${unrecommendedUsers.length})`">
+            <div v-if="panelLoading" style="text-align: center; padding: 40px; color: #999;">加载中...</div>
+            <div v-else-if="unrecommendedUsers.length === 0" style="text-align: center; padding: 40px; color: #999;">
+              该日期下所有用户均已推荐文章
+            </div>
+            <Table
+              v-else
+              :columns="unrecommendedColumns"
+              :data-source="unrecommendedUsers"
+              :pagination="false"
+              size="small"
+              row-key="id"
+              :scroll="{ y: 480 }"
+            />
+          </Tabs.TabPane>
+
+          <!-- Tab 2: 未推送用户 -->
+          <Tabs.TabPane key="unpushed" :tab="`未推送用户 (${unpushedUsers.length})`">
+            <div v-if="panelLoading" style="text-align: center; padding: 40px; color: #999;">加载中...</div>
+            <div v-else-if="unpushedUsers.length === 0" style="text-align: center; padding: 40px; color: #999;">
+              该日期下所有用户均已推送邮件
+            </div>
+            <div v-else>
+              <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
+                <Button
+                  type="primary"
+                  size="small"
+                  :loading="panelPushLoading"
+                  :disabled="selectedPushUserIds.length === 0"
+                  @click="handleBatchPushEmail"
+                >
+                  批量推送 ({{ selectedPushUserIds.length }})
+                </Button>
+              </div>
+              <Table
+                :columns="unpushedColumns"
+                :data-source="unpushedUsers"
+                :pagination="false"
+                size="small"
+                row-key="id"
+                :row-selection="panelPushRowSelection"
+                :scroll="{ y: 440 }"
+              />
+            </div>
+          </Tabs.TabPane>
+        </Tabs>
+      </Card>
+    </div>
+  </div>
 
   <Modal v-model:open="modalOpen" :title="modalTitle" :mask-closable="false" :confirm-loading="saving" @ok="handleSave">
     <Form layout="vertical" style="margin-top: 12px;">

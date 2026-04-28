@@ -246,17 +246,8 @@ async function saveRecommend() {
 
 async function loadData() {
   try {
-    const [uList, cList, sList, tList, pList, styleList] = await Promise.all([listUsers(), listCreations(), listSubscriptionPosts(), listTracks(), listMembershipPlans(), listStyles().catch(() => [])])
-    allSubscriptionPosts.value = sList || []
-    allTracks.value = tList || []
-    allPlans.value = pList || []
-    allStyles.value = styleList || []
-    const planMap = {}
-    allPlans.value.forEach(p => { planMap[p.id] = p.name })
-    const usageMap = {}
-    ;(cList || []).forEach(c => {
-      usageMap[c.userId] = (usageMap[c.userId] || 0) + 1
-    })
+    // 1. 先加载核心数据（用户列表），拿到立刻渲染表格
+    const uList = await listUsers()
     const userNameMap = {}
     uList.forEach(u => { userNameMap[u.id] = u.username })
     data.value = uList.map(u => ({
@@ -268,11 +259,35 @@ async function loadData() {
       lastLogin: u.lastLogin ? u.lastLogin.slice(0, 16).replace('T', ' ') : '-',
       trackLimitText: `${u.trackLimit || 0}`,
       platformLimitText: (u.platformLimit || '').split(/[,，]/).filter(Boolean).join('、') || '全部平台',
-      membershipPlanName: planMap[u.membershipPlanId] || '-',
+      membershipPlanName: '-',
       trackIds: u.trackIds || [],
       template: u.template || '-',
       invitedByName: u.invitedBy ? (userNameMap[u.invitedBy] || u.invitedBy) : '-',
     }))
+
+    // 2. 后台异步加载辅助数据，不阻塞表格渲染
+    Promise.all([
+      listTracks(),
+      listMembershipPlans(),
+      listStyles().catch(() => []),
+      listSubscriptionPosts(),
+    ]).then(([tList, pList, styleList, sList]) => {
+      allTracks.value = tList || []
+      allPlans.value = pList || []
+      allStyles.value = styleList || []
+      allSubscriptionPosts.value = sList || []
+
+      const planMap = {}
+      allPlans.value.forEach(p => { planMap[p.id] = p.name })
+
+      // 补齐会员套餐名称
+      data.value = data.value.map(u => ({
+        ...u,
+        membershipPlanName: planMap[u.membershipPlanId] || '-',
+      }))
+    }).catch(() => {
+      // 辅助数据加载失败不影响主表格
+    })
   } catch (e) {
     message.error('加载失败')
   }

@@ -28,6 +28,11 @@ public interface TitleRecommendationMapper {
             "WHERE user_id = #{userId} AND recommend_date = #{date}")
     int countByUserAndDate(@Param("userId") String userId, @Param("date") LocalDate date);
 
+    @Select("SELECT COUNT(*) FROM tu_title_recommendation " +
+            "WHERE user_id = #{userId} AND recommend_date = #{date} " +
+            "AND subscription_post_id IS NOT NULL AND subscription_post_id != ''")
+    int countRecommendedByUserAndDate(@Param("userId") String userId, @Param("date") LocalDate date);
+
     @Select("<script>" +
             "SELECT COUNT(*) FROM tu_title_recommendation " +
             "WHERE user_id = #{userId} AND recommend_date = #{date} " +
@@ -56,4 +61,13 @@ public interface TitleRecommendationMapper {
 
     @Update("UPDATE tu_title_recommendation SET subscription_post_id = NULL WHERE subscription_post_id = #{subscriptionPostId}")
     int clearSubscriptionPostId(@Param("subscriptionPostId") String subscriptionPostId);
+
+    @Select("SELECT r.*, u.username as userName, u.template as userTemplate " +
+            "FROM tu_title_recommendation r " +
+            "LEFT JOIN tu_user u ON r.user_id = u.id AND u.is_deleted = 0 " +
+            "WHERE r.user_id = #{userId} AND r.recommend_date = #{date} " +
+            "AND r.subscription_post_id IS NOT NULL AND r.subscription_post_id != '' " +
+            "ORDER BY r.created_at DESC " +
+            "LIMIT 1")
+    TitleRecommendation findLatestByUserAndDate(@Param("userId") String userId, @Param("date") LocalDate date);
 }

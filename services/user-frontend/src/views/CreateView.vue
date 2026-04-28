@@ -310,8 +310,9 @@ function confirmTrackSelection() {
     return
   }
   const currentIds = userTracks.value.map(ut => ut.trackId)
+  const validTrackIds = new Set(availableTracks.value.map(t => t.id))
   const toAddIds = selectedTrackIds.value.filter(id => !currentIds.includes(id))
-  const toRemoveIds = currentIds.filter(id => !selectedTrackIds.value.includes(id))
+  const toRemoveIds = currentIds.filter(id => !selectedTrackIds.value.includes(id) && validTrackIds.has(id))
 
   const trackMap = new Map(tracks.value.map(t => [t.id, t.name]))
   const addNames = toAddIds.map(id => trackMap.get(id) || id)
@@ -458,7 +459,7 @@ onMounted(() => {
       >
         <div style="font-size: 32px; color: #9ca3af; margin-bottom: 8px;">+</div>
         <div style="font-size: 14px; color: #6b7280; font-weight: 500;">添加赛道</div>
-        <div v-if="trackLimit > 0" style="font-size: 12px; color: #9ca3af; margin-top: 4px;">还可添加 {{ trackLimit - userTracks.length }} 个</div>
+        <div v-if="trackLimit > 0" style="font-size: 12px; color: #9ca3af; margin-top: 4px;">还可添加 {{ trackLimit - myTracks.length }} 个</div>
       </div>
     </div>
 

@@ -94,7 +94,6 @@ public class UserAuthController {
         }
 
         User user = new User();
-        user.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
         user.setUsername(username.trim());
         user.setPassword(passwordEncoder.encode(password));
         user.setStatus(0);

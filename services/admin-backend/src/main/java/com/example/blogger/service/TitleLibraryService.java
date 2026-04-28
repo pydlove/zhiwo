@@ -2,33 +2,51 @@ package com.example.blogger.service;
 
 import com.example.blogger.entity.TitleLibrary;
 import com.example.blogger.entity.TitleRecommendation;
+import com.example.blogger.entity.Track;
+import com.example.blogger.entity.UserTrack;
+import com.example.blogger.mapper.EmailPushLogMapper;
 import com.example.blogger.mapper.TitleLibraryMapper;
 import com.example.blogger.mapper.TitleRecommendationMapper;
+import com.example.blogger.mapper.TrackMapper;
+import com.example.blogger.mapper.UserMapper;
+import com.example.blogger.mapper.UserTrackMapper;
 import org.springframework.stereotype.Service;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class TitleLibraryService {
 
     private final TitleLibraryMapper titleLibraryMapper;
     private final TitleRecommendationMapper titleRecommendationMapper;
+    private final UserMapper userMapper;
+    private final EmailPushLogMapper emailPushLogMapper;
+    private final UserTrackMapper userTrackMapper;
+    private final TrackMapper trackMapper;
 
-    public TitleLibraryService(TitleLibraryMapper titleLibraryMapper, TitleRecommendationMapper titleRecommendationMapper) {
+    public TitleLibraryService(TitleLibraryMapper titleLibraryMapper, TitleRecommendationMapper titleRecommendationMapper,
+                               UserMapper userMapper, EmailPushLogMapper emailPushLogMapper,
+                               UserTrackMapper userTrackMapper, TrackMapper trackMapper) {
         this.titleLibraryMapper = titleLibraryMapper;
         this.titleRecommendationMapper = titleRecommendationMapper;
+        this.userMapper = userMapper;
+        this.emailPushLogMapper = emailPushLogMapper;
+        this.userTrackMapper = userTrackMapper;
+        this.trackMapper = trackMapper;
     }
 
     public List<TitleLibrary> list() {
-        return titleLibraryMapper.findAll(null, null);
+        return titleLibraryMapper.findAll();
     }
 
     public Map<String, Object> listPage(int page, int pageSize) {
         int offset = (page - 1) * pageSize;
-        List<TitleLibrary> list = titleLibraryMapper.findAll(offset, pageSize);
+        List<TitleLibrary> list = titleLibraryMapper.findAllPage(offset, pageSize);
         int total = titleLibraryMapper.countAll();
         Map<String, Object> result = new HashMap<>();
         result.put("list", list);
@@ -37,12 +55,12 @@ public class TitleLibraryService {
     }
 
     public List<TitleLibrary> search(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate) {
-        return titleLibraryMapper.search(platform, trackId, keyword, recommendUserName, matched, pushDate, null, null);
+        return titleLibraryMapper.search(platform, trackId, keyword, recommendUserName, matched, pushDate);
     }
 
     public Map<String, Object> searchPage(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate, int page, int pageSize) {
         int offset = (page - 1) * pageSize;
-        List<TitleLibrary> list = titleLibraryMapper.search(platform, trackId, keyword, recommendUserName, matched, pushDate, offset, pageSize);
+        List<TitleLibrary> list = titleLibraryMapper.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, offset, pageSize);
         int total = titleLibraryMapper.countSearch(platform, trackId, keyword, recommendUserName, matched, pushDate);
         Map<String, Object> result = new HashMap<>();
         result.put("list", list);
@@ -88,5 +106,52 @@ public class TitleLibraryService {
 
     public void delete(String id) {
         titleLibraryMapper.delete(id);
+    }
+
+    public List<Map<String, Object>> findUnrecommendedUsers(LocalDate date) {
+        List<Map<String, Object>> allUsers = userMapper.findAllActiveUsers();
+        List<Map<String, Object>> result = new ArrayList<>();
+        List<String> unrecommendedUserIds = new ArrayList<>();
+        for (Map<String, Object> user : allUsers) {
+            String userId = (String) user.get("id");
+            int count = titleRecommendationMapper.countRecommendedByUserAndDate(userId, date);
+            if (count == 0) {
+                result.add(user);
+                unrecommendedUserIds.add(userId);
+            }
+        }
+        // 批量查询订阅信息
+        if (!unrecommendedUserIds.isEmpty()) {
+            List<Track> allTracks = trackMapper.findAll();
+            Map<String, Track> trackMap = allTracks.stream().collect(Collectors.toMap(Track::getId, t -> t));
+            List<UserTrack> userTracks = userTrackMapper.findByUserIds(unrecommendedUserIds);
+            Map<String, List<String>> userTrackNames = new HashMap<>();
+            for (UserTrack ut : userTracks) {
+                Track track = trackMap.get(ut.getTrackId());
+                if (track != null) {
+                    String label = track.getPlatforms() + "-" + track.getName();
+                    userTrackNames.computeIfAbsent(ut.getUserId(), k -> new ArrayList<>()).add(label);
+                }
+            }
+            for (Map<String, Object> user : result) {
+                String userId = (String) user.get("id");
+                List<String> subs = userTrackNames.getOrDefault(userId, new ArrayList<>());
+                user.put("subscriptions", String.join(", ", subs));
+            }
+        }
+        return result;
+    }
+
+    public List<Map<String, Object>> findUnpushedUsers(LocalDate date) {
+        List<Map<String, Object>> allUsers = userMapper.findAllActiveUsersWithEmail();
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> user : allUsers) {
+            String userId = (String) user.get("id");
+            int count = emailPushLogMapper.countByUserAndDate(userId, date);
+            if (count == 0) {
+                result.add(user);
+            }
+        }
+        return result;
     }
 }

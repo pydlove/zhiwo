@@ -1,11 +1,11 @@
 <script setup>
-import { ref, onMounted, computed, h } from 'vue'
+import { ref, onMounted, computed, h, nextTick } from 'vue'
 import dayjs from 'dayjs'
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Descriptions, DatePicker, Tabs } from 'ant-design-vue'
 import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, unbindRecommendation, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, listUnpushedUsers, batchPushEmail } from '../api/titleLibrary.js'
 import { listTracks } from '../api/track.js'
 import { listUsers } from '../api/user.js'
-import mammoth from 'mammoth'
+import { renderAsync } from 'docx-preview'
 
 const tableData = ref([])
 const tracks = ref([])
@@ -30,7 +30,9 @@ const searchMatched = ref('')
 const searchPushDate = ref(null)
 
 // 右侧面板
-const panelDate = ref(dayjs())
+const PANEL_DATE_KEY = 'titleLibrary_panelDate'
+const savedDate = localStorage.getItem(PANEL_DATE_KEY)
+const panelDate = ref(savedDate ? dayjs(savedDate) : dayjs())
 const activePanelTab = ref('unrecommended')
 const unrecommendedUsers = ref([])
 const unpushedUsers = ref([])
@@ -46,8 +48,8 @@ const panelPushRowSelection = {
 
 const unrecommendedColumns = [
   { title: '用户名', dataIndex: 'username', ellipsis: true },
-  { title: '联系方式', key: 'contact', customRender: ({ record }) => record.phone || record.email || record.wxId || '-' },
-  { title: '订阅信息', dataIndex: 'subscriptions', ellipsis: true },
+  { title: '邮箱', dataIndex: 'email', ellipsis: true },
+  { title: '赛道信息', dataIndex: 'trackInfo', ellipsis: true },
 ]
 
 const unpushedColumns = [
@@ -73,6 +75,9 @@ async function loadPanelData() {
 }
 
 function onPanelDateChange() {
+  if (panelDate.value) {
+    localStorage.setItem(PANEL_DATE_KEY, panelDate.value.format('YYYY-MM-DD'))
+  }
   loadPanelData()
 }
 
@@ -117,40 +122,50 @@ const platformOptions = [
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
 
 const columns = [
-  { title: '标题内容', dataIndex: 'title', ellipsis: true, width: 150 },
-  { title: '描述', dataIndex: 'description', ellipsis: true, width: 120 },
-  { title: '推荐日期', dataIndex: 'pushDate', width: 90 },
-  { title: '平台', dataIndex: 'platform', width: 80 },
-  { title: '赛道', dataIndex: 'trackName', ellipsis: true, width: 90 },
-  { title: '使用次数', dataIndex: 'useCount', width: 70, align: 'center' },
   {
-    title: '关联用户',
-    dataIndex: 'recommendUserName',
+    title: '标题内容',
+    key: 'title',
     ellipsis: true,
-    width: 100,
+    width: 220,
     customRender: ({ record }) => {
-      if (!record.recommendUserName) return h('span', { style: 'color: #999;' }, '未匹配')
-      return h(Button, {
-        type: 'link',
-        size: 'small',
-        style: 'padding: 0; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block;',
-        onClick: () => handleViewUser(record),
-      }, () => record.recommendUserName)
+      const btnStyle = 'padding: 0; max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block;'
+      if (record.subscriptionPostFileUrl) {
+        return h(Button, {
+          type: 'link',
+          size: 'small',
+          style: btnStyle,
+          onClick: () => handlePreviewPost(record),
+        }, () => record.title)
+      }
+      return h('span', { style: btnStyle }, record.title)
     },
   },
-  { title: '用户样式', dataIndex: 'recommendUserTemplate', ellipsis: true, width: 90 },
+  { title: '推荐日期', dataIndex: 'pushDate', width: 90 },
   {
-    title: '关联文章',
-    key: 'post',
-    width: 140,
+    title: '平台/赛道',
+    key: 'platformTrack',
+    ellipsis: true,
+    width: 130,
     customRender: ({ record }) => {
-      if (!record.subscriptionPostTitle) return h('span', { style: 'color: #999;' }, '未生成')
+      return h('span', {}, `${record.platform || '-'} / ${record.trackName || '-'}`)
+    },
+  },
+  {
+    title: '关联用户',
+    key: 'userInfo',
+    ellipsis: true,
+    width: 150,
+    customRender: ({ record }) => {
+      if (!record.recommendUserName) return h('span', { style: 'color: #999;' }, '未匹配')
+      const text = record.recommendUserTemplate
+        ? `${record.recommendUserName} / ${record.recommendUserTemplate}`
+        : record.recommendUserName
       return h(Button, {
         type: 'link',
         size: 'small',
-        style: 'padding: 0; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block;',
-        onClick: () => handlePreviewPost(record),
-      }, () => record.subscriptionPostTitle)
+        style: 'padding: 0; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block;',
+        onClick: () => handleViewUser(record),
+      }, () => text)
     },
   },
   {
@@ -660,6 +675,10 @@ function stopGeneratePostPoll() {
 async function pollGeneratePostStatus(taskId) {
   try {
     const status = await getGeneratePostStatus(taskId)
+    if (!status || typeof status !== 'object') {
+      console.error('poll post error: status is not an object', status)
+      return
+    }
     generatePostProgress.value = status.progress || 0
     generatePostStatusMsg.value = status.message || ''
     if (status.status === 'completed') {
@@ -725,6 +744,16 @@ const previewModalOpen = ref(false)
 const previewRecord = ref(null)
 const previewHtmlContent = ref('')
 const previewLoading = ref(false)
+const docxContainerRef = ref(null)
+const previewFileType = computed(() => {
+  const url = previewRecord.value?.subscriptionPostFileUrl || ''
+  const name = url.split('/').pop() || ''
+  if (name.endsWith('.pdf')) return 'pdf'
+  if (name.endsWith('.txt') || name.endsWith('.md')) return 'text'
+  if (name.endsWith('.docx')) return 'docx'
+  if (name.endsWith('.doc')) return 'doc'
+  return 'other'
+})
 
 async function handlePreviewPost(record) {
   previewRecord.value = record
@@ -739,17 +768,36 @@ async function handlePreviewPost(record) {
   }
 
   const url = fileUrl.startsWith('http') ? fileUrl : apiBaseUrl + fileUrl
-  const ext = (fileUrl.split('.').pop() || '').toLowerCase()
 
   try {
-    if (ext === 'docx' || ext === 'doc') {
+    const type = previewFileType.value
+    if (type === 'text') {
       const res = await fetch(url)
-      if (!res.ok) throw new Error('文件获取失败')
-      const arrayBuffer = await res.arrayBuffer()
-      const result = await mammoth.convertToHtml({ arrayBuffer })
-      previewHtmlContent.value = result.value
+      previewHtmlContent.value = await res.text()
+    } else if (type === 'docx') {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      if (blob.size === 0) {
+        throw new Error('文件内容为空')
+      }
+      previewLoading.value = false
+      await nextTick()
+      if (docxContainerRef.value) {
+        docxContainerRef.value.innerHTML = ''
+        await nextTick()
+        try {
+          await renderAsync(blob, docxContainerRef.value, null, {
+            className: 'docx-preview',
+            inWrapper: false,
+          })
+        } catch (renderErr) {
+          console.error('docx render error:', renderErr)
+          docxContainerRef.value.innerHTML = '<div style="color:#999;text-align:center;padding:40px;">文件解析失败，该文件可能不是有效的 docx 格式</div>'
+        }
+      }
+      return
     } else {
-      // 其他格式直接用 iframe
+      // pdf / doc / other 用 iframe
       previewHtmlContent.value = ''
     }
   } catch (e) {
@@ -883,6 +931,10 @@ function stopGeneratePoll() {
 async function pollGenerateStatus(taskId) {
   try {
     const status = await getGenerateStatus(taskId)
+    if (!status || typeof status !== 'object') {
+      console.error('poll error: status is not an object', status)
+      return
+    }
     generateProgress.value = status.progress || 0
     generateStatusMsg.value = status.message || ''
     if (status.status === 'completed') {
@@ -961,7 +1013,7 @@ onMounted(loadData)
 <template>
   <div style="display: flex; gap: 16px;">
     <!-- 左侧主内容 -->
-    <div style="flex: 1; min-width: 0;">
+    <div style="width: 60%; min-width: 0;">
       <Card title="标题库管理" :bordered="false">
         <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
           <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
@@ -1032,7 +1084,7 @@ onMounted(loadData)
     </div>
 
     <!-- 右侧用户面板 -->
-    <div style="width: 380px; flex-shrink: 0;">
+    <div style="width: 40%; flex-shrink: 0;">
       <Card :bordered="false" style="height: 100%;">
         <div style="margin-bottom: 16px;">
           <div style="font-size: 15px; font-weight: 600; margin-bottom: 12px;">用户推荐/推送监控</div>
@@ -1200,17 +1252,23 @@ onMounted(loadData)
     </Form>
   </Modal>
 
-  <Modal v-model:open="previewModalOpen" title="文章预览" :footer="null" :mask-closable="true" width="720">
+  <Modal v-model:open="previewModalOpen" title="文章预览" :footer="null" :mask-closable="true" width="900">
     <div v-if="previewRecord" style="margin-top: 12px;">
       <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">{{ previewRecord.subscriptionPostTitle }}</div>
-      <div style="border: 1px solid #f0f0f0; border-radius: 6px; background: #fafafa; min-height: 360px; max-height: 560px; overflow: auto;">
+      <div style="border: 1px solid #f0f0f0; border-radius: 6px; background: #fafafa; min-height: 360px; max-height: 600px; overflow: auto;">
         <div v-if="previewLoading" style="padding: 24px; text-align: center; color: #999;">正在加载预览...</div>
-        <div
+        <!-- Text -->
+        <pre
           v-else-if="previewHtmlContent"
-          class="article-preview-content"
-          style="padding: 20px; background: #fff; font-size: 15px; line-height: 1.8; color: #374151;"
-          v-html="previewHtmlContent"
+          style="padding: 16px; margin: 0; font-family: monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; background: #fafafa; border: 0;"
+        >{{ previewHtmlContent }}</pre>
+        <!-- DOCX -->
+        <div
+          v-else-if="previewFileType === 'docx'"
+          ref="docxContainerRef"
+          style="padding: 24px; background: #fff; border: 0; line-height: 1.8; font-size: 14px;"
         />
+        <!-- PDF / DOC / Other -->
         <iframe
           v-else-if="previewRecord.subscriptionPostFileUrl"
           :src="previewRecord.subscriptionPostFileUrl.startsWith('http') ? previewRecord.subscriptionPostFileUrl : (apiBaseUrl + previewRecord.subscriptionPostFileUrl)"
@@ -1322,3 +1380,14 @@ onMounted(loadData)
     </Form>
   </Modal>
 </template>
+
+<style scoped>
+:deep(.docx-preview img) {
+  max-width: 100%;
+  height: auto;
+}
+:deep(.docx-preview table) {
+  max-width: 100%;
+  border-collapse: collapse;
+}
+</style>

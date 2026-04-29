@@ -1,0 +1,1 @@
+ALTER TABLE tu_user ADD COLUMN is_real TINYINT NOT NULL DEFAULT 0 COMMENT '是否真实用户 0-否 1-是' AFTER invited_by;

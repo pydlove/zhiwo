@@ -114,6 +114,15 @@ public class TitleLibraryService {
         List<String> unrecommendedUserIds = new ArrayList<>();
         for (Map<String, Object> user : allUsers) {
             String userId = (String) user.get("id");
+            // 过滤掉非真实用户（is_real != 1）
+            Object isRealObj = user.get("isReal");
+            int isReal = 0;
+            if (isRealObj instanceof Number) {
+                isReal = ((Number) isRealObj).intValue();
+            }
+            if (isReal != 1) {
+                continue;
+            }
             int count = titleRecommendationMapper.countRecommendedByUserAndDate(userId, date);
             if (count == 0) {
                 result.add(user);
@@ -136,7 +145,7 @@ public class TitleLibraryService {
             for (Map<String, Object> user : result) {
                 String userId = (String) user.get("id");
                 List<String> subs = userTrackNames.getOrDefault(userId, new ArrayList<>());
-                user.put("subscriptions", String.join(", ", subs));
+                user.put("trackInfo", String.join(", ", subs));
             }
         }
         return result;

@@ -2,10 +2,16 @@ package com.example.blogger.controller;
 
 import com.example.blogger.entity.MembershipPlan;
 import com.example.blogger.entity.Result;
+import com.example.blogger.entity.TitleLibrary;
+import com.example.blogger.entity.TitleRecommendation;
+import com.example.blogger.entity.Track;
 import com.example.blogger.entity.User;
 import com.example.blogger.entity.UserTrack;
+import com.example.blogger.mapper.TitleLibraryMapper;
+import com.example.blogger.mapper.TrackMapper;
 import com.example.blogger.mapper.UserTrackMapper;
 import com.example.blogger.service.MembershipPlanService;
+import com.example.blogger.service.TitleLibraryService;
 import com.example.blogger.service.UserService;
 import com.example.blogger.service.UserTrackService;
 import org.apache.poi.ss.usermodel.*;
@@ -29,12 +35,20 @@ public class UserController {
     private final UserTrackService userTrackService;
     private final MembershipPlanService membershipPlanService;
     private final UserTrackMapper userTrackMapper;
+    private final TitleLibraryService titleLibraryService;
+    private final TitleLibraryMapper titleLibraryMapper;
+    private final TrackMapper trackMapper;
 
-    public UserController(UserService userService, UserTrackService userTrackService, MembershipPlanService membershipPlanService, UserTrackMapper userTrackMapper) {
+    public UserController(UserService userService, UserTrackService userTrackService, MembershipPlanService membershipPlanService,
+                          UserTrackMapper userTrackMapper, TitleLibraryService titleLibraryService,
+                          TitleLibraryMapper titleLibraryMapper, TrackMapper trackMapper) {
         this.userService = userService;
         this.userTrackService = userTrackService;
         this.membershipPlanService = membershipPlanService;
         this.userTrackMapper = userTrackMapper;
+        this.titleLibraryService = titleLibraryService;
+        this.titleLibraryMapper = titleLibraryMapper;
+        this.trackMapper = trackMapper;
     }
 
     private void syncPlanLimits(User user) {
@@ -67,21 +81,60 @@ public class UserController {
     }
 
     @GetMapping
-    public Result<List<User>> list() {
+    public Result<List<User>> list(
+            @RequestParam(value = "status", required = false) Integer status,
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "platform", required = false) String platform,
+            @RequestParam(value = "trackId", required = false) String trackId) {
         List<User> users = userService.list();
+
         // 批量查询所有用户赛道，避免 N+1
+        Map<String, List<String>> trackMap = new HashMap<>();
         if (!users.isEmpty()) {
             List<String> userIds = users.stream().map(User::getId).collect(Collectors.toList());
             List<UserTrack> allTracks = userTrackMapper.findByUserIds(userIds);
-            Map<String, List<String>> trackMap = allTracks.stream()
+            trackMap.putAll(allTracks.stream()
                     .collect(Collectors.groupingBy(
                             UserTrack::getUserId,
                             Collectors.mapping(UserTrack::getTrackId, Collectors.toList())
-                    ));
+                    )));
             for (User u : users) {
                 u.setTrackIds(trackMap.getOrDefault(u.getId(), Collections.emptyList()));
             }
         }
+
+        // 过滤条件
+        if (status != null) {
+            users = users.stream().filter(u -> status.equals(u.getStatus())).collect(Collectors.toList());
+        }
+        if (keyword != null && !keyword.isEmpty()) {
+            String[] kws = keyword.toLowerCase().split("\\s+");
+            users = users.stream().filter(u -> {
+                String username = u.getUsername() != null ? u.getUsername().toLowerCase() : "";
+                String email = u.getEmail() != null ? u.getEmail().toLowerCase() : "";
+                String wxName = u.getWxName() != null ? u.getWxName().toLowerCase() : "";
+                for (String kw : kws) {
+                    if (kw.isEmpty()) continue;
+                    if (username.contains(kw) || email.contains(kw) || wxName.contains(kw)) {
+                        return true;
+                    }
+                }
+                return false;
+            }).collect(Collectors.toList());
+        }
+        if (platform != null && !platform.isEmpty()) {
+            users = users.stream().filter(u -> {
+                String pl = u.getPlatformLimit();
+                return pl != null && pl.contains(platform);
+            }).collect(Collectors.toList());
+        }
+        if (trackId != null && !trackId.isEmpty()) {
+            users = users.stream().filter(u -> {
+                List<String> tids = trackMap.getOrDefault(u.getId(), Collections.emptyList());
+                return tids.contains(trackId);
+            }).collect(Collectors.toList());
+        }
+
         return Result.ok(users);
     }
 
@@ -110,6 +163,7 @@ public class UserController {
         if (user.getPhone() != null) existing.setPhone(user.getPhone());
         if (user.getEmail() != null) existing.setEmail(user.getEmail());
         if (user.getWxId() != null) existing.setWxId(user.getWxId());
+        if (user.getWxName() != null) existing.setWxName(user.getWxName());
         if (user.getAiLimit() != null) existing.setAiLimit(user.getAiLimit());
         if (user.getTrackLimit() != null) existing.setTrackLimit(user.getTrackLimit());
         if (user.getPlatformLimit() != null) existing.setPlatformLimit(user.getPlatformLimit());
@@ -122,6 +176,7 @@ public class UserController {
         if (user.getMembershipPlanId() != null) existing.setMembershipPlanId(user.getMembershipPlanId());
         if (user.getInviteCode() != null) existing.setInviteCode(user.getInviteCode());
         if (user.getInvitedBy() != null) existing.setInvitedBy(user.getInvitedBy());
+        if (user.getIsReal() != null) existing.setIsReal(user.getIsReal());
         syncPlanLimits(existing, oldPlanId);
         userService.save(existing);
         return Result.ok(null);
@@ -163,7 +218,7 @@ public class UserController {
             Sheet sheet = wb.createSheet("用户列表");
 
             Row header = sheet.createRow(0);
-            String[] cols = {"用户名", "手机号", "邮箱", "微信号", "可选赛道数", "可访问平台", "到期时间", "会员套餐", "默认样式", "状态", "备注"};
+            String[] cols = {"用户名", "手机号", "邮箱", "微信号", "公众号名称", "可选赛道数", "可访问平台", "到期时间", "会员套餐", "默认样式", "状态", "备注"};
             for (int i = 0; i < cols.length; i++) {
                 Cell cell = header.createCell(i);
                 cell.setCellValue(cols[i]);
@@ -176,13 +231,14 @@ public class UserController {
                 row.createCell(1).setCellValue(u.getPhone() != null ? u.getPhone() : "");
                 row.createCell(2).setCellValue(u.getEmail() != null ? u.getEmail() : "");
                 row.createCell(3).setCellValue(u.getWxId() != null ? u.getWxId() : "");
-                row.createCell(4).setCellValue(u.getTrackLimit() != null ? u.getTrackLimit() : 0);
-                row.createCell(5).setCellValue(u.getPlatformLimit() != null ? u.getPlatformLimit() : "");
-                row.createCell(6).setCellValue(u.getExpireDate() != null ? u.getExpireDate().toString() : "");
-                row.createCell(7).setCellValue(planMap.getOrDefault(u.getMembershipPlanId(), ""));
-                row.createCell(8).setCellValue(u.getTemplate() != null ? u.getTemplate() : "");
-                row.createCell(9).setCellValue(u.getStatus() != null && u.getStatus() == 1 ? "正常" : "已禁用");
-                row.createCell(10).setCellValue(u.getRemark() != null ? u.getRemark() : "");
+                row.createCell(4).setCellValue(u.getWxName() != null ? u.getWxName() : "");
+                row.createCell(5).setCellValue(u.getTrackLimit() != null ? u.getTrackLimit() : 0);
+                row.createCell(6).setCellValue(u.getPlatformLimit() != null ? u.getPlatformLimit() : "");
+                row.createCell(7).setCellValue(u.getExpireDate() != null ? u.getExpireDate().toString() : "");
+                row.createCell(8).setCellValue(planMap.getOrDefault(u.getMembershipPlanId(), ""));
+                row.createCell(9).setCellValue(u.getTemplate() != null ? u.getTemplate() : "");
+                row.createCell(10).setCellValue(u.getStatus() != null && u.getStatus() == 1 ? "正常" : "已禁用");
+                row.createCell(11).setCellValue(u.getRemark() != null ? u.getRemark() : "");
             }
 
             for (int i = 0; i < cols.length; i++) {
@@ -221,13 +277,14 @@ public class UserController {
                 String phone = getCellString(row, 1);
                 String email = getCellString(row, 2);
                 String wxId = getCellString(row, 3);
-                String trackLimitStr = getCellString(row, 4);
-                String platformLimit = getCellString(row, 5);
-                String expireDate = getCellString(row, 6);
-                String membershipPlanName = getCellString(row, 7);
-                String template = getCellString(row, 8);
-                String statusStr = getCellString(row, 9);
-                String remark = getCellString(row, 10);
+                String wxName = getCellString(row, 4);
+                String trackLimitStr = getCellString(row, 5);
+                String platformLimit = getCellString(row, 6);
+                String expireDate = getCellString(row, 7);
+                String membershipPlanName = getCellString(row, 8);
+                String template = getCellString(row, 9);
+                String statusStr = getCellString(row, 10);
+                String remark = getCellString(row, 11);
 
                 if (username == null || username.isEmpty()) {
                     skip++;
@@ -245,6 +302,7 @@ public class UserController {
                 user.setPhone(phone != null ? phone : "");
                 user.setEmail(email != null ? email : "");
                 user.setWxId(wxId != null ? wxId : "");
+                user.setWxName(wxName != null ? wxName : "");
                 user.setTrackLimit(parseIntSafe(trackLimitStr, 0));
                 user.setPlatformLimit(platformLimit != null ? platformLimit : "公众号");
                 user.setExpireDate(parseDateSafe(expireDate));
@@ -294,6 +352,74 @@ public class UserController {
         } catch (Exception e) {
             return Result.error("导入失败：" + e.getMessage());
         }
+    }
+
+    @PostMapping("/{userId}/next-title")
+    public Result<List<Map<String, String>>> setNextTitle(@PathVariable String userId, @RequestBody Map<String, Object> body) {
+        String recommendDateStr = (String) body.get("recommendDate");
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> items = (List<Map<String, String>>) body.get("items");
+
+        if (items == null || items.isEmpty()) {
+            return Result.error("请至少输入一个标题");
+        }
+
+        User user = userService.getById(userId);
+        if (user == null) {
+            return Result.error("用户不存在");
+        }
+
+        List<UserTrack> userTracks = userTrackMapper.findByUserId(userId);
+        if (userTracks.isEmpty()) {
+            return Result.error("该用户未订阅任何赛道");
+        }
+        Set<String> subscribedTrackIds = userTracks.stream()
+                .map(UserTrack::getTrackId)
+                .collect(Collectors.toSet());
+
+        LocalDate recommendDate;
+        try {
+            recommendDate = (recommendDateStr != null && !recommendDateStr.isEmpty())
+                    ? LocalDate.parse(recommendDateStr)
+                    : LocalDate.now();
+        } catch (Exception e) {
+            return Result.error("推荐日期格式错误");
+        }
+
+        List<Map<String, String>> resultList = new ArrayList<>();
+        for (Map<String, String> item : items) {
+            String title = item.get("title");
+            String trackId = item.get("trackId");
+            if (title == null || title.trim().isEmpty()) {
+                continue;
+            }
+            if (trackId == null || trackId.isEmpty() || !subscribedTrackIds.contains(trackId)) {
+                continue;
+            }
+            Track track = trackMapper.findById(trackId);
+            if (track == null) {
+                continue;
+            }
+
+            TitleLibrary tl = new TitleLibrary();
+            tl.setTitle(title.trim());
+            tl.setPlatform(track.getPlatforms());
+            tl.setTrackId(trackId);
+            tl.setPushDate(recommendDate);
+            tl.setRecommendUserId(userId);
+            tl.setRecommendDate(recommendDate);
+            titleLibraryService.save(tl);
+
+            Map<String, String> resultItem = new HashMap<>();
+            resultItem.put("titleLibraryId", tl.getId());
+            resultItem.put("title", tl.getTitle());
+            resultList.add(resultItem);
+        }
+
+        if (resultList.isEmpty()) {
+            return Result.error("没有有效的标题被保存");
+        }
+        return Result.ok(resultList);
     }
 
     private String getCellString(Row row, int col) {

@@ -10,6 +10,7 @@ public class User {
     private String phone;
     private String email;
     private String wxId;
+    private String wxName;
     private Integer aiLimit;
     private Integer trackLimit;
     private String platformLimit;
@@ -23,6 +24,7 @@ public class User {
     private String membershipPlanId;
     private String inviteCode;
     private String invitedBy;
+    private Integer isReal;
     private Integer isDeleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -42,6 +44,8 @@ public class User {
     public void setEmail(String email) { this.email = email; }
     public String getWxId() { return wxId; }
     public void setWxId(String wxId) { this.wxId = wxId; }
+    public String getWxName() { return wxName; }
+    public void setWxName(String wxName) { this.wxName = wxName; }
     public Integer getAiLimit() { return aiLimit; }
     public void setAiLimit(Integer aiLimit) { this.aiLimit = aiLimit; }
     public Integer getTrackLimit() { return trackLimit; }
@@ -68,6 +72,8 @@ public class User {
     public void setInviteCode(String inviteCode) { this.inviteCode = inviteCode; }
     public String getInvitedBy() { return invitedBy; }
     public void setInvitedBy(String invitedBy) { this.invitedBy = invitedBy; }
+    public Integer getIsReal() { return isReal; }
+    public void setIsReal(Integer isReal) { this.isReal = isReal; }
     public Integer getIsDeleted() { return isDeleted; }
     public void setIsDeleted(Integer isDeleted) { this.isDeleted = isDeleted; }
     public LocalDateTime getCreatedAt() { return createdAt; }

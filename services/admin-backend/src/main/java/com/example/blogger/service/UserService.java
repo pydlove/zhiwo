@@ -49,6 +49,7 @@ public class UserService {
             if (user.getInviteCode() == null || user.getInviteCode().isEmpty()) {
                 user.setInviteCode(generateInviteCode());
             }
+            if (user.getIsReal() == null) user.setIsReal(1);
             userMapper.insert(user);
         } else {
             userMapper.update(user);

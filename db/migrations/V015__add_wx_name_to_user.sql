@@ -1,0 +1,1 @@
+ALTER TABLE tu_user ADD COLUMN wx_name VARCHAR(100) COMMENT '公众号名称' AFTER wx_id;

@@ -194,6 +194,30 @@ public class TitleLibraryController {
         }
     }
 
+    @PostConstruct
+    public void migrateEmailPushLogTable() {
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.getMetaData().getTables(null, null, "tu_email_push_log", null)) {
+            if (!rs.next()) {
+                conn.createStatement().execute(
+                    "CREATE TABLE IF NOT EXISTS tu_email_push_log (" +
+                    "  id VARCHAR(32) PRIMARY KEY," +
+                    "  user_id VARCHAR(32) NOT NULL COMMENT '用户ID'," +
+                    "  push_date DATE NOT NULL COMMENT '推送日期'," +
+                    "  type VARCHAR(32) NOT NULL DEFAULT 'daily_recommend' COMMENT '推送类型'," +
+                    "  title_library_id VARCHAR(32) COMMENT '关联标题库ID'," +
+                    "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP," +
+                    "  INDEX idx_user_date (user_id, push_date)," +
+                    "  INDEX idx_push_date (push_date)" +
+                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='邮件推送日志表'"
+                );
+                System.out.println("Migration applied: created tu_email_push_log table");
+            }
+        } catch (SQLException e) {
+            System.err.println("Migration check failed for tu_email_push_log: " + e.getMessage());
+        }
+    }
+
     /**
      * 获取用户当前激活的赛道ID集合（按订阅时间先后，只保留前 trackLimit 个）
      */
@@ -725,19 +749,12 @@ public class TitleLibraryController {
 
                 // Save file with original name (use title + original extension to keep it readable)
                 // Remove both ASCII and Chinese special chars that are invalid in filenames/URLs
-                String safeBase = baseName.replaceAll("[\\\\/:*?\"<>|%\\uFF1A\\uFF1F\\u201C\\u201D\\u2018\\u2019\\u300A\\u300B\\u3001\\uFF0C\\u3002\\uFF01\\uFF08\\uFF09]", "_").trim();
+                String safeBase = baseName.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
                 if (safeBase.isEmpty()) {
-                    safeBase = matchedTitle.getTitle() != null ? matchedTitle.getTitle().replaceAll("[\\\\/:*?\"<>|%\\uFF1A\\uFF1F\\u201C\\u201D\\u2018\\u2019\\u300A\\u300B\\u3001\\uFF0C\\u3002\\uFF01\\uFF08\\uFF09]", "_").trim() : "article";
+                    safeBase = matchedTitle.getTitle() != null ? matchedTitle.getTitle().replaceAll("[\\\\/:*?\"<>|]", "_").trim() : "article";
                 }
                 String fileName = safeBase + "." + ext;
-                // Avoid overwrite: if exists, append counter
-                File targetFile = new File(articlesDir + File.separator + fileName);
-                int counter = 1;
-                while (targetFile.exists()) {
-                    fileName = safeBase + "(" + counter + ")." + ext;
-                    targetFile = new File(articlesDir + File.separator + fileName);
-                    counter++;
-                }
+                System.out.println("[ImportArticle] originalName=" + originalName + ", safeBase=" + safeBase + ", fileName=" + fileName);
                 String filePath = articlesDir + File.separator + fileName;
                 file.transferTo(new File(filePath));
 
@@ -1075,6 +1092,15 @@ public class TitleLibraryController {
                     post.getFileName()
             );
 
+            // 记录推送日志
+            EmailPushLog log = new EmailPushLog();
+            log.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
+            log.setUserId(user.getId());
+            log.setPushDate(rec.getRecommendDate() != null ? rec.getRecommendDate() : LocalDate.now());
+            log.setType("daily_recommend");
+            log.setTitleLibraryId(titleLib.getId());
+            emailPushLogMapper.insert(log);
+
             Map<String, Object> result = new HashMap<>();
             result.put("userName", user.getUsername());
             result.put("email", user.getEmail());
@@ -1176,6 +1202,15 @@ public class TitleLibraryController {
                             articleFile,
                             post.getFileName()
                     );
+
+                    // 记录推送日志
+                    EmailPushLog log = new EmailPushLog();
+                    log.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
+                    log.setUserId(user.getId());
+                    log.setPushDate(rec.getRecommendDate() != null ? rec.getRecommendDate() : LocalDate.now());
+                    log.setType("daily_recommend");
+                    log.setTitleLibraryId(titleLib.getId());
+                    emailPushLogMapper.insert(log);
 
                     success++;
                 } catch (Exception e) {

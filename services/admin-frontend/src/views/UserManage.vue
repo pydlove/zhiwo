@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Checkbox, Upload } from 'ant-design-vue'
-import { listUsers, getUserTracks, removeUserTrack, exportUsers, importUsers } from '../api/user.js'
+import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Checkbox, Upload, Switch, Tabs } from 'ant-design-vue'
+import { listUsers, getUserTracks, addUserTrack, removeUserTrack, exportUsers, importUsers } from '../api/user.js'
 import { listSubscriptionPosts, saveSubscriptionPost } from '../api/subscriptionPost.js'
 import { listTracks } from '../api/track.js'
 import { listCreations } from '../api/creation.js'
@@ -10,8 +10,14 @@ import { uploadFile } from '../api/upload.js'
 import { listMembershipPlans } from '../api/membershipPlan.js'
 import request from '../api/request.js'
 
-const search = ref('')
-const statusFilter = ref(undefined)
+const activeTab = ref('enabled')
+
+// 每个 Tab 独立的搜索条件
+const defaultSearch = () => ({ username: '', email: '', wxName: '', trackId: undefined, platform: undefined })
+const searchMap = ref({
+  enabled: defaultSearch(),
+  disabled: defaultSearch(),
+})
 
 const data = ref([])
 const allSubscriptionPosts = ref([])
@@ -21,7 +27,10 @@ const allPlans = ref([])
 
 const columns = [
   { title: '用户名', dataIndex: 'username', key: 'username', width: 120 },
-  { title: '联系方式', dataIndex: 'contact', key: 'contact', width: 150 },
+  { title: '邮箱', dataIndex: 'email', key: 'email', width: 150 },
+  { title: '公众号名称', dataIndex: 'wxName', key: 'wxName', width: 120 },
+  { title: '真实用户', key: 'isReal', width: 85 },
+  { title: '赛道信息', key: 'trackInfo', width: 140 },
   { title: '可选赛道', dataIndex: 'trackLimitText', key: 'trackLimitText', width: 90 },
   { title: '可访问平台', dataIndex: 'platformLimitText', key: 'platformLimitText', width: 120 },
   { title: '状态', key: 'status', width: 75 },
@@ -31,7 +40,7 @@ const columns = [
   { title: '默认样式', dataIndex: 'template', key: 'template', width: 100 },
   { title: '邀请码', dataIndex: 'inviteCode', key: 'inviteCode', width: 110 },
   { title: '最近登录', dataIndex: 'lastLogin', key: 'lastLogin', width: 145 },
-  { title: '操作', key: 'action', width: 380 },
+  { title: '操作', key: 'action', width: 440 },
 ]
 
 const addModalOpen = ref(false)
@@ -48,8 +57,8 @@ const creationColumns = [
 ]
 const platformOptions = ['公众号', '今日头条', '百家号']
 
-const addForm = ref({ username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined })
-const editForm = ref({ id: null, trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', status: 1, remark: '', canSetEmail: 0, membershipPlanId: undefined, template: '' })
+const addForm = ref({ username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined, isReal: 1, wxName: '' })
+const editForm = ref({ id: null, username: '', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', status: 1, remark: '', canSetEmail: 0, membershipPlanId: undefined, template: '', isReal: 0, wxName: '', email: '', invitedBy: '' })
 
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -62,16 +71,14 @@ const rowSelection = {
 }
 
 const filteredData = computed(() => {
-  let list = data.value
-  const keyword = search.value.trim()
-  if (keyword) {
-    list = list.filter(u => (u.username || '').includes(keyword) || (u.contact || '').includes(keyword))
+  return data.value
+})
+
+const tableColumns = computed(() => {
+  if (activeTab.value === 'disabled') {
+    return columns.filter(c => c.key !== 'trackInfo')
   }
-  if (statusFilter.value) {
-    const target = statusFilter.value === '正常' ? 1 : 0
-    list = list.filter(u => u.status === target)
-  }
-  return list
+  return columns
 })
 
 const paginatedData = computed(() => {
@@ -90,6 +97,13 @@ const recommendUploading = ref(false)
 const previewMode = ref(false)
 const previewContent = ref('')
 const previewLoading = ref(false)
+
+// Next title modal state
+const nextTitleModalOpen = ref(false)
+const nextTitleUser = ref({})
+const nextTitleForm = ref({ recommendDate: '', items: [] })
+const nextTitleLoading = ref(false)
+const nextTitleUserTrackIds = ref([])
 
 // Import modal state
 const importModalOpen = ref(false)
@@ -246,13 +260,27 @@ async function saveRecommend() {
 
 async function loadData() {
   try {
+    const s = searchMap.value[activeTab.value]
+    const status = activeTab.value === 'enabled' ? 1 : 0
+    // 构建 keyword：把 username/email/wxName 合并成一个 keyword 传给后端
+    const keywords = []
+    if (s.username) keywords.push(s.username)
+    if (s.email) keywords.push(s.email)
+    if (s.wxName) keywords.push(s.wxName)
+    const keyword = keywords.length > 0 ? keywords.join(' ') : undefined
+
+    const params = { status }
+    if (keyword) params.keyword = keyword
+    if (s.platform) params.platform = s.platform
+    if (s.trackId) params.trackId = s.trackId
+
     // 1. 先加载核心数据（用户列表），拿到立刻渲染表格
-    const uList = await listUsers()
+    const uList = await listUsers(params)
     const userNameMap = {}
     uList.forEach(u => { userNameMap[u.id] = u.username })
     data.value = uList.map(u => ({
       ...u,
-      contact: u.phone || u.email || u.wxId || '-',
+      email: u.email || '-',
       statusText: u.status === 1 ? '正常' : '已禁用',
       registerTime: u.createdAt ? u.createdAt.slice(0, 10) : '-',
       expireDate: u.expireDate || '-',
@@ -279,12 +307,21 @@ async function loadData() {
 
       const planMap = {}
       allPlans.value.forEach(p => { planMap[p.id] = p.name })
+      const trackMap = {}
+      allTracks.value.forEach(t => { trackMap[t.id] = t })
 
-      // 补齐会员套餐名称
-      data.value = data.value.map(u => ({
-        ...u,
-        membershipPlanName: planMap[u.membershipPlanId] || '-',
-      }))
+      // 补齐会员套餐名称和赛道信息
+      data.value = data.value.map(u => {
+        const trackNames = (u.trackIds || []).map(tid => {
+          const t = trackMap[tid]
+          return t ? `${t.platforms || '-'} - ${t.name}` : tid
+        })
+        return {
+          ...u,
+          membershipPlanName: planMap[u.membershipPlanId] || '-',
+          trackInfo: activeTab.value === 'enabled' ? (trackNames.join('\n') || '-') : '-',
+        }
+      })
     }).catch(() => {
       // 辅助数据加载失败不影响主表格
     })
@@ -299,19 +336,27 @@ function handleSearch() {
 }
 
 function handleReset() {
-  search.value = ''
-  statusFilter.value = undefined
+  searchMap.value[activeTab.value] = defaultSearch()
   currentPage.value = 1
   loadData()
 }
 
 async function handleExport() {
   try {
-    const status = statusFilter.value === '正常' ? 1 : statusFilter.value === '已禁用' ? 0 : undefined
+    const status = activeTab.value === 'enabled' ? 1 : 0
+    const s = searchMap.value[activeTab.value]
+    const keywords = []
+    if (s.username) keywords.push(s.username)
+    if (s.email) keywords.push(s.email)
+    if (s.wxName) keywords.push(s.wxName)
+    const keyword = keywords.length > 0 ? keywords.join(' ') : undefined
+
     const params = {
-      keyword: search.value.trim() || undefined,
-      status: status,
+      keyword,
+      status,
     }
+    if (s.platform) params.platform = s.platform
+    if (s.trackId) params.trackId = s.trackId
     if (selectedRowKeys.value.length > 0) {
       params.userIds = selectedRowKeys.value
     }
@@ -408,13 +453,13 @@ function computeExpireDate(planId, fallback) {
 
 function handleAdd() {
   addModalOpen.value = true
-  addForm.value = { username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: ['公众号'], template: '基础风格', expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined }
+  addForm.value = { username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: ['公众号'], template: '基础风格', expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined, wxName: '' }
 }
 
 function handleEdit(record) {
   editModalOpen.value = true
   const rawPlatforms = record.platformLimit || ''
-  editForm.value = { id: record.id, trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : ['公众号'], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0, membershipPlanId: record.membershipPlanId || undefined, template: record.template || '', inviteCode: record.inviteCode || '', invitedBy: record.invitedBy || '' }
+  editForm.value = { id: record.id, username: record.username || '', trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : ['公众号'], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0, membershipPlanId: record.membershipPlanId || undefined, template: record.template || '', inviteCode: record.inviteCode || '', invitedBy: record.invitedBy || '', isReal: record.isReal === 1 ? 1 : 0, wxName: record.wxName || '', email: record.email || '' }
 }
 
 async function saveAdd() {
@@ -439,6 +484,8 @@ async function saveAdd() {
       canSetEmail: addForm.value.canSetEmail ? 1 : 0,
       membershipPlanId: addForm.value.membershipPlanId || undefined,
       template: addForm.value.template || '基础风格',
+      isReal: addForm.value.isReal ? 1 : 0,
+      wxName: addForm.value.wxName || undefined,
     }
     if (addForm.value.contactType === '手机号') payload.phone = addForm.value.contact
     else if (addForm.value.contactType === '邮箱') payload.email = addForm.value.contact
@@ -463,6 +510,7 @@ async function saveEdit() {
     return
   }
   const payload = {
+    username: editForm.value.username || undefined,
     trackLimit: parseInt(editForm.value.trackLimit, 10) || 0,
     platformLimit: (editForm.value.platformLimit || []).join(','),
     expireDate: editForm.value.expireDate,
@@ -473,6 +521,9 @@ async function saveEdit() {
     template: editForm.value.template || undefined,
     inviteCode: editForm.value.inviteCode || undefined,
     invitedBy: editForm.value.invitedBy || undefined,
+    isReal: editForm.value.isReal ? 1 : 0,
+    wxName: editForm.value.wxName || undefined,
+    email: editForm.value.email || undefined,
   }
   console.log('saveEdit payload:', payload, 'id:', editForm.value.id)
   try {
@@ -512,7 +563,7 @@ function copyAccountInfo(record) {
 登录地址：http://www.mmshuo.tech/login
 用户名：${record.username || '-'}
 密码：Abc123456
-联系方式：${record.contact || '-'}
+邮箱：${record.email || '-'}
 套餐：${record.membershipPlanName || '-'}
 到期时间：${record.expireDate || '-'}
 可访问平台：${record.platformLimitText || '全部平台'}
@@ -567,6 +618,67 @@ const trackInfoModalOpen = ref(false)
 const trackInfoUser = ref({})
 const trackInfoList = ref([])
 const trackInfoLoading = ref(false)
+const selectedAddTrackId = ref(null)
+const addTrackLoading = ref(false)
+
+const availableTracksForAdd = computed(() => {
+  const subscribedIds = new Set((trackInfoList.value || []).map(t => t.id))
+  return (allTracks.value || []).filter(t => !subscribedIds.has(t.id))
+})
+
+async function openNextTitleModal(record) {
+  nextTitleUser.value = record
+  const today = new Date().toISOString().slice(0, 10)
+  let trackIds = []
+  try {
+    const userTracks = await getUserTracks(record.id)
+    trackIds = (userTracks || []).map(ut => ut.trackId)
+  } catch (e) {
+    // ignore
+  }
+  // 确保赛道列表已加载
+  if (!allTracks.value || allTracks.value.length === 0) {
+    try {
+      const tList = await listTracks()
+      allTracks.value = tList || []
+    } catch (e) {
+      // ignore
+    }
+  }
+  nextTitleUserTrackIds.value = trackIds
+  const items = trackIds.map(tid => ({ trackId: tid, title: '' }))
+  nextTitleForm.value = { recommendDate: today, items }
+  nextTitleModalOpen.value = true
+}
+
+async function saveNextTitle() {
+  if (!nextTitleForm.value.recommendDate) {
+    message.warning('请选择推荐日期')
+    return
+  }
+  if (nextTitleUserTrackIds.value.length === 0) {
+    message.warning('该用户未订阅任何赛道，无法设定标题')
+    return
+  }
+  const validItems = nextTitleForm.value.items.filter(item => item.title && item.title.trim())
+  if (validItems.length === 0) {
+    message.warning('请至少输入一个标题')
+    return
+  }
+  nextTitleLoading.value = true
+  try {
+    await request.post('/users/' + nextTitleUser.value.id + '/next-title', {
+      recommendDate: nextTitleForm.value.recommendDate,
+      items: validItems.map(item => ({ trackId: item.trackId, title: item.title.trim() })),
+    })
+    message.success('设定成功')
+    nextTitleModalOpen.value = false
+  } catch (e) {
+    message.error('设定失败：' + (e?.message || '未知错误'))
+  } finally {
+    nextTitleLoading.value = false
+  }
+}
 
 async function openTrackInfoModal(record) {
   trackInfoUser.value = record
@@ -605,44 +717,129 @@ function handleCancelUserTrack(track) {
   })
 }
 
+async function handleAddUserTrack() {
+  if (!selectedAddTrackId.value) {
+    message.warning('请选择要添加的赛道')
+    return
+  }
+  const track = allTracks.value.find(t => t.id === selectedAddTrackId.value)
+  if (!track) return
+  addTrackLoading.value = true
+  try {
+    await addUserTrack(trackInfoUser.value.id, selectedAddTrackId.value)
+    message.success(`已为用户添加「${track.name}」赛道订阅`)
+    trackInfoList.value.push({
+      ...track,
+      platformDisplay: (track.platforms || '').split(/[·、,，\s]+/).filter(Boolean).join('、') || '-',
+    })
+    selectedAddTrackId.value = null
+    loadData()
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e?.message || '添加订阅失败')
+  } finally {
+    addTrackLoading.value = false
+  }
+}
+
 onMounted(loadData)
 </script>
 
 <template>
   <Card :body-style="{ padding: '24px' }" style="border-radius: 2px;">
-    <div style="display: flex; gap: 12px; margin-bottom: 24px; align-items: center;">
-      <Input v-model:value="search" placeholder="搜索用户名/联系方式" style="width: 240px;" />
-      <Select v-model:value="statusFilter" placeholder="全部状态" style="min-width: 140px;" allow-clear>
-        <Select.Option value="正常">正常</Select.Option>
-        <Select.Option value="已禁用">已禁用</Select.Option>
-      </Select>
-      <Button type="primary" @click="handleSearch">查询</Button>
-      <Button @click="handleReset">重置</Button>
-      <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
-      <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
-      <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
-    </div>
+    <Tabs v-model:activeKey="activeTab" @change="handleSearch">
+      <Tabs.TabPane key="enabled" :tab="'启用用户'">
+        <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
+          <Input v-model:value="searchMap[activeTab].username" placeholder="用户名" style="width: 160px;" />
+          <Input v-model:value="searchMap[activeTab].email" placeholder="邮箱" style="width: 160px;" />
+          <Input v-model:value="searchMap[activeTab].wxName" placeholder="公众号名称" style="width: 160px;" />
+          <Select v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
+            <Select.Option value="公众号">公众号</Select.Option>
+            <Select.Option value="今日头条">今日头条</Select.Option>
+            <Select.Option value="百家号">百家号</Select.Option>
+          </Select>
+          <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
+            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          </Select>
+          <Button type="primary" @click="handleSearch">查询</Button>
+          <Button @click="handleReset">重置</Button>
+          <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
+          <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
+          <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
+        </div>
+        <Table :columns="tableColumns" :data-source="paginatedData" :pagination="false" row-key="id" :row-selection="rowSelection">
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'status'">
+              <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>
+            </template>
+            <template v-if="column.key === 'isReal'">
+              <Tag :color="record.isReal === 1 ? 'blue' : ''">{{ record.isReal === 1 ? '是' : '否' }}</Tag>
+            </template>
+            <template v-if="column.key === 'trackInfo'">
+              <pre style="font-size: 12px; color: #666; margin: 0; font-family: inherit; white-space: pre-wrap; word-break: break-word;">{{ record.trackInfo || '-' }}</pre>
+            </template>
+            <template v-if="column.key === 'action'">
+              <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
+              <a style="margin-right: 12px;" @click="resetPassword(record)">重置密码</a>
+              <a style="margin-right: 12px;" @click="copyAccountInfo(record)">复制信息</a>
+              <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
+              <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
+              <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
+              <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
+                {{ record.status === 1 ? '禁用' : '启用' }}
+              </a>
+            </template>
+          </template>
+        </Table>
+      </Tabs.TabPane>
 
-    <Table :columns="columns" :data-source="paginatedData" :pagination="false" row-key="id" :row-selection="rowSelection">
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'status'">
-          <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>
-        </template>
-        <template v-if="column.key === 'action'">
-          <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
-          <a style="margin-right: 12px;" @click="resetPassword(record)">重置密码</a>
-          <a style="margin-right: 12px;" @click="copyAccountInfo(record)">复制信息</a>
-          <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
-          <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
-          <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
-            {{ record.status === 1 ? '禁用' : '启用' }}
-          </a>
-        </template>
-      </template>
-    </Table>
+      <Tabs.TabPane key="disabled" :tab="'禁用用户'">
+        <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
+          <Input v-model:value="searchMap[activeTab].username" placeholder="用户名" style="width: 160px;" />
+          <Input v-model:value="searchMap[activeTab].email" placeholder="邮箱" style="width: 160px;" />
+          <Input v-model:value="searchMap[activeTab].wxName" placeholder="公众号名称" style="width: 160px;" />
+          <Select v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
+            <Select.Option value="公众号">公众号</Select.Option>
+            <Select.Option value="今日头条">今日头条</Select.Option>
+            <Select.Option value="百家号">百家号</Select.Option>
+          </Select>
+          <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
+            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          </Select>
+          <Button type="primary" @click="handleSearch">查询</Button>
+          <Button @click="handleReset">重置</Button>
+          <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
+          <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
+          <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
+        </div>
+        <Table :columns="tableColumns" :data-source="paginatedData" :pagination="false" row-key="id" :row-selection="rowSelection">
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'status'">
+              <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>
+            </template>
+            <template v-if="column.key === 'isReal'">
+              <Tag :color="record.isReal === 1 ? 'blue' : ''">{{ record.isReal === 1 ? '是' : '否' }}</Tag>
+            </template>
+            <template v-if="column.key === 'trackInfo'">
+              <span style="font-size: 12px; color: #666;">{{ record.trackInfo || '-' }}</span>
+            </template>
+            <template v-if="column.key === 'action'">
+              <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
+              <a style="margin-right: 12px;" @click="resetPassword(record)">重置密码</a>
+              <a style="margin-right: 12px;" @click="copyAccountInfo(record)">复制信息</a>
+              <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
+              <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
+              <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
+              <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
+                {{ record.status === 1 ? '禁用' : '启用' }}
+              </a>
+            </template>
+          </template>
+        </Table>
+      </Tabs.TabPane>
+    </Tabs>
 
     <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
-      <Pagination v-model:current="currentPage" v-model:page-size="pageSize" :total="filteredData.length" show-total />
+      <Pagination v-model:current="currentPage" v-model:page-size="pageSize" :total="filteredData.length" :show-total="total => `共 ${total} 条`" />
     </div>
   </Card>
 
@@ -660,6 +857,9 @@ onMounted(loadData)
           </Select>
           <Input v-model:value="addForm.contact" placeholder="请输入联系方式" />
         </div>
+      </Form.Item>
+      <Form.Item label="公众号名称">
+        <Input v-model:value="addForm.wxName" placeholder="请输入公众号名称" />
       </Form.Item>
       <Form.Item label="初始密码" required>
         <Input v-model:value="addForm.password" readonly />
@@ -685,6 +885,9 @@ onMounted(loadData)
       <Form.Item label="功能权限">
         <Checkbox v-model:checked="addForm.canSetEmail" :true-value="1" :false-value="0">允许设置邮箱接收文章</Checkbox>
       </Form.Item>
+      <Form.Item label="真实用户">
+        <Switch v-model:checked="addForm.isReal" :checked-value="1" :un-checked-value="0" />
+      </Form.Item>
       <Form.Item label="备注">
         <Input.TextArea v-model:value="addForm.remark" placeholder="可选填，如：客户来源、特殊说明等" :rows="3" />
       </Form.Item>
@@ -694,20 +897,22 @@ onMounted(loadData)
   <Modal v-model:open="editModalOpen" title="编辑用户" :mask-closable="false" :width="700" @ok="saveEdit">
     <Form layout="vertical" style="margin-top: 12px;">
       <Form.Item label="用户名">
-        <Input :value="data.find(d => d.id === editForm.id)?.username" disabled />
+        <Input v-model:value="editForm.username" placeholder="请输入用户名" />
       </Form.Item>
-      <Form.Item label="联系方式">
-        <Input :value="data.find(d => d.id === editForm.id)?.contact" disabled />
+      <Form.Item label="邮箱">
+        <Input v-model:value="editForm.email" placeholder="请输入邮箱" />
       </Form.Item>
-      <Form.Item label="用户邮箱">
-        <Input :value="data.find(d => d.id === editForm.id)?.email || '未设置'" disabled />
+      <Form.Item label="公众号名称">
+        <Input v-model:value="editForm.wxName" placeholder="请输入公众号名称" />
       </Form.Item>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <Form.Item label="邀请码">
-          <Input :value="editForm.inviteCode || '自动生成中'" disabled />
+          <Input v-model:value="editForm.inviteCode" placeholder="请输入邀请码" />
         </Form.Item>
         <Form.Item label="邀请人">
-          <Input :value="data.find(d => d.id === editForm.id)?.invitedByName || '无'" disabled />
+          <Select v-model:value="editForm.invitedBy" placeholder="请选择邀请人" allow-clear style="width: 100%;">
+            <Select.Option v-for="u in data" :key="u.id" :value="u.id">{{ u.username }}</Select.Option>
+          </Select>
         </Form.Item>
       </div>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
@@ -741,6 +946,9 @@ onMounted(loadData)
           <Select.Option :value="1">正常</Select.Option>
           <Select.Option :value="0">已禁用</Select.Option>
         </Select>
+      </Form.Item>
+      <Form.Item label="真实用户">
+        <Switch v-model:checked="editForm.isReal" :checked-value="1" :un-checked-value="0" />
       </Form.Item>
       <Form.Item label="备注">
         <Input.TextArea v-model:value="editForm.remark" placeholder="可选填" :rows="3" />
@@ -899,6 +1107,26 @@ onMounted(loadData)
     :width="560"
   >
     <div style="margin-top: 12px;">
+      <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+        <Select
+          v-model:value="selectedAddTrackId"
+          placeholder="选择要添加的赛道"
+          style="flex: 1;"
+          allowClear
+        >
+          <Select.Option v-for="t in availableTracksForAdd" :key="t.id" :value="t.id">
+            {{ t.name }}（{{ (t.platforms || '').split(/[,，\s]+/).filter(Boolean).join('、') || '-' }}）
+          </Select.Option>
+        </Select>
+        <Button
+          type="primary"
+          :loading="addTrackLoading"
+          :disabled="!selectedAddTrackId"
+          @click="handleAddUserTrack"
+        >
+          添加订阅
+        </Button>
+      </div>
       <div v-if="trackInfoLoading" style="text-align: center; padding: 40px; color: #999;">加载中...</div>
       <div v-else-if="!trackInfoList.length" style="text-align: center; padding: 40px; color: #999;">该用户未订阅任何赛道</div>
       <div v-else>
@@ -915,6 +1143,34 @@ onMounted(loadData)
         </div>
       </div>
     </div>
+  </Modal>
+
+  <!-- Next Title Modal -->
+  <Modal
+    v-model:open="nextTitleModalOpen"
+    :title="`为 ${nextTitleUser.username || ''} 设定下一个标题`"
+    :mask-closable="false"
+    :confirm-loading="nextTitleLoading"
+    @ok="saveNextTitle"
+    :width="600"
+  >
+    <Form layout="vertical" style="margin-top: 12px;">
+      <Form.Item label="推荐日期" required>
+        <Input type="date" v-model:value="nextTitleForm.recommendDate" />
+      </Form.Item>
+      <template v-if="nextTitleUserTrackIds.length === 0">
+        <div style="color: #f5222d; font-size: 14px; margin-bottom: 16px;">该用户未订阅任何赛道，请先订阅赛道后再设定标题</div>
+      </template>
+      <template v-else>
+        <div v-for="(item, index) in nextTitleForm.items" :key="item.trackId" style="margin-bottom: 16px; padding: 12px; background: #f5f5f5; border-radius: 4px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <span style="font-size: 13px; color: #666; font-weight: 500;">赛道 {{ index + 1 }}：</span>
+            <Tag color="blue">{{ (allTracks.find(t => t.id === item.trackId)?.platforms || '-') }} - {{ (allTracks.find(t => t.id === item.trackId)?.name || '-') }}</Tag>
+          </div>
+          <Input v-model:value="item.title" :placeholder="`请输入该赛道的标题`" />
+        </div>
+      </template>
+    </Form>
   </Modal>
 
   <!-- Import Modal -->

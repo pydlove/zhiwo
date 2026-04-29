@@ -259,20 +259,30 @@ async function handlePreviewFile(record) {
       try {
         const res = await fetch(record.fileUrl)
         const blob = await res.blob()
+        if (blob.size === 0) {
+          throw new Error('文件内容为空')
+        }
         previewLoading.value = false
         await nextTick()
         if (!docxContainerRef.value) return
         docxContainerRef.value.innerHTML = ''
         await nextTick()
-        await renderAsync(blob, docxContainerRef.value, null, {
-          className: 'docx-preview',
-          inWrapper: false,
-        })
+        try {
+          await renderAsync(blob, docxContainerRef.value, null, {
+            className: 'docx-preview',
+            inWrapper: false,
+          })
+        } catch (renderErr) {
+          console.error('docx render error:', renderErr)
+          if (docxContainerRef.value) {
+            docxContainerRef.value.innerHTML = '<div style="color:#999;text-align:center;padding:40px;">文件解析失败，该文件可能不是有效的 docx 格式</div>'
+          }
+        }
       } catch (e) {
         previewLoading.value = false
         await nextTick()
         if (docxContainerRef.value) {
-          docxContainerRef.value.innerHTML = '<div style="color:#999;text-align:center;padding:40px;">解析文件失败</div>'
+          docxContainerRef.value.innerHTML = '<div style="color:#999;text-align:center;padding:40px;">文件读取失败：' + (e.message || '未知错误') + '</div>'
         }
       }
     }, 400)

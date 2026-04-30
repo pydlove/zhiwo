@@ -571,13 +571,18 @@ async function handleSaveExportRule() {
 function openExportFileNameModal(type) {
   pendingExportType.value = type
   exportFileNameInput.value = localStorage.getItem(EXPORT_FILENAME_KEY) || ''
+  exportSavePathInput.value = localStorage.getItem(EXPORT_SAVEPATH_KEY) || ''
   exportFileNameModalOpen.value = true
 }
 
 async function handleExportConfirm() {
   const fileName = exportFileNameInput.value.trim()
+  const savePath = exportSavePathInput.value.trim()
   if (fileName) {
     localStorage.setItem(EXPORT_FILENAME_KEY, fileName)
+  }
+  if (savePath) {
+    localStorage.setItem(EXPORT_SAVEPATH_KEY, savePath)
   }
   exportFileNameModalOpen.value = false
 
@@ -590,9 +595,10 @@ async function handleExportConfirm() {
 
 async function doExportTitleList() {
   try {
-    let blob
+    const savePath = exportSavePathInput.value.trim() || null
+    let res
     if (selectedRowKeys.value.length > 0) {
-      blob = await exportTitleListBatch(selectedRowKeys.value)
+      res = await exportTitleListBatch(selectedRowKeys.value, savePath)
     } else {
       const params = {}
       if (searchKeyword.value) params.keyword = searchKeyword.value.trim()
@@ -602,8 +608,15 @@ async function doExportTitleList() {
       if (searchMatched.value !== '' && searchMatched.value !== undefined) params.matched = searchMatched.value
       if (searchPushDate.value) params.pushDate = searchPushDate.value.format('YYYY-MM-DD')
       if (searchIsUsed.value !== '' && searchIsUsed.value !== undefined) params.isUsed = searchIsUsed.value
-      blob = await exportTitleList(params)
+      if (savePath) params.savePath = savePath
+      res = await exportTitleList(params)
     }
+    if (savePath) {
+      const path = res?.data?.path || res?.path || savePath
+      message.success(`导出成功，已保存到：${path}`)
+      return
+    }
+    const blob = res
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -614,16 +627,17 @@ async function doExportTitleList() {
     URL.revokeObjectURL(url)
     message.success('导出成功')
   } catch (e) {
-    message.error('导出失败')
+    message.error('导出失败：' + (e?.response?.data?.msg || e?.message || ''))
   }
 }
 
 async function doExportFromRule() {
   exportRuleModalOpen.value = false
   try {
-    let blob
+    const savePath = exportSavePathInput.value.trim() || null
+    let res
     if (selectedRowKeys.value.length > 0) {
-      blob = await exportTitleLibraryBatch(selectedRowKeys.value)
+      res = await exportTitleLibraryBatch(selectedRowKeys.value, savePath)
     } else {
       const params = {}
       if (searchKeyword.value) params.keyword = searchKeyword.value.trim()
@@ -633,8 +647,15 @@ async function doExportFromRule() {
       if (searchMatched.value !== '' && searchMatched.value !== undefined) params.matched = searchMatched.value
       if (searchPushDate.value) params.pushDate = searchPushDate.value.format('YYYY-MM-DD')
       if (searchIsUsed.value !== '' && searchIsUsed.value !== undefined) params.isUsed = searchIsUsed.value
-      blob = await exportTitleLibrary(params)
+      if (savePath) params.savePath = savePath
+      res = await exportTitleLibrary(params)
     }
+    if (savePath) {
+      const path = res?.data?.path || res?.path || savePath
+      message.success(`导出成功，已保存到：${path}`)
+      return
+    }
+    const blob = res
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -645,7 +666,7 @@ async function doExportFromRule() {
     URL.revokeObjectURL(url)
     message.success('导出成功')
   } catch (e) {
-    message.error('导出失败')
+    message.error('导出失败：' + (e?.response?.data?.msg || e?.message || ''))
   }
 }
 
@@ -1000,21 +1021,35 @@ async function handleImport() {
 }
 
 // Generate titles
+const GENERATE_CONFIG_KEY = 'titleLibrary_generateConfig'
+const savedGenerateConfig = JSON.parse(localStorage.getItem(GENERATE_CONFIG_KEY) || 'null')
+
 const generateModalOpen = ref(false)
-const generateCount = ref(3)
-const generateOutputPath = ref('')
-const generatePlatforms = ref([])
-const generateTrackIds = ref([])
+const generateCount = ref(savedGenerateConfig?.count || 3)
+const generateOutputPath = ref(savedGenerateConfig?.outputPath || '')
+const generatePlatforms = ref(savedGenerateConfig?.platforms || [])
+const generateTrackIds = ref(savedGenerateConfig?.trackIds || [])
 const generating = ref(false)
 const generateProgress = ref(0)
 const generateTaskId = ref(null)
 const generateStatusMsg = ref('')
 let generatePollTimer = null
 
+function saveGenerateConfig() {
+  localStorage.setItem(GENERATE_CONFIG_KEY, JSON.stringify({
+    count: generateCount.value,
+    outputPath: generateOutputPath.value,
+    platforms: generatePlatforms.value,
+    trackIds: generateTrackIds.value,
+  }))
+}
+
 // Export file name modal
 const EXPORT_FILENAME_KEY = 'titleLibrary_exportFileName'
+const EXPORT_SAVEPATH_KEY = 'titleLibrary_exportSavePath'
 const exportFileNameModalOpen = ref(false)
 const exportFileNameInput = ref(localStorage.getItem(EXPORT_FILENAME_KEY) || '')
+const exportSavePathInput = ref(localStorage.getItem(EXPORT_SAVEPATH_KEY) || '')
 const pendingExportType = ref(null) // 'titleList' | 'fromRule'
 
 const filteredTracksForGenerate = computed(() => {
@@ -1030,10 +1065,6 @@ const filteredTracksForGenerate = computed(() => {
 
 function openGenerateModal() {
   generateModalOpen.value = true
-  generateCount.value = 3
-  generateOutputPath.value = ''
-  generatePlatforms.value = []
-  generateTrackIds.value = []
 }
 
 function onPlatformChange() {
@@ -1098,6 +1129,7 @@ async function handleGenerate() {
     })
     generateTaskId.value = result.taskId
     generateModalOpen.value = false
+    saveGenerateConfig()
     generateStatusMsg.value = '任务已提交，开始生成...'
     // Start polling every 3 seconds
     generatePollTimer = setInterval(() => {
@@ -1433,9 +1465,13 @@ onMounted(() => {
     </Form>
   </Modal>
 
-  <Modal v-model:open="exportFileNameModalOpen" title="设置导出文件名" :mask-closable="false" width="400">
+  <Modal v-model:open="exportFileNameModalOpen" title="设置导出路径和文件名" :mask-closable="false" width="480">
     <Form layout="vertical" style="margin-top: 12px;">
-      <Form.Item label="文件名">
+      <Form.Item label="保存路径（服务器路径）">
+        <Input v-model:value="exportSavePathInput" placeholder="例如：/Users/panyong/aio_project/导出/标题库.xlsx" />
+        <div style="font-size: 12px; color: #999; margin-top: 4px;">留空则导出为浏览器下载，填写后保存到服务器指定路径</div>
+      </Form.Item>
+      <Form.Item label="文件名（浏览器下载时生效）">
         <Input v-model:value="exportFileNameInput" placeholder="例如：标题库导出" />
         <div style="font-size: 12px; color: #999; margin-top: 4px;">留空则使用默认文件名，会自动补 .xlsx 后缀</div>
       </Form.Item>

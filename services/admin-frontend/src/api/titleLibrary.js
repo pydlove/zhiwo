@@ -56,16 +56,18 @@ export function cancelGeneratePost(taskId) {
 }
 
 export function exportTitleLibrary(params) {
+  const hasSavePath = params && params.savePath
   return request.post('/title-library/export', null, {
     params,
-    responseType: 'blob',
+    responseType: hasSavePath ? undefined : 'blob',
   })
 }
 
-export function exportTitleLibraryBatch(titleIds) {
+export function exportTitleLibraryBatch(titleIds, savePath) {
+  const params = savePath ? { titleIds, savePath } : { titleIds }
   return request.post('/title-library/export', null, {
-    params: { titleIds },
-    responseType: 'blob',
+    params,
+    responseType: savePath ? undefined : 'blob',
     paramsSerializer: {
       indexes: null,
       serialize: (p) => {
@@ -75,6 +77,9 @@ export function exportTitleLibraryBatch(titleIds) {
             parts.push(`titleIds=${encodeURIComponent(id)}`)
           }
         }
+        if (p.savePath) {
+          parts.push(`savePath=${encodeURIComponent(p.savePath)}`)
+        }
         return parts.join('&')
       }
     }
@@ -82,16 +87,18 @@ export function exportTitleLibraryBatch(titleIds) {
 }
 
 export function exportTitleList(params) {
+  const hasSavePath = params && params.savePath
   return request.post('/title-library/export-titles', null, {
     params,
-    responseType: 'blob',
+    responseType: hasSavePath ? undefined : 'blob',
   })
 }
 
-export function exportTitleListBatch(titleIds) {
+export function exportTitleListBatch(titleIds, savePath) {
+  const params = savePath ? { titleIds, savePath } : { titleIds }
   return request.post('/title-library/export-titles', null, {
-    params: { titleIds },
-    responseType: 'blob',
+    params,
+    responseType: savePath ? undefined : 'blob',
     paramsSerializer: {
       indexes: null,
       serialize: (p) => {
@@ -100,6 +107,9 @@ export function exportTitleListBatch(titleIds) {
           for (const id of p.titleIds) {
             parts.push(`titleIds=${encodeURIComponent(id)}`)
           }
+        }
+        if (p.savePath) {
+          parts.push(`savePath=${encodeURIComponent(p.savePath)}`)
         }
         return parts.join('&')
       }

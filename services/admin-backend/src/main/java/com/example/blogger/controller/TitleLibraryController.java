@@ -54,6 +54,20 @@ public class TitleLibraryController {
     private final SubscriptionPostMapper subscriptionPostMapper;
     private final BannedWordMapper bannedWordMapper;
 
+    private File resolveExportFile(String savePath, String defaultPrefix) {
+        File outFile = new File(savePath);
+        if (outFile.exists() && outFile.isDirectory() || savePath.endsWith("/") || savePath.endsWith("\\")) {
+            String timestamp = java.time.LocalDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+            outFile = new File(outFile, defaultPrefix + "_" + timestamp + ".xlsx");
+        }
+        File parent = outFile.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        return outFile;
+    }
+
     // Async generate task storage (for titles)
     private final ConcurrentHashMap<String, Map<String, Object>> generateTasks = new ConcurrentHashMap<>();
     // Async generate-post task storage (for subscription posts)
@@ -501,7 +515,8 @@ public class TitleLibraryController {
             @RequestParam(value = "matched", required = false) String matched,
             @RequestParam(value = "pushDate", required = false) String pushDate,
             @RequestParam(value = "isUsed", required = false) String isUsed,
-            @RequestParam(value = "titleIds", required = false) List<String> titleIds) {
+            @RequestParam(value = "titleIds", required = false) List<String> titleIds,
+            @RequestParam(value = "savePath", required = false) String savePath) {
         try {
             List<TitleLibrary> titles;
             if (titleIds != null && !titleIds.isEmpty()) {
@@ -551,6 +566,20 @@ public class TitleLibraryController {
                 sheet.setColumnWidth(i, 20 * 256);
             }
 
+            if (savePath != null && !savePath.isEmpty()) {
+                File outFile = resolveExportFile(savePath, "标题库");
+                try (FileOutputStream fos = new FileOutputStream(outFile)) {
+                    wb.write(fos);
+                }
+                wb.close();
+                response.setContentType("application/json;charset=UTF-8");
+                Map<String, Object> result = new HashMap<>();
+                result.put("success", true);
+                result.put("path", outFile.getAbsolutePath());
+                response.getWriter().write(new ObjectMapper().writeValueAsString(Result.ok(result)));
+                return;
+            }
+
             String timestamp = java.time.LocalDateTime.now()
                     .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
             String fileName = "标题库_" + timestamp + ".xlsx";
@@ -565,7 +594,12 @@ public class TitleLibraryController {
         } catch (Exception e) {
             e.printStackTrace();
             try {
-                response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "导出失败：" + e.getMessage());
+                if (savePath != null && !savePath.isEmpty()) {
+                    response.setContentType("application/json;charset=UTF-8");
+                    response.getWriter().write(new ObjectMapper().writeValueAsString(Result.error("导出失败：" + e.getMessage())));
+                } else {
+                    response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "导出失败：" + e.getMessage());
+                }
             } catch (IOException ignored) {}
         }
     }
@@ -579,7 +613,8 @@ public class TitleLibraryController {
             @RequestParam(value = "matched", required = false) String matched,
             @RequestParam(value = "pushDate", required = false) String pushDate,
             @RequestParam(value = "isUsed", required = false) String isUsed,
-            @RequestParam(value = "titleIds", required = false) List<String> titleIds) {
+            @RequestParam(value = "titleIds", required = false) List<String> titleIds,
+            @RequestParam(value = "savePath", required = false) String savePath) {
         try {
             List<TitleLibrary> titles;
             if (titleIds != null && !titleIds.isEmpty()) {
@@ -726,6 +761,20 @@ public class TitleLibraryController {
                 }
             }
 
+            if (savePath != null && !savePath.isEmpty()) {
+                File outFile = resolveExportFile(savePath, "标题库导出");
+                try (FileOutputStream fos = new FileOutputStream(outFile)) {
+                    wb.write(fos);
+                }
+                wb.close();
+                response.setContentType("application/json;charset=UTF-8");
+                Map<String, Object> result = new HashMap<>();
+                result.put("success", true);
+                result.put("path", outFile.getAbsolutePath());
+                response.getWriter().write(new ObjectMapper().writeValueAsString(Result.ok(result)));
+                return;
+            }
+
             String timestamp = java.time.LocalDateTime.now()
                     .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
             String fileName = "标题库导出_" + timestamp + ".xlsx";
@@ -740,7 +789,12 @@ public class TitleLibraryController {
         } catch (Exception e) {
             e.printStackTrace();
             try {
-                response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "导出失败：" + e.getMessage());
+                if (savePath != null && !savePath.isEmpty()) {
+                    response.setContentType("application/json;charset=UTF-8");
+                    response.getWriter().write(new ObjectMapper().writeValueAsString(Result.error("导出失败：" + e.getMessage())));
+                } else {
+                    response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "导出失败：" + e.getMessage());
+                }
             } catch (IOException ignored) {}
         }
     }
@@ -2069,6 +2123,7 @@ public class TitleLibraryController {
                     StringBuilder prompt = new StringBuilder();
                     prompt.append("请为\"").append(platform).append("\"平台生成爆款标题。\n\n");
                     prompt.append("需要生成标题的赛道：\n");
+                    boolean hasSocialTrack = false;
                     for (int i = 0; i < batchTracks.size(); i++) {
                         Track t = batchTracks.get(i);
                         prompt.append(i + 1).append(". ").append(t.getName());
@@ -2077,9 +2132,15 @@ public class TitleLibraryController {
                         }
                         prompt.append("\n");
                         trackNameToIdMap.put(t.getName(), t.getId());
+                        if (isSocialTrack(t.getName())) {
+                            hasSocialTrack = true;
+                        }
                     }
                     prompt.append("\n每个赛道生成").append(countPerCombo).append("个标题。要求：\n");
                     prompt.append("1. 标题是爆款风格，吸引眼球，适合").append(platform).append("传播\n");
+                    if (hasSocialTrack) {
+                        prompt.append("   【重要】对于社会民生类赛道（如涉及社会、民生、热点、时政、新闻等），标题必须基于本年度（").append(java.time.Year.now().getValue()).append("年）真实发生的事件或话题，严禁虚构、编造不存在的事件或数据。标题中涉及的时间、地点、人物、数字等必须真实可靠。\n");
+                    }
                     prompt.append("2. 每个标题的 track 字段必须是上面给定的赛道名称（纯名称，不要包含括号内的说明），严禁自创赛道名称\n");
                     prompt.append("3. 每个标题必须配一段SEO描述（30-50字），要求：\n");
                     prompt.append("   - 包含赛道核心关键词，便于搜索引擎收录\n");
@@ -2337,6 +2398,14 @@ public class TitleLibraryController {
             }
             return null;
         }
+    }
+
+    private boolean isSocialTrack(String trackName) {
+        if (trackName == null) return false;
+        String lower = trackName.toLowerCase();
+        return lower.contains("社会") || lower.contains("民生") || lower.contains("热点")
+                || lower.contains("时政") || lower.contains("新闻") || lower.contains("时事")
+                || lower.contains("财经") || lower.contains("政策");
     }
 
     private String getCellString(Row row, int col) {

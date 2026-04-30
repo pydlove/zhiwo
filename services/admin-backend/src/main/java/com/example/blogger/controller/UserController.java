@@ -12,6 +12,7 @@ import com.example.blogger.mapper.TitleRecommendationMapper;
 import com.example.blogger.mapper.TrackMapper;
 import com.example.blogger.mapper.UserTrackMapper;
 import com.example.blogger.service.MembershipPlanService;
+import com.example.blogger.service.OrderService;
 import com.example.blogger.service.TitleLibraryService;
 import com.example.blogger.service.UserService;
 import com.example.blogger.service.UserTrackService;
@@ -40,11 +41,12 @@ public class UserController {
     private final TitleLibraryMapper titleLibraryMapper;
     private final TitleRecommendationMapper titleRecommendationMapper;
     private final TrackMapper trackMapper;
+    private final OrderService orderService;
 
     public UserController(UserService userService, UserTrackService userTrackService, MembershipPlanService membershipPlanService,
                           UserTrackMapper userTrackMapper, TitleLibraryService titleLibraryService,
                           TitleLibraryMapper titleLibraryMapper, TitleRecommendationMapper titleRecommendationMapper,
-                          TrackMapper trackMapper) {
+                          TrackMapper trackMapper, OrderService orderService) {
         this.userService = userService;
         this.userTrackService = userTrackService;
         this.membershipPlanService = membershipPlanService;
@@ -53,6 +55,7 @@ public class UserController {
         this.titleLibraryMapper = titleLibraryMapper;
         this.titleRecommendationMapper = titleRecommendationMapper;
         this.trackMapper = trackMapper;
+        this.orderService = orderService;
     }
 
     private void syncPlanLimits(User user) {
@@ -160,6 +163,14 @@ public class UserController {
     public Result<Void> save(@RequestBody User user) {
         syncPlanLimits(user);
         userService.save(user);
+        // Auto-create order if newly created user is marked as account opened
+        if (user.getIsAccountOpened() != null && user.getIsAccountOpened() == 1
+                && user.getMembershipPlanId() != null) {
+            MembershipPlan plan = membershipPlanService.getById(user.getMembershipPlanId());
+            if (plan != null) {
+                orderService.createAutoOrder(user, plan, "open_account");
+            }
+        }
         return Result.ok(null);
     }
 
@@ -192,7 +203,16 @@ public class UserController {
         if (user.getIsReal() != null) existing.setIsReal(user.getIsReal());
         if (user.getIsDistributor() != null) existing.setIsDistributor(user.getIsDistributor());
         if (user.getIsTrial() != null) existing.setIsTrial(user.getIsTrial());
+        // Detect account opening: isAccountOpened changed from 0/null to 1
+        boolean wasOpened = existing.getIsAccountOpened() != null && existing.getIsAccountOpened() == 1;
         if (user.getIsAccountOpened() != null) existing.setIsAccountOpened(user.getIsAccountOpened());
+        boolean isNowOpened = existing.getIsAccountOpened() != null && existing.getIsAccountOpened() == 1;
+        if (!wasOpened && isNowOpened) {
+            MembershipPlan plan = membershipPlanService.getById(existing.getMembershipPlanId());
+            if (plan != null) {
+                orderService.createAutoOrder(existing, plan, "open_account");
+            }
+        }
         syncPlanLimits(existing, oldPlanId);
         userService.save(existing);
         return Result.ok(null);

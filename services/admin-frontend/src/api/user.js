@@ -3,6 +3,9 @@ import request from './request.js'
 export function listUsers(params = {}) {
   const query = new URLSearchParams()
   if (params.status !== undefined && params.status !== null) query.append('status', params.status)
+  if (params.isDistributor !== undefined && params.isDistributor !== null) query.append('isDistributor', params.isDistributor)
+  if (params.isTrial !== undefined && params.isTrial !== null) query.append('isTrial', params.isTrial)
+  if (params.isAccountOpened !== undefined && params.isAccountOpened !== null) query.append('isAccountOpened', params.isAccountOpened)
   if (params.keyword) query.append('keyword', params.keyword)
   if (params.platform) query.append('platform', params.platform)
   if (params.trackId) query.append('trackId', params.trackId)
@@ -26,6 +29,9 @@ export function exportUsers(params) {
   const query = new URLSearchParams()
   if (params.keyword) query.append('keyword', params.keyword)
   if (params.status !== undefined && params.status !== null) query.append('status', params.status)
+  if (params.isDistributor !== undefined && params.isDistributor !== null) query.append('isDistributor', params.isDistributor)
+  if (params.isTrial !== undefined && params.isTrial !== null) query.append('isTrial', params.isTrial)
+  if (params.isAccountOpened !== undefined && params.isAccountOpened !== null) query.append('isAccountOpened', params.isAccountOpened)
   if (params.userIds && params.userIds.length > 0) {
     params.userIds.forEach(id => query.append('userIds', id))
   }

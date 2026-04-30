@@ -21,6 +21,8 @@ const routes = [
       { path: 'subscription-posts', name: 'SubscriptionPostManage', component: () => import('../views/SubscriptionPostManage.vue'), meta: { title: '订阅文章', perm: 'subscription-post' } },
       { path: 'membership-plans', name: 'MembershipPlanManage', component: () => import('../views/MembershipPlanManage.vue'), meta: { title: '会员权益', perm: 'membership-plan' } },
       { path: 'title-library', name: 'TitleLibraryManage', component: () => import('../views/TitleLibraryManage.vue'), meta: { title: '标题库', perm: 'title-library' } },
+      { path: 'push-overview', name: 'PushOverview', component: () => import('../views/PushOverview.vue'), meta: { title: '推送概览', perm: 'title-library' } },
+      { path: 'banned-words', name: 'BannedWordManage', component: () => import('../views/BannedWordManage.vue'), meta: { title: '违禁词管理', perm: 'config' } },
     ],
   },
   { path: '/login', name: 'Login', component: () => import('../views/LoginView.vue'), meta: { title: '管理员登录' } },

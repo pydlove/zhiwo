@@ -133,14 +133,24 @@ export function savePromptTemplate(data) {
   return request.post('/prompt-templates', data)
 }
 
-export function listUnrecommendedUsers(date) {
-  return request.get('/title-library/unrecommended-users', { params: { date } })
+export function listUnrecommendedUsers(date, type) {
+  const params = { date }
+  if (type) params.type = type
+  return request.get('/title-library/unrecommended-users', { params })
 }
 
 export function listUnpushedUsers(date) {
   return request.get('/title-library/unpushed-users', { params: { date } })
 }
 
+export function getPushOverview(params) {
+  return request.get('/title-library/push-overview', { params })
+}
+
 export function batchPushEmail(data) {
   return request.post('/title-library/batch-push-email', data)
+}
+
+export function markTitleUsed(id) {
+  return request.post('/title-library/' + id + '/used')
 }

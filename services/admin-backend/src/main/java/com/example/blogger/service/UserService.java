@@ -50,6 +50,13 @@ public class UserService {
                 user.setInviteCode(generateInviteCode());
             }
             if (user.getIsReal() == null) user.setIsReal(1);
+            if (user.getIsDistributor() == null) user.setIsDistributor(0);
+            if (user.getIsTrial() == null) user.setIsTrial(0);
+            if (user.getIsAccountOpened() == null) user.setIsAccountOpened(0);
+            if (user.getAiLimit() == null) user.setAiLimit(0);
+            if (user.getTrackLimit() == null) user.setTrackLimit(0);
+            if (user.getCanSetEmail() == null) user.setCanSetEmail(0);
+            if (user.getEmailReceive() == null) user.setEmailReceive(0);
             userMapper.insert(user);
         } else {
             userMapper.update(user);

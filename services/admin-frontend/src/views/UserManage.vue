@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Checkbox, Upload, Switch, Tabs } from 'ant-design-vue'
+import { ref, computed, onMounted, h } from 'vue'
+import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Checkbox, Upload, Switch, Tabs, DatePicker } from 'ant-design-vue'
 import { listUsers, getUserTracks, addUserTrack, removeUserTrack, exportUsers, importUsers } from '../api/user.js'
 import { listSubscriptionPosts, saveSubscriptionPost } from '../api/subscriptionPost.js'
 import { listTracks } from '../api/track.js'
@@ -10,14 +10,32 @@ import { uploadFile } from '../api/upload.js'
 import { listMembershipPlans } from '../api/membershipPlan.js'
 import request from '../api/request.js'
 
-const activeTab = ref('enabled')
+const activeTab = ref('accountOpened')
+
+// 从 localStorage 恢复
+try {
+  const savedTab = localStorage.getItem('userManage_activeTab')
+  if (savedTab && ['accountOpened', 'distributor', 'trial', 'disabled', 'all'].includes(savedTab)) {
+    activeTab.value = savedTab
+  }
+} catch (e) {}
+
+const savedSearchMap = JSON.parse(localStorage.getItem('userManage_searchMap') || '{}')
 
 // 每个 Tab 独立的搜索条件
 const defaultSearch = () => ({ username: '', email: '', wxName: '', trackId: undefined, platform: undefined })
 const searchMap = ref({
-  enabled: defaultSearch(),
-  disabled: defaultSearch(),
+  accountOpened: savedSearchMap.accountOpened || defaultSearch(),
+  distributor: savedSearchMap.distributor || defaultSearch(),
+  trial: savedSearchMap.trial || defaultSearch(),
+  disabled: savedSearchMap.disabled || defaultSearch(),
+  all: savedSearchMap.all || defaultSearch(),
 })
+
+function saveUserSearchState() {
+  localStorage.setItem('userManage_searchMap', JSON.stringify(searchMap.value))
+  localStorage.setItem('userManage_activeTab', activeTab.value)
+}
 
 const data = ref([])
 const allSubscriptionPosts = ref([])
@@ -29,16 +47,30 @@ const columns = [
   { title: '用户名', dataIndex: 'username', key: 'username', width: 120 },
   { title: '邮箱', dataIndex: 'email', key: 'email', width: 150 },
   { title: '公众号名称', dataIndex: 'wxName', key: 'wxName', width: 120 },
-  { title: '真实用户', key: 'isReal', width: 85 },
   { title: '赛道信息', key: 'trackInfo', width: 140 },
   { title: '可选赛道', dataIndex: 'trackLimitText', key: 'trackLimitText', width: 90 },
-  { title: '可访问平台', dataIndex: 'platformLimitText', key: 'platformLimitText', width: 120 },
   { title: '状态', key: 'status', width: 75 },
-  { title: '注册时间', dataIndex: 'registerTime', key: 'registerTime', width: 105 },
-  { title: '会员套餐', dataIndex: 'membershipPlanName', key: 'membershipPlanName', width: 100 },
-  { title: '到期时间', dataIndex: 'expireDate', key: 'expireDate', width: 105 },
-  { title: '默认样式', dataIndex: 'template', key: 'template', width: 100 },
-  { title: '邀请码', dataIndex: 'inviteCode', key: 'inviteCode', width: 110 },
+  {
+    title: '注册/到期',
+    key: 'registerExpire',
+    width: 190,
+    customRender: ({ record }) => {
+      const today = new Date().toISOString().slice(0, 10)
+      const isExpired = record.expireDate && record.expireDate !== '-' && record.expireDate < today
+      return h('div', {}, [
+        h('div', { style: 'font-size: 12px; color: #8c8c8c;' }, `注册：${record.registerTime || '-'}`),
+        h('div', { style: `font-size: 12px; ${isExpired ? 'color: #f5222d; font-weight: 500;' : 'color: #8c8c8c;'}` }, `到期：${record.expireDate || '-'}`),
+      ])
+    },
+  },
+  {
+    title: '套餐/样式',
+    key: 'planStyle',
+    width: 140,
+    customRender: ({ record }) => {
+      return h('span', {}, `${record.membershipPlanName || '-'} / ${record.template || '-'}`)
+    },
+  },
   { title: '最近登录', dataIndex: 'lastLogin', key: 'lastLogin', width: 145 },
   { title: '操作', key: 'action', width: 440 },
 ]
@@ -57,8 +89,8 @@ const creationColumns = [
 ]
 const platformOptions = ['公众号', '今日头条', '百家号']
 
-const addForm = ref({ username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined, isReal: 1, wxName: '' })
-const editForm = ref({ id: null, username: '', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', status: 1, remark: '', canSetEmail: 0, membershipPlanId: undefined, template: '', isReal: 0, wxName: '', email: '', invitedBy: '' })
+const addForm = ref({ username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined, isReal: 1, isTrial: 0, isAccountOpened: 1, wxName: '' })
+const editForm = ref({ id: null, username: '', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', status: 1, remark: '', canSetEmail: 0, membershipPlanId: undefined, template: '', isReal: 0, isDistributor: 0, isTrial: 0, isAccountOpened: 0, wxName: '', email: '', invitedBy: '' })
 
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -79,6 +111,16 @@ const tableColumns = computed(() => {
     return columns.filter(c => c.key !== 'trackInfo')
   }
   return columns
+})
+
+const trialTabText = computed(() => {
+  const count = data.value.filter(u => u.isTrial === 1).length
+  return `试用用户 (${count})`
+})
+
+const distributorTabText = computed(() => {
+  const count = data.value.filter(u => u.isDistributor === 1).length
+  return `分成用户 (${count})`
 })
 
 const paginatedData = computed(() => {
@@ -261,7 +303,6 @@ async function saveRecommend() {
 async function loadData() {
   try {
     const s = searchMap.value[activeTab.value]
-    const status = activeTab.value === 'enabled' ? 1 : 0
     // 构建 keyword：把 username/email/wxName 合并成一个 keyword 传给后端
     const keywords = []
     if (s.username) keywords.push(s.username)
@@ -269,13 +310,29 @@ async function loadData() {
     if (s.wxName) keywords.push(s.wxName)
     const keyword = keywords.length > 0 ? keywords.join(' ') : undefined
 
-    const params = { status }
+    const params = {}
+    if (activeTab.value === 'disabled') {
+      params.status = 0
+    } else if (activeTab.value !== 'all') {
+      params.status = 1
+    }
+    if (activeTab.value === 'accountOpened') {
+      params.isAccountOpened = 1
+    }
+    if (activeTab.value === 'distributor') {
+      params.isDistributor = 1
+    }
+    if (activeTab.value === 'trial') {
+      params.isTrial = 1
+    }
     if (keyword) params.keyword = keyword
     if (s.platform) params.platform = s.platform
     if (s.trackId) params.trackId = s.trackId
 
     // 1. 先加载核心数据（用户列表），拿到立刻渲染表格
-    const uList = await listUsers(params)
+    console.log('[UserManage] loadData params:', params)
+    const uList = await listUsers(params) || []
+    console.log('[UserManage] uList count:', uList.length, 'first:', uList[0]?.username)
     const userNameMap = {}
     uList.forEach(u => { userNameMap[u.id] = u.username })
     data.value = uList.map(u => ({
@@ -319,7 +376,7 @@ async function loadData() {
         return {
           ...u,
           membershipPlanName: planMap[u.membershipPlanId] || '-',
-          trackInfo: activeTab.value === 'enabled' ? (trackNames.join('\n') || '-') : '-',
+          trackInfo: activeTab.value !== 'disabled' ? (trackNames.join('\n') || '-') : '-',
         }
       })
     }).catch(() => {
@@ -332,18 +389,19 @@ async function loadData() {
 
 function handleSearch() {
   currentPage.value = 1
+  saveUserSearchState()
   loadData()
 }
 
 function handleReset() {
   searchMap.value[activeTab.value] = defaultSearch()
   currentPage.value = 1
+  saveUserSearchState()
   loadData()
 }
 
 async function handleExport() {
   try {
-    const status = activeTab.value === 'enabled' ? 1 : 0
     const s = searchMap.value[activeTab.value]
     const keywords = []
     if (s.username) keywords.push(s.username)
@@ -351,9 +409,20 @@ async function handleExport() {
     if (s.wxName) keywords.push(s.wxName)
     const keyword = keywords.length > 0 ? keywords.join(' ') : undefined
 
-    const params = {
-      keyword,
-      status,
+    const params = { keyword }
+    if (activeTab.value === 'disabled') {
+      params.status = 0
+    } else if (activeTab.value !== 'all') {
+      params.status = 1
+    }
+    if (activeTab.value === 'accountOpened') {
+      params.isAccountOpened = 1
+    }
+    if (activeTab.value === 'distributor') {
+      params.isDistributor = 1
+    }
+    if (activeTab.value === 'trial') {
+      params.isTrial = 1
     }
     if (s.platform) params.platform = s.platform
     if (s.trackId) params.trackId = s.trackId
@@ -453,13 +522,13 @@ function computeExpireDate(planId, fallback) {
 
 function handleAdd() {
   addModalOpen.value = true
-  addForm.value = { username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: ['公众号'], template: '基础风格', expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined, wxName: '' }
+  addForm.value = { username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: ['公众号'], template: '基础风格', expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined, isReal: 1, isTrial: 0, isAccountOpened: 1, wxName: '' }
 }
 
 function handleEdit(record) {
   editModalOpen.value = true
   const rawPlatforms = record.platformLimit || ''
-  editForm.value = { id: record.id, username: record.username || '', trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : ['公众号'], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0, membershipPlanId: record.membershipPlanId || undefined, template: record.template || '', inviteCode: record.inviteCode || '', invitedBy: record.invitedBy || '', isReal: record.isReal === 1 ? 1 : 0, wxName: record.wxName || '', email: record.email || '' }
+  editForm.value = { id: record.id, username: record.username || '', trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : ['公众号'], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0, membershipPlanId: record.membershipPlanId || undefined, template: record.template || '', inviteCode: record.inviteCode || '', invitedBy: record.invitedBy || '', isReal: record.isReal === 1 ? 1 : 0, isDistributor: record.isDistributor === 1 ? 1 : 0, isTrial: record.isTrial === 1 ? 1 : 0, isAccountOpened: record.isAccountOpened === 1 ? 1 : 0, wxName: record.wxName || '', email: record.email || '' }
 }
 
 async function saveAdd() {
@@ -485,6 +554,8 @@ async function saveAdd() {
       membershipPlanId: addForm.value.membershipPlanId || undefined,
       template: addForm.value.template || '基础风格',
       isReal: addForm.value.isReal ? 1 : 0,
+      isTrial: addForm.value.isTrial ? 1 : 0,
+      isAccountOpened: addForm.value.isAccountOpened ? 1 : 0,
       wxName: addForm.value.wxName || undefined,
     }
     if (addForm.value.contactType === '手机号') payload.phone = addForm.value.contact
@@ -522,6 +593,9 @@ async function saveEdit() {
     inviteCode: editForm.value.inviteCode || undefined,
     invitedBy: editForm.value.invitedBy || undefined,
     isReal: editForm.value.isReal ? 1 : 0,
+    isDistributor: editForm.value.isDistributor ? 1 : 0,
+    isTrial: editForm.value.isTrial ? 1 : 0,
+    isAccountOpened: editForm.value.isAccountOpened ? 1 : 0,
     wxName: editForm.value.wxName || undefined,
     email: editForm.value.email || undefined,
   }
@@ -628,7 +702,9 @@ const availableTracksForAdd = computed(() => {
 
 async function openNextTitleModal(record) {
   nextTitleUser.value = record
-  const today = new Date().toISOString().slice(0, 10)
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10)
   let trackIds = []
   try {
     const userTracks = await getUserTracks(record.id)
@@ -647,8 +723,49 @@ async function openNextTitleModal(record) {
   }
   nextTitleUserTrackIds.value = trackIds
   const items = trackIds.map(tid => ({ trackId: tid, title: '' }))
-  nextTitleForm.value = { recommendDate: today, items }
+
+  // 查询该日期已有标题并回填
+  try {
+    const existing = await request.get('/users/' + record.id + '/next-title', { params: { date: tomorrowStr } })
+    if (existing && Array.isArray(existing)) {
+      for (const item of existing) {
+        const trackId = item.track_id || item.trackId
+        const title = item.titleLibraryTitle || item.title_library_title || item.title || ''
+        const found = items.find(i => i.trackId === trackId)
+        if (found) {
+          found.title = title
+        }
+      }
+    }
+  } catch (e) {
+    // 查询失败不影响打开弹窗
+  }
+
+  nextTitleForm.value = { recommendDate: tomorrowStr, items }
   nextTitleModalOpen.value = true
+}
+
+async function loadExistingTitlesByDate(date) {
+  if (!date || !nextTitleUser.value.id) return
+  // 先清空所有标题
+  for (const item of nextTitleForm.value.items) {
+    item.title = ''
+  }
+  try {
+    const existing = await request.get('/users/' + nextTitleUser.value.id + '/next-title', { params: { date } })
+    if (existing && Array.isArray(existing)) {
+      for (const item of existing) {
+        const trackId = item.track_id || item.trackId
+        const title = item.titleLibraryTitle || item.title_library_title || item.title || ''
+        const found = nextTitleForm.value.items.find(i => i.trackId === trackId)
+        if (found) {
+          found.title = title
+        }
+      }
+    }
+  } catch (e) {
+    // 查询失败不影响操作
+  }
 }
 
 async function saveNextTitle() {
@@ -747,7 +864,7 @@ onMounted(loadData)
 <template>
   <Card :body-style="{ padding: '24px' }" style="border-radius: 2px;">
     <Tabs v-model:activeKey="activeTab" @change="handleSearch">
-      <Tabs.TabPane key="enabled" :tab="'启用用户'">
+      <Tabs.TabPane key="accountOpened" :tab="'开户用户'">
         <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
           <Input v-model:value="searchMap[activeTab].username" placeholder="用户名" style="width: 160px;" />
           <Input v-model:value="searchMap[activeTab].email" placeholder="邮箱" style="width: 160px;" />
@@ -766,13 +883,94 @@ onMounted(loadData)
           <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
           <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
         </div>
-        <Table :columns="tableColumns" :data-source="paginatedData" :pagination="false" row-key="id" :row-selection="rowSelection">
+        <Table :columns="tableColumns" :data-source="paginatedData" :pagination="false" row-key="id" :row-selection="rowSelection" :scroll="{ x: 'max-content' }">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'status'">
               <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>
             </template>
-            <template v-if="column.key === 'isReal'">
-              <Tag :color="record.isReal === 1 ? 'blue' : ''">{{ record.isReal === 1 ? '是' : '否' }}</Tag>
+            <template v-if="column.key === 'trackInfo'">
+              <pre style="font-size: 12px; color: #666; margin: 0; font-family: inherit; white-space: pre-wrap; word-break: break-word;">{{ record.trackInfo || '-' }}</pre>
+            </template>
+            <template v-if="column.key === 'action'">
+              <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
+              <a style="margin-right: 12px;" @click="resetPassword(record)">重置密码</a>
+              <a style="margin-right: 12px;" @click="copyAccountInfo(record)">复制信息</a>
+              <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
+              <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
+              <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
+              <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
+                {{ record.status === 1 ? '禁用' : '启用' }}
+              </a>
+            </template>
+          </template>
+        </Table>
+      </Tabs.TabPane>
+
+      <Tabs.TabPane key="distributor" :tab="'分成用户'">
+        <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
+          <Input v-model:value="searchMap[activeTab].username" placeholder="用户名" style="width: 160px;" />
+          <Input v-model:value="searchMap[activeTab].email" placeholder="邮箱" style="width: 160px;" />
+          <Input v-model:value="searchMap[activeTab].wxName" placeholder="公众号名称" style="width: 160px;" />
+          <Select v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
+            <Select.Option value="公众号">公众号</Select.Option>
+            <Select.Option value="今日头条">今日头条</Select.Option>
+            <Select.Option value="百家号">百家号</Select.Option>
+          </Select>
+          <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
+            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          </Select>
+          <Button type="primary" @click="handleSearch">查询</Button>
+          <Button @click="handleReset">重置</Button>
+          <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
+          <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
+          <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
+        </div>
+        <Table :columns="tableColumns" :data-source="paginatedData" :pagination="false" row-key="id" :row-selection="rowSelection" :scroll="{ x: 'max-content' }">
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'status'">
+              <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>
+            </template>
+            <template v-if="column.key === 'trackInfo'">
+              <pre style="font-size: 12px; color: #666; margin: 0; font-family: inherit; white-space: pre-wrap; word-break: break-word;">{{ record.trackInfo || '-' }}</pre>
+            </template>
+            <template v-if="column.key === 'action'">
+              <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
+              <a style="margin-right: 12px;" @click="resetPassword(record)">重置密码</a>
+              <a style="margin-right: 12px;" @click="copyAccountInfo(record)">复制信息</a>
+              <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
+              <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
+              <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
+              <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
+                {{ record.status === 1 ? '禁用' : '启用' }}
+              </a>
+            </template>
+          </template>
+        </Table>
+      </Tabs.TabPane>
+
+      <Tabs.TabPane key="trial" :tab="'试用用户'">
+        <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
+          <Input v-model:value="searchMap[activeTab].username" placeholder="用户名" style="width: 160px;" />
+          <Input v-model:value="searchMap[activeTab].email" placeholder="邮箱" style="width: 160px;" />
+          <Input v-model:value="searchMap[activeTab].wxName" placeholder="公众号名称" style="width: 160px;" />
+          <Select v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
+            <Select.Option value="公众号">公众号</Select.Option>
+            <Select.Option value="今日头条">今日头条</Select.Option>
+            <Select.Option value="百家号">百家号</Select.Option>
+          </Select>
+          <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
+            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          </Select>
+          <Button type="primary" @click="handleSearch">查询</Button>
+          <Button @click="handleReset">重置</Button>
+          <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
+          <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
+          <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
+        </div>
+        <Table :columns="tableColumns" :data-source="paginatedData" :pagination="false" row-key="id" :row-selection="rowSelection" :scroll="{ x: 'max-content' }">
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'status'">
+              <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>
             </template>
             <template v-if="column.key === 'trackInfo'">
               <pre style="font-size: 12px; color: #666; margin: 0; font-family: inherit; white-space: pre-wrap; word-break: break-word;">{{ record.trackInfo || '-' }}</pre>
@@ -811,16 +1009,55 @@ onMounted(loadData)
           <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
           <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
         </div>
-        <Table :columns="tableColumns" :data-source="paginatedData" :pagination="false" row-key="id" :row-selection="rowSelection">
+        <Table :columns="tableColumns" :data-source="paginatedData" :pagination="false" row-key="id" :row-selection="rowSelection" :scroll="{ x: 'max-content' }">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'status'">
               <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>
             </template>
-            <template v-if="column.key === 'isReal'">
-              <Tag :color="record.isReal === 1 ? 'blue' : ''">{{ record.isReal === 1 ? '是' : '否' }}</Tag>
-            </template>
             <template v-if="column.key === 'trackInfo'">
               <span style="font-size: 12px; color: #666;">{{ record.trackInfo || '-' }}</span>
+            </template>
+            <template v-if="column.key === 'action'">
+              <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
+              <a style="margin-right: 12px;" @click="resetPassword(record)">重置密码</a>
+              <a style="margin-right: 12px;" @click="copyAccountInfo(record)">复制信息</a>
+              <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
+              <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
+              <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
+              <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
+                {{ record.status === 1 ? '禁用' : '启用' }}
+              </a>
+            </template>
+          </template>
+        </Table>
+      </Tabs.TabPane>
+
+      <Tabs.TabPane key="all" :tab="'全部用户'">
+        <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
+          <Input v-model:value="searchMap[activeTab].username" placeholder="用户名" style="width: 160px;" />
+          <Input v-model:value="searchMap[activeTab].email" placeholder="邮箱" style="width: 160px;" />
+          <Input v-model:value="searchMap[activeTab].wxName" placeholder="公众号名称" style="width: 160px;" />
+          <Select v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
+            <Select.Option value="公众号">公众号</Select.Option>
+            <Select.Option value="今日头条">今日头条</Select.Option>
+            <Select.Option value="百家号">百家号</Select.Option>
+          </Select>
+          <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
+            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          </Select>
+          <Button type="primary" @click="handleSearch">查询</Button>
+          <Button @click="handleReset">重置</Button>
+          <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
+          <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
+          <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
+        </div>
+        <Table :columns="tableColumns" :data-source="paginatedData" :pagination="false" row-key="id" :row-selection="rowSelection" :scroll="{ x: 'max-content' }">
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'status'">
+              <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>
+            </template>
+            <template v-if="column.key === 'trackInfo'">
+              <pre style="font-size: 12px; color: #666; margin: 0; font-family: inherit; white-space: pre-wrap; word-break: break-word;">{{ record.trackInfo || '-' }}</pre>
             </template>
             <template v-if="column.key === 'action'">
               <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
@@ -885,9 +1122,17 @@ onMounted(loadData)
       <Form.Item label="功能权限">
         <Checkbox v-model:checked="addForm.canSetEmail" :true-value="1" :false-value="0">允许设置邮箱接收文章</Checkbox>
       </Form.Item>
-      <Form.Item label="真实用户">
-        <Switch v-model:checked="addForm.isReal" :checked-value="1" :un-checked-value="0" />
-      </Form.Item>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <Form.Item label="真实用户">
+          <Switch v-model:checked="addForm.isReal" :checked-value="1" :un-checked-value="0" />
+        </Form.Item>
+        <Form.Item label="开户用户">
+          <Switch v-model:checked="addForm.isAccountOpened" :checked-value="1" :un-checked-value="0" />
+        </Form.Item>
+        <Form.Item label="试用用户">
+          <Switch v-model:checked="addForm.isTrial" :checked-value="1" :un-checked-value="0" />
+        </Form.Item>
+      </div>
       <Form.Item label="备注">
         <Input.TextArea v-model:value="addForm.remark" placeholder="可选填，如：客户来源、特殊说明等" :rows="3" />
       </Form.Item>
@@ -947,9 +1192,20 @@ onMounted(loadData)
           <Select.Option :value="0">已禁用</Select.Option>
         </Select>
       </Form.Item>
-      <Form.Item label="真实用户">
-        <Switch v-model:checked="editForm.isReal" :checked-value="1" :un-checked-value="0" />
-      </Form.Item>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <Form.Item label="真实用户">
+          <Switch v-model:checked="editForm.isReal" :checked-value="1" :un-checked-value="0" />
+        </Form.Item>
+        <Form.Item label="开户用户">
+          <Switch v-model:checked="editForm.isAccountOpened" :checked-value="1" :un-checked-value="0" />
+        </Form.Item>
+        <Form.Item label="分成用户">
+          <Switch v-model:checked="editForm.isDistributor" :checked-value="1" :un-checked-value="0" />
+        </Form.Item>
+        <Form.Item label="试用用户">
+          <Switch v-model:checked="editForm.isTrial" :checked-value="1" :un-checked-value="0" />
+        </Form.Item>
+      </div>
       <Form.Item label="备注">
         <Input.TextArea v-model:value="editForm.remark" placeholder="可选填" :rows="3" />
       </Form.Item>
@@ -1156,7 +1412,7 @@ onMounted(loadData)
   >
     <Form layout="vertical" style="margin-top: 12px;">
       <Form.Item label="推荐日期" required>
-        <Input type="date" v-model:value="nextTitleForm.recommendDate" />
+        <DatePicker v-model:value="nextTitleForm.recommendDate" valueFormat="YYYY-MM-DD" placeholder="选择推荐日期" style="width: 100%;" @change="(date) => loadExistingTitlesByDate(date || '')" />
       </Form.Item>
       <template v-if="nextTitleUserTrackIds.length === 0">
         <div style="color: #f5222d; font-size: 14px; margin-bottom: 16px;">该用户未订阅任何赛道，请先订阅赛道后再设定标题</div>

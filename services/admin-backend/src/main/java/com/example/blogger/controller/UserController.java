@@ -8,6 +8,7 @@ import com.example.blogger.entity.Track;
 import com.example.blogger.entity.User;
 import com.example.blogger.entity.UserTrack;
 import com.example.blogger.mapper.TitleLibraryMapper;
+import com.example.blogger.mapper.TitleRecommendationMapper;
 import com.example.blogger.mapper.TrackMapper;
 import com.example.blogger.mapper.UserTrackMapper;
 import com.example.blogger.service.MembershipPlanService;
@@ -37,17 +38,20 @@ public class UserController {
     private final UserTrackMapper userTrackMapper;
     private final TitleLibraryService titleLibraryService;
     private final TitleLibraryMapper titleLibraryMapper;
+    private final TitleRecommendationMapper titleRecommendationMapper;
     private final TrackMapper trackMapper;
 
     public UserController(UserService userService, UserTrackService userTrackService, MembershipPlanService membershipPlanService,
                           UserTrackMapper userTrackMapper, TitleLibraryService titleLibraryService,
-                          TitleLibraryMapper titleLibraryMapper, TrackMapper trackMapper) {
+                          TitleLibraryMapper titleLibraryMapper, TitleRecommendationMapper titleRecommendationMapper,
+                          TrackMapper trackMapper) {
         this.userService = userService;
         this.userTrackService = userTrackService;
         this.membershipPlanService = membershipPlanService;
         this.userTrackMapper = userTrackMapper;
         this.titleLibraryService = titleLibraryService;
         this.titleLibraryMapper = titleLibraryMapper;
+        this.titleRecommendationMapper = titleRecommendationMapper;
         this.trackMapper = trackMapper;
     }
 
@@ -65,10 +69,7 @@ public class UserController {
             return;
         }
         boolean planChanged = oldPlanId != null && !oldPlanId.equals(planId);
-        // 当套餐变更时强制同步；否则仅在字段为空时同步套餐默认值（允许管理员手动覆盖）
-        if (planChanged || user.getTrackLimit() == null || user.getTrackLimit() <= 0) {
-            user.setTrackLimit(plan.getTrackLimit());
-        }
+        // 可选赛道数由管理员自由编辑，不再根据套餐自动同步
         if (planChanged || user.getAiLimit() == null || user.getAiLimit() <= 0) {
             user.setAiLimit(plan.getAiLimit());
         }
@@ -85,7 +86,10 @@ public class UserController {
             @RequestParam(value = "status", required = false) Integer status,
             @RequestParam(value = "keyword", required = false) String keyword,
             @RequestParam(value = "platform", required = false) String platform,
-            @RequestParam(value = "trackId", required = false) String trackId) {
+            @RequestParam(value = "trackId", required = false) String trackId,
+            @RequestParam(value = "isDistributor", required = false) Integer isDistributor,
+            @RequestParam(value = "isTrial", required = false) Integer isTrial,
+            @RequestParam(value = "isAccountOpened", required = false) Integer isAccountOpened) {
         List<User> users = userService.list();
 
         // 批量查询所有用户赛道，避免 N+1
@@ -134,6 +138,15 @@ public class UserController {
                 return tids.contains(trackId);
             }).collect(Collectors.toList());
         }
+        if (isDistributor != null) {
+            users = users.stream().filter(u -> isDistributor.equals(u.getIsDistributor())).collect(Collectors.toList());
+        }
+        if (isTrial != null) {
+            users = users.stream().filter(u -> isTrial.equals(u.getIsTrial())).collect(Collectors.toList());
+        }
+        if (isAccountOpened != null) {
+            users = users.stream().filter(u -> isAccountOpened.equals(u.getIsAccountOpened())).collect(Collectors.toList());
+        }
 
         return Result.ok(users);
     }
@@ -177,6 +190,9 @@ public class UserController {
         if (user.getInviteCode() != null) existing.setInviteCode(user.getInviteCode());
         if (user.getInvitedBy() != null) existing.setInvitedBy(user.getInvitedBy());
         if (user.getIsReal() != null) existing.setIsReal(user.getIsReal());
+        if (user.getIsDistributor() != null) existing.setIsDistributor(user.getIsDistributor());
+        if (user.getIsTrial() != null) existing.setIsTrial(user.getIsTrial());
+        if (user.getIsAccountOpened() != null) existing.setIsAccountOpened(user.getIsAccountOpened());
         syncPlanLimits(existing, oldPlanId);
         userService.save(existing);
         return Result.ok(null);
@@ -192,6 +208,7 @@ public class UserController {
     public ResponseEntity<byte[]> exportUsers(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) Integer isAccountOpened,
             @RequestParam(required = false) List<String> userIds) {
         try {
             List<User> users = userService.list();
@@ -199,6 +216,7 @@ public class UserController {
             for (User u : users) {
                 if (userIds != null && !userIds.isEmpty() && !userIds.contains(u.getId())) continue;
                 if (status != null && !status.equals(u.getStatus())) continue;
+                if (isAccountOpened != null && !isAccountOpened.equals(u.getIsAccountOpened())) continue;
                 if (keyword != null && !keyword.isEmpty()) {
                     String name = u.getUsername() != null ? u.getUsername() : "";
                     String phone = u.getPhone() != null ? u.getPhone() : "";
@@ -351,6 +369,31 @@ public class UserController {
 
         } catch (Exception e) {
             return Result.error("导入失败：" + e.getMessage());
+        }
+    }
+
+    @GetMapping("/{userId}/next-title")
+    public Result<List<Map<String, Object>>> getNextTitle(@PathVariable String userId, @RequestParam(value = "date", required = false) String date) {
+        try {
+            LocalDate recommendDate = (date != null && !date.isEmpty())
+                    ? LocalDate.parse(date)
+                    : LocalDate.now();
+            List<Map<String, Object>> list = titleRecommendationMapper.findByUserAndDate(userId, recommendDate);
+            // Deduplicate by trackId, keep the latest one
+            Map<String, Map<String, Object>> deduped = new LinkedHashMap<>();
+            for (Map<String, Object> item : list) {
+                String trackId = (String) item.get("track_id");
+                if (trackId == null) {
+                    trackId = (String) item.get("trackId");
+                }
+                if (trackId != null && !deduped.containsKey(trackId)) {
+                    deduped.put(trackId, item);
+                }
+            }
+            return Result.ok(new ArrayList<>(deduped.values()));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("查询失败：" + e.getMessage());
         }
     }
 

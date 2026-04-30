@@ -10,6 +10,7 @@ public class TitleLibrary {
     private String platform;
     private String trackId;
     private Integer useCount;
+    private Integer isUsed;
     private Integer isDeleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -42,6 +43,8 @@ public class TitleLibrary {
     public void setTrackId(String trackId) { this.trackId = trackId; }
     public Integer getUseCount() { return useCount; }
     public void setUseCount(Integer useCount) { this.useCount = useCount; }
+    public Integer getIsUsed() { return isUsed; }
+    public void setIsUsed(Integer isUsed) { this.isUsed = isUsed; }
     public Integer getIsDeleted() { return isDeleted; }
     public void setIsDeleted(Integer isDeleted) { this.isDeleted = isDeleted; }
     public LocalDateTime getCreatedAt() { return createdAt; }

@@ -30,11 +30,15 @@ import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestController
 @RequestMapping("/api/title-library")
 @CrossOrigin(origins = "*")
 public class TitleLibraryController {
+
+    private static final Logger log = LoggerFactory.getLogger(TitleLibraryController.class);
 
     private final TitleLibraryService titleLibraryService;
     private final TrackMapper trackMapper;
@@ -48,6 +52,7 @@ public class TitleLibraryController {
     private final EmailService emailService;
     private final EmailPushLogMapper emailPushLogMapper;
     private final SubscriptionPostMapper subscriptionPostMapper;
+    private final BannedWordMapper bannedWordMapper;
 
     // Async generate task storage (for titles)
     private final ConcurrentHashMap<String, Map<String, Object>> generateTasks = new ConcurrentHashMap<>();
@@ -66,7 +71,8 @@ public class TitleLibraryController {
                                   PromptTemplateMapper promptTemplateMapper,
                                   EmailService emailService,
                                   EmailPushLogMapper emailPushLogMapper,
-                                  SubscriptionPostMapper subscriptionPostMapper) {
+                                  SubscriptionPostMapper subscriptionPostMapper,
+                                  BannedWordMapper bannedWordMapper) {
         this.titleLibraryService = titleLibraryService;
         this.trackMapper = trackMapper;
         this.userMapper = userMapper;
@@ -79,6 +85,7 @@ public class TitleLibraryController {
         this.emailService = emailService;
         this.emailPushLogMapper = emailPushLogMapper;
         this.subscriptionPostMapper = subscriptionPostMapper;
+        this.bannedWordMapper = bannedWordMapper;
     }
 
     @PostConstruct
@@ -195,6 +202,19 @@ public class TitleLibraryController {
     }
 
     @PostConstruct
+    public void migrateIsUsedColumn() {
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.getMetaData().getColumns(null, null, "tu_title_library", "is_used")) {
+            if (!rs.next()) {
+                conn.createStatement().execute("ALTER TABLE tu_title_library ADD COLUMN is_used TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否已使用' AFTER use_count");
+                System.out.println("Migration applied: added is_used column to tu_title_library");
+            }
+        } catch (SQLException e) {
+            System.err.println("Migration check failed for is_used: " + e.getMessage());
+        }
+    }
+
+    @PostConstruct
     public void migrateEmailPushLogTable() {
         try (Connection conn = dataSource.getConnection();
              ResultSet rs = conn.getMetaData().getTables(null, null, "tu_email_push_log", null)) {
@@ -294,6 +314,7 @@ public class TitleLibraryController {
             @RequestParam(value = "recommendUserName", required = false) String recommendUserName,
             @RequestParam(value = "matched", required = false) String matched,
             @RequestParam(value = "pushDate", required = false) String pushDate,
+            @RequestParam(value = "isUsed", required = false) String isUsed,
             @RequestParam(value = "page", required = false) Integer page,
             @RequestParam(value = "pageSize", required = false) Integer pageSize) {
         boolean hasFilter = (platform != null && !platform.isEmpty())
@@ -301,15 +322,16 @@ public class TitleLibraryController {
                 || (keyword != null && !keyword.isEmpty())
                 || (recommendUserName != null && !recommendUserName.isEmpty())
                 || (matched != null && !matched.isEmpty())
-                || (pushDate != null && !pushDate.isEmpty());
+                || (pushDate != null && !pushDate.isEmpty())
+                || (isUsed != null && !isUsed.isEmpty());
         if (page != null && pageSize != null && page > 0 && pageSize > 0) {
             if (hasFilter) {
-                return Result.ok(titleLibraryService.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, page, pageSize));
+                return Result.ok(titleLibraryService.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, page, pageSize));
             }
             return Result.ok(titleLibraryService.listPage(page, pageSize));
         }
         if (hasFilter) {
-            return Result.ok(titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate));
+            return Result.ok(titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed));
         }
         return Result.ok(titleLibraryService.list());
     }
@@ -478,6 +500,7 @@ public class TitleLibraryController {
             @RequestParam(value = "recommendUserName", required = false) String recommendUserName,
             @RequestParam(value = "matched", required = false) String matched,
             @RequestParam(value = "pushDate", required = false) String pushDate,
+            @RequestParam(value = "isUsed", required = false) String isUsed,
             @RequestParam(value = "titleIds", required = false) List<String> titleIds) {
         try {
             List<TitleLibrary> titles;
@@ -493,9 +516,10 @@ public class TitleLibraryController {
                         || (keyword != null && !keyword.isEmpty())
                         || (recommendUserName != null && !recommendUserName.isEmpty())
                         || (matched != null && !matched.isEmpty())
-                        || (pushDate != null && !pushDate.isEmpty());
+                        || (pushDate != null && !pushDate.isEmpty())
+                        || (isUsed != null && !isUsed.isEmpty());
                 titles = hasFilter
-                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate)
+                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed)
                         : titleLibraryService.list();
             }
 
@@ -554,6 +578,7 @@ public class TitleLibraryController {
             @RequestParam(value = "recommendUserName", required = false) String recommendUserName,
             @RequestParam(value = "matched", required = false) String matched,
             @RequestParam(value = "pushDate", required = false) String pushDate,
+            @RequestParam(value = "isUsed", required = false) String isUsed,
             @RequestParam(value = "titleIds", required = false) List<String> titleIds) {
         try {
             List<TitleLibrary> titles;
@@ -569,9 +594,10 @@ public class TitleLibraryController {
                         || (keyword != null && !keyword.isEmpty())
                         || (recommendUserName != null && !recommendUserName.isEmpty())
                         || (matched != null && !matched.isEmpty())
-                        || (pushDate != null && !pushDate.isEmpty());
+                        || (pushDate != null && !pushDate.isEmpty())
+                        || (isUsed != null && !isUsed.isEmpty());
                 titles = hasFilter
-                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate)
+                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed)
                         : titleLibraryService.list();
             }
 
@@ -641,11 +667,64 @@ public class TitleLibraryController {
             String ruleContent = (ruleTemplate != null && ruleTemplate.getContent() != null)
                     ? ruleTemplate.getContent() : defaultRule;
 
+            // Append banned word constraints to rule content
+            List<com.example.blogger.entity.BannedWord> bannedWords = bannedWordMapper.findAll();
+            if (bannedWords != null && !bannedWords.isEmpty()) {
+                StringBuilder sb = new StringBuilder("\n\n【违禁词约束】\n");
+                List<String> blockWords = new ArrayList<>();
+                List<String> cautionWords = new ArrayList<>();
+                List<String> replacements = new ArrayList<>();
+                for (com.example.blogger.entity.BannedWord bw : bannedWords) {
+                    if ("block".equals(bw.getSeverity())) {
+                        blockWords.add(bw.getWord());
+                    } else {
+                        cautionWords.add(bw.getWord());
+                    }
+                    if (bw.getReplacement() != null && !bw.getReplacement().isEmpty()) {
+                        replacements.add("\"" + bw.getWord() + "\" → \"" + bw.getReplacement() + "\"");
+                    }
+                }
+                if (!blockWords.isEmpty()) {
+                    sb.append("以下内容严禁出现：").append(String.join("、", blockWords)).append("\n");
+                }
+                if (!cautionWords.isEmpty()) {
+                    sb.append("以下内容慎用：").append(String.join("、", cautionWords)).append("\n");
+                }
+                if (!replacements.isEmpty()) {
+                    sb.append("如需表达类似含义，请使用替换词：\n");
+                    for (String r : replacements) {
+                        sb.append("  - ").append(r).append("\n");
+                    }
+                }
+                ruleContent = ruleContent + sb.toString();
+            }
+
             Sheet ruleSheet = wb.createSheet("生成规则");
             Row ruleRow = ruleSheet.createRow(0);
             Cell ruleCell = ruleRow.createCell(0);
             ruleCell.setCellValue(ruleContent);
             ruleSheet.setColumnWidth(0, 60 * 256);
+
+            // Add banned word mapping sheet
+            if (bannedWords != null && !bannedWords.isEmpty()) {
+                Sheet bannedSheet = wb.createSheet("违禁词映射");
+                String[] bannedHeaders = { "违禁词", "替换词", "分类", "等级" };
+                Row bannedHeaderRow = bannedSheet.createRow(0);
+                for (int i = 0; i < bannedHeaders.length; i++) {
+                    bannedHeaderRow.createCell(i).setCellValue(bannedHeaders[i]);
+                }
+                for (int i = 0; i < bannedWords.size(); i++) {
+                    com.example.blogger.entity.BannedWord bw = bannedWords.get(i);
+                    Row row = bannedSheet.createRow(i + 1);
+                    row.createCell(0).setCellValue(bw.getWord() != null ? bw.getWord() : "");
+                    row.createCell(1).setCellValue(bw.getReplacement() != null ? bw.getReplacement() : "");
+                    row.createCell(2).setCellValue(bw.getCategory() != null ? bw.getCategory() : "");
+                    row.createCell(3).setCellValue("block".equals(bw.getSeverity()) ? "严禁" : "慎用");
+                }
+                for (int i = 0; i < bannedHeaders.length; i++) {
+                    bannedSheet.setColumnWidth(i, 20 * 256);
+                }
+            }
 
             String timestamp = java.time.LocalDateTime.now()
                     .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
@@ -749,9 +828,9 @@ public class TitleLibraryController {
 
                 // Save file with original name (use title + original extension to keep it readable)
                 // Remove both ASCII and Chinese special chars that are invalid in filenames/URLs
-                String safeBase = baseName.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+                String safeBase = baseName.replaceAll("[\\\\/:*?\"<>|\u201C\u201D]", "_").trim();
                 if (safeBase.isEmpty()) {
-                    safeBase = matchedTitle.getTitle() != null ? matchedTitle.getTitle().replaceAll("[\\\\/:*?\"<>|]", "_").trim() : "article";
+                    safeBase = matchedTitle.getTitle() != null ? matchedTitle.getTitle().replaceAll("[\\\\/:*?\"<>|\u201C\u201D]", "_").trim() : "article";
                 }
                 String fileName = safeBase + "." + ext;
                 System.out.println("[ImportArticle] originalName=" + originalName + ", safeBase=" + safeBase + ", fileName=" + fileName);
@@ -911,6 +990,17 @@ public class TitleLibraryController {
             e.printStackTrace();
             return Result.error("匹配失败：" + e.getMessage());
         }
+    }
+
+    @PostMapping("/{id}/used")
+    public Result<Void> markUsed(@PathVariable String id) {
+        TitleLibrary tl = titleLibraryService.getById(id);
+        if (tl == null) {
+            return Result.error("标题不存在");
+        }
+        int newVal = (tl.getIsUsed() != null && tl.getIsUsed() == 1) ? 0 : 1;
+        titleLibraryService.updateIsUsed(id, newVal);
+        return Result.ok(null);
     }
 
     @DeleteMapping("/{id}/recommendation")
@@ -1235,11 +1325,33 @@ public class TitleLibraryController {
     // ========== 右侧面板：未推荐用户 / 未推送用户 ==========
 
     @GetMapping("/unrecommended-users")
-    public Result<List<Map<String, Object>>> listUnrecommendedUsers(@RequestParam String date) {
+    public Result<List<Map<String, Object>>> listUnrecommendedUsers(
+            @RequestParam String date,
+            @RequestParam(value = "type", required = false) String type) {
         try {
             LocalDate pushDate = LocalDate.parse(date);
-            List<Map<String, Object>> users = titleLibraryService.findUnrecommendedUsers(pushDate);
+            List<Map<String, Object>> users = titleLibraryService.findUnrecommendedUsers(pushDate, type);
             return Result.ok(users);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("查询失败：" + e.getMessage());
+        }
+    }
+
+    @GetMapping("/push-overview")
+    public Result<Map<String, Object>> listPushOverview(
+            @RequestParam String date,
+            @RequestParam(value = "type", required = false, defaultValue = "all") String type,
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "emailPushed", required = false) String emailPushed,
+            @RequestParam(value = "articleComplete", required = false) String articleComplete,
+            @RequestParam(value = "page", required = false, defaultValue = "1") int page,
+            @RequestParam(value = "pageSize", required = false, defaultValue = "20") int pageSize) {
+        try {
+            LocalDate pushDate = LocalDate.parse(date);
+            Map<String, Object> result = titleLibraryService.findPushOverview(
+                    pushDate, type, keyword, emailPushed, articleComplete, page, pageSize);
+            return Result.ok(result);
         } catch (Exception e) {
             e.printStackTrace();
             return Result.error("查询失败：" + e.getMessage());
@@ -1870,11 +1982,15 @@ public class TitleLibraryController {
     private void runGenerateTask(String taskId, int countPerCombo, String outputPath,
                                  List<String> selectedPlatforms, List<String> selectedTrackIds) {
         Map<String, Object> task = generateTasks.get(taskId);
+        log.info("[生成标题] 任务开始 taskId={}, countPerCombo={}, outputPath={}, platforms={}, trackIds={}",
+                taskId, countPerCombo, outputPath, selectedPlatforms, selectedTrackIds);
         try {
             List<Track> allTracks = trackMapper.findAll();
+            log.info("[生成标题] 查询到赛道数量: {}", allTracks == null ? 0 : allTracks.size());
             if (allTracks == null || allTracks.isEmpty()) {
                 task.put("status", "failed");
                 task.put("message", "系统中没有赛道数据");
+                log.warn("[生成标题] 任务失败: 系统中没有赛道数据");
                 return;
             }
 
@@ -1886,10 +2002,12 @@ public class TitleLibraryController {
             } else {
                 tracks = allTracks;
             }
+            log.info("[生成标题] 筛选后赛道数量: {}", tracks.size());
 
             if (tracks.isEmpty()) {
                 task.put("status", "failed");
                 task.put("message", "选择的赛道中没有可用数据");
+                log.warn("[生成标题] 任务失败: 选择的赛道中没有可用数据");
                 return;
             }
 
@@ -1899,8 +2017,10 @@ public class TitleLibraryController {
             } else {
                 platforms = Arrays.asList("公众号", "今日头条", "百家号");
             }
+            log.info("[生成标题] 生成平台: {}", platforms);
 
             List<Map<String, String>> allRows = Collections.synchronizedList(new ArrayList<>());
+            Map<String, String> trackNameToIdMap = new HashMap<>();
             int totalBatches = 0;
             int completedBatches = 0;
 
@@ -1912,12 +2032,14 @@ public class TitleLibraryController {
                     totalBatches += (int) Math.ceil(platformTracks.size() / 5.0);
                 }
             }
+            log.info("[生成标题] 总批次数: {}", totalBatches);
 
             final int finalTotalBatches = totalBatches;
 
             if (totalBatches == 0) {
                 task.put("status", "failed");
                 task.put("message", "所选平台和赛道没有可生成的组合，请检查平台与赛道的对应关系");
+                log.warn("[生成标题] 任务失败: 所选平台和赛道没有可生成的组合");
                 return;
             }
 
@@ -1934,6 +2056,7 @@ public class TitleLibraryController {
                     if (currentTask != null && "cancelled".equals(currentTask.get("status"))) {
                         task.put("status", "cancelled");
                         task.put("message", "任务已取消");
+                        log.info("[生成标题] 任务已取消 taskId={}", taskId);
                         return;
                     }
 
@@ -1941,6 +2064,7 @@ public class TitleLibraryController {
                     List<Track> batchTracks = platformTracks.subList(batchStart, batchEnd);
 
                     task.put("message", "正在生成 " + platform + " 平台标题（批次 " + (batchStart / batchSize + 1) + "/" + (int) Math.ceil(platformTracks.size() / 5.0) + "）...");
+                    log.info("[生成标题] 平台={} 批次={}/{} 赛道数={}", platform, (batchStart / batchSize + 1), (int) Math.ceil(platformTracks.size() / 5.0), batchTracks.size());
 
                     StringBuilder prompt = new StringBuilder();
                     prompt.append("请为\"").append(platform).append("\"平台生成爆款标题。\n\n");
@@ -1949,33 +2073,49 @@ public class TitleLibraryController {
                         Track t = batchTracks.get(i);
                         prompt.append(i + 1).append(". ").append(t.getName());
                         if (t.getIntro() != null && !t.getIntro().isEmpty()) {
-                            prompt.append("：").append(t.getIntro());
+                            prompt.append("（").append(t.getIntro()).append("）");
                         }
                         prompt.append("\n");
+                        trackNameToIdMap.put(t.getName(), t.getId());
                     }
                     prompt.append("\n每个赛道生成").append(countPerCombo).append("个标题。要求：\n");
                     prompt.append("1. 标题是爆款风格，吸引眼球，适合").append(platform).append("传播\n");
-                    prompt.append("2. 每个标题必须配一段SEO描述（30-50字），要求：\n");
+                    prompt.append("2. 每个标题的 track 字段必须是上面给定的赛道名称（纯名称，不要包含括号内的说明），严禁自创赛道名称\n");
+                    prompt.append("3. 每个标题必须配一段SEO描述（30-50字），要求：\n");
                     prompt.append("   - 包含赛道核心关键词，便于搜索引擎收录\n");
                     prompt.append("   - 突出文章价值点和读者收益\n");
                     prompt.append("   - 语言自然流畅，符合").append(platform).append("的搜索推荐算法偏好\n");
                     prompt.append("   - 适当使用数字、疑问、对比等提升点击率的手法\n");
-                    prompt.append("3. 只输出纯JSON，不要markdown代码块，不要任何额外文字\n\n");
+                    prompt.append("4. 只输出纯JSON，不要markdown代码块，不要任何额外文字\n\n");
                     prompt.append("格式：{\"titles\":[{\"track\":\"赛道名称\",\"title\":\"标题文字\",\"description\":\"SEO描述\"},...]}");
 
+                    log.info("[生成标题] Prompt 长度={} 内容前200字={}", prompt.length(), prompt.substring(0, Math.min(200, prompt.length())));
                     JsonNode arr = callClaude(prompt.toString());
+                    int titleCount = 0;
                     if (arr != null && arr.isArray()) {
+                        titleCount = arr.size();
+                        // 按赛道分组计数，每个赛道最多取 countPerCombo 条
+                        Map<String, Integer> trackCountMap = new HashMap<>();
                         for (JsonNode node : arr) {
                             Map<String, String> row = new HashMap<>();
                             row.put("title", node.path("title").asText(""));
                             row.put("platform", platform);
-                            row.put("track", node.path("track").asText(""));
+                            // 清洗 track：去掉冒号/括号及后面的内容，防止 AI 把 intro 拼进来
+                            String rawTrack = node.path("track").asText("");
+                            String cleanTrack = rawTrack.split("[：:\\(（]", 2)[0].trim();
+                            row.put("track", cleanTrack);
                             row.put("description", node.path("description").asText(""));
                             if (!row.get("title").isEmpty()) {
-                                allRows.add(row);
+                                String track = row.get("track");
+                                int current = trackCountMap.getOrDefault(track, 0);
+                                if (current < countPerCombo) {
+                                    allRows.add(row);
+                                    trackCountMap.put(track, current + 1);
+                                }
                             }
                         }
                     }
+                    log.info("[生成标题] 平台={} 批次={}/{} 生成标题数={} 累计={}", platform, (batchStart / batchSize + 1), (int) Math.ceil(platformTracks.size() / 5.0), titleCount, allRows.size());
 
                     completedBatches++;
                     int progress = finalTotalBatches > 0 ? (completedBatches * 100 / finalTotalBatches) : 0;
@@ -1984,6 +2124,7 @@ public class TitleLibraryController {
             }
 
             task.put("message", "正在写入 Excel 文件...");
+            log.info("[生成标题] 写入Excel 总行数={} 路径={}", allRows.size(), outputPath);
             Workbook wb = new XSSFWorkbook();
             Sheet sheet = wb.createSheet("生成标题");
             Row header = sheet.createRow(0);
@@ -2026,22 +2167,29 @@ public class TitleLibraryController {
 
             int savedCount = 0;
             for (Map<String, String> row : allRows) {
-                String trackName = row.get("track");
-                String trackId = null;
-                if (trackName != null && !trackName.isEmpty()) {
-                    Track t = trackMapper.findByName(trackName);
-                    if (t != null) {
-                        trackId = t.getId();
+                try {
+                    String trackName = row.get("track");
+                    String trackId = null;
+                    if (trackName != null && !trackName.isEmpty()) {
+                        trackId = trackNameToIdMap.get(trackName);
+                        if (trackId == null) {
+                            Track t = trackMapper.findByName(trackName);
+                            if (t != null) {
+                                trackId = t.getId();
+                            }
+                        }
                     }
+                    TitleLibrary tl = new TitleLibrary();
+                    tl.setTitle(row.get("title"));
+                    tl.setDescription(row.get("description"));
+                    tl.setPlatform(row.get("platform"));
+                    tl.setTrackId(trackId);
+                    tl.setUseCount(0);
+                    titleLibraryService.save(tl);
+                    savedCount++;
+                } catch (Exception e) {
+                    log.error("[生成标题] 单条入库失败 title={}: {}", row.get("title"), e.getMessage());
                 }
-                TitleLibrary tl = new TitleLibrary();
-                tl.setTitle(row.get("title"));
-                tl.setDescription(row.get("description"));
-                tl.setPlatform(row.get("platform"));
-                tl.setTrackId(trackId);
-                tl.setUseCount(0);
-                titleLibraryService.save(tl);
-                savedCount++;
             }
 
             task.put("status", "completed");
@@ -2049,9 +2197,10 @@ public class TitleLibraryController {
             task.put("total", allRows.size());
             task.put("message", "生成完成，共 " + allRows.size() + " 条标题，已自动入库 " + savedCount + " 条");
             task.put("path", finalPath);
+            log.info("[生成标题] 任务完成 taskId={} 总生成={} 入库={} 路径={}", taskId, allRows.size(), savedCount, finalPath);
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("[生成标题] 任务异常 taskId={}: {}", taskId, e.getMessage(), e);
             task.put("status", "failed");
             task.put("message", "生成失败：" + e.getMessage());
         }
@@ -2061,11 +2210,14 @@ public class TitleLibraryController {
         Process process = null;
         try {
             List<String> command = new ArrayList<>();
-            command.add("claude");
+            command.add("/opt/homebrew/bin/claude");
             command.add("-p");
             command.add(prompt);
             command.add("--output-format=json");
             command.add("--no-session-persistence");
+
+            log.info("[callClaude] 执行命令: {} -p ... --output-format=json --no-session-persistence", command.get(0));
+            log.info("[callClaude] Prompt长度={} 内容前200字={}", prompt.length(), prompt.substring(0, Math.min(200, prompt.length())));
 
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.directory(new File(System.getProperty("user.home")));
@@ -2088,6 +2240,7 @@ public class TitleLibraryController {
 
             boolean finished = process.waitFor(180, java.util.concurrent.TimeUnit.SECONDS);
             if (!finished) {
+                log.error("[callClaude] 命令执行超时(180s)，强制终止进程");
                 process.destroyForcibly();
                 try {
                     process.descendants().forEach(ProcessHandle::destroyForcibly);
@@ -2097,9 +2250,13 @@ public class TitleLibraryController {
             }
 
             readerThread.join(5000);
+            int exitCode = process.exitValue();
+            log.info("[callClaude] 命令退出码: {}", exitCode);
 
             String rawOutput = output.toString().trim();
+            log.info("[callClaude] 原始输出长度={} 内容前500字={}", rawOutput.length(), rawOutput.substring(0, Math.min(500, rawOutput.length())));
             if (rawOutput.isEmpty()) {
+                log.warn("[callClaude] 命令输出为空");
                 return null;
             }
 
@@ -2111,36 +2268,69 @@ public class TitleLibraryController {
 
             ObjectMapper mapper = new ObjectMapper();
             JsonNode root = mapper.readTree(result);
-            String innerJson = root.path("result").asText("");
-            if (innerJson.isEmpty()) {
+            log.info("[callClaude] root结构: {}", root.toString());
+            boolean isError = root.path("is_error").asBoolean(false);
+            if (isError) {
+                String errMsg = root.path("result").asText("");
+                log.error("[callClaude] Claude CLI 返回错误: {}", errMsg);
                 return null;
             }
-            // Some responses contain text before JSON; extract the JSON object
-            int innerJsonStart = innerJson.indexOf('{');
-            if (innerJsonStart >= 0) {
-                innerJson = innerJson.substring(innerJsonStart);
-            }
-            // Find matching closing brace
-            int braceCount = 0;
-            int endPos = -1;
-            for (int i = 0; i < innerJson.length(); i++) {
-                char c = innerJson.charAt(i);
-                if (c == '{') braceCount++;
-                else if (c == '}') {
-                    braceCount--;
-                    if (braceCount == 0) {
-                        endPos = i + 1;
-                        break;
+
+            JsonNode resultNode = root.path("result");
+            JsonNode titles = null;
+            if (resultNode.isTextual()) {
+                // result 是字符串，需要二次解析
+                String innerJson = resultNode.asText("");
+                log.info("[callClaude] result是字符串，内容前800字={}", innerJson.substring(0, Math.min(800, innerJson.length())));
+                if (innerJson.isEmpty()) {
+                    log.warn("[callClaude] result字段为空字符串");
+                    return null;
+                }
+                // Some responses contain text before JSON; extract the JSON object
+                int innerJsonStart = innerJson.indexOf('{');
+                if (innerJsonStart >= 0) {
+                    innerJson = innerJson.substring(innerJsonStart);
+                }
+                // Find matching closing brace
+                int braceCount = 0;
+                int endPos = -1;
+                for (int i = 0; i < innerJson.length(); i++) {
+                    char c = innerJson.charAt(i);
+                    if (c == '{') braceCount++;
+                    else if (c == '}') {
+                        braceCount--;
+                        if (braceCount == 0) {
+                            endPos = i + 1;
+                            break;
+                        }
                     }
                 }
+                if (endPos > 0) {
+                    innerJson = innerJson.substring(0, endPos);
+                }
+                JsonNode innerRoot = mapper.readTree(innerJson);
+                titles = innerRoot.path("titles");
+            } else if (resultNode.isObject() || resultNode.isArray()) {
+                // result 直接是 JSON 对象/数组
+                log.info("[callClaude] result是JSON节点，类型={}", resultNode.getNodeType());
+                if (resultNode.isObject()) {
+                    titles = resultNode.path("titles");
+                } else if (resultNode.isArray()) {
+                    titles = resultNode;
+                }
+            } else {
+                log.warn("[callClaude] result字段未知类型: {}", resultNode.getNodeType());
+                return null;
             }
-            if (endPos > 0) {
-                innerJson = innerJson.substring(0, endPos);
+
+            if (titles == null || titles.isMissingNode()) {
+                log.warn("[callClaude] 未找到 titles 字段");
+                return null;
             }
-            JsonNode innerRoot = mapper.readTree(innerJson);
-            return innerRoot.path("titles");
+            log.info("[callClaude] 解析成功 titles数量={} 类型={}", titles.isArray() ? titles.size() : 0, titles.getNodeType());
+            return titles;
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("[callClaude] 调用异常: {}", e.getMessage(), e);
             if (process != null && process.isAlive()) {
                 process.destroyForcibly();
                 try { process.descendants().forEach(ProcessHandle::destroyForcibly); } catch (Exception ignored) {}

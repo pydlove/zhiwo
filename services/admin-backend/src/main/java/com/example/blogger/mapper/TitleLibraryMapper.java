@@ -2,7 +2,9 @@ package com.example.blogger.mapper;
 
 import com.example.blogger.entity.TitleLibrary;
 import org.apache.ibatis.annotations.*;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @Mapper
 public interface TitleLibraryMapper {
@@ -71,9 +73,10 @@ public interface TitleLibraryMapper {
             "AND (#{recommendUserName} IS NULL OR #{recommendUserName} = '' OR u.username LIKE CONCAT('%', #{recommendUserName}, '%')) " +
             "AND (#{matched} IS NULL OR #{matched} = '' OR (#{matched} = '1' AND r.user_id IS NOT NULL) OR (#{matched} = '0' AND r.user_id IS NULL)) " +
             "AND (#{pushDate} IS NULL OR #{pushDate} = '' OR t.push_date = #{pushDate}) " +
+            "AND (#{isUsed} IS NULL OR #{isUsed} = '' OR t.is_used = #{isUsed}) " +
             "ORDER BY t.created_at DESC" +
             "</script>")
-    List<TitleLibrary> search(@Param("platform") String platform, @Param("trackId") String trackId, @Param("keyword") String keyword, @Param("recommendUserName") String recommendUserName, @Param("matched") String matched, @Param("pushDate") String pushDate);
+    List<TitleLibrary> search(@Param("platform") String platform, @Param("trackId") String trackId, @Param("keyword") String keyword, @Param("recommendUserName") String recommendUserName, @Param("matched") String matched, @Param("pushDate") String pushDate, @Param("isUsed") String isUsed);
 
     @Select("<script>SELECT t.*, tr.name as trackName, " +
             "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.subscription_post_id as subscriptionPostId, " +
@@ -98,10 +101,11 @@ public interface TitleLibraryMapper {
             "AND (#{recommendUserName} IS NULL OR #{recommendUserName} = '' OR u.username LIKE CONCAT('%', #{recommendUserName}, '%')) " +
             "AND (#{matched} IS NULL OR #{matched} = '' OR (#{matched} = '1' AND r.user_id IS NOT NULL) OR (#{matched} = '0' AND r.user_id IS NULL)) " +
             "AND (#{pushDate} IS NULL OR #{pushDate} = '' OR t.push_date = #{pushDate}) " +
+            "AND (#{isUsed} IS NULL OR #{isUsed} = '' OR t.is_used = #{isUsed}) " +
             "ORDER BY t.created_at DESC " +
             "LIMIT #{limit} OFFSET #{offset}" +
             "</script>")
-    List<TitleLibrary> searchPage(@Param("platform") String platform, @Param("trackId") String trackId, @Param("keyword") String keyword, @Param("recommendUserName") String recommendUserName, @Param("matched") String matched, @Param("pushDate") String pushDate, @Param("offset") int offset, @Param("limit") int limit);
+    List<TitleLibrary> searchPage(@Param("platform") String platform, @Param("trackId") String trackId, @Param("keyword") String keyword, @Param("recommendUserName") String recommendUserName, @Param("matched") String matched, @Param("pushDate") String pushDate, @Param("isUsed") String isUsed, @Param("offset") int offset, @Param("limit") int limit);
 
     @Select("<script>SELECT COUNT(*) " +
             "FROM tu_title_library t " +
@@ -123,8 +127,9 @@ public interface TitleLibraryMapper {
             "AND (#{recommendUserName} IS NULL OR #{recommendUserName} = '' OR u.username LIKE CONCAT('%', #{recommendUserName}, '%')) " +
             "AND (#{matched} IS NULL OR #{matched} = '' OR (#{matched} = '1' AND r.user_id IS NOT NULL) OR (#{matched} = '0' AND r.user_id IS NULL)) " +
             "AND (#{pushDate} IS NULL OR #{pushDate} = '' OR t.push_date = #{pushDate}) " +
+            "AND (#{isUsed} IS NULL OR #{isUsed} = '' OR t.is_used = #{isUsed}) " +
             "</script>")
-    int countSearch(@Param("platform") String platform, @Param("trackId") String trackId, @Param("keyword") String keyword, @Param("recommendUserName") String recommendUserName, @Param("matched") String matched, @Param("pushDate") String pushDate);
+    int countSearch(@Param("platform") String platform, @Param("trackId") String trackId, @Param("keyword") String keyword, @Param("recommendUserName") String recommendUserName, @Param("matched") String matched, @Param("pushDate") String pushDate, @Param("isUsed") String isUsed);
 
     @Select("SELECT t.*, tr.name as trackName, " +
             "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.subscription_post_id as subscriptionPostId, " +
@@ -145,16 +150,37 @@ public interface TitleLibraryMapper {
             "WHERE t.id = #{id} AND t.is_deleted = 0")
     TitleLibrary findById(String id);
 
-    @Insert("INSERT INTO tu_title_library(id, title, description, push_date, platform, track_id, use_count, is_deleted, created_at) " +
-            "VALUES(#{id}, #{title}, #{description}, #{pushDate}, #{platform}, #{trackId}, #{useCount}, 0, NOW())")
+    @Insert("INSERT INTO tu_title_library(id, title, description, push_date, platform, track_id, use_count, is_used, is_deleted, created_at) " +
+            "VALUES(#{id}, #{title}, #{description}, #{pushDate}, #{platform}, #{trackId}, #{useCount}, #{isUsed}, 0, NOW())")
     int insert(TitleLibrary titleLibrary);
 
-    @Update("UPDATE tu_title_library SET title=#{title}, description=#{description}, push_date=#{pushDate}, platform=#{platform}, track_id=#{trackId} WHERE id=#{id}")
+    @Update("UPDATE tu_title_library SET title=#{title}, description=#{description}, push_date=#{pushDate}, platform=#{platform}, track_id=#{trackId}, is_used=#{isUsed} WHERE id=#{id}")
     int update(TitleLibrary titleLibrary);
+
+    @Update("UPDATE tu_title_library SET is_used=#{isUsed} WHERE id=#{id}")
+    int updateIsUsed(@Param("id") String id, @Param("isUsed") Integer isUsed);
 
     @Update("UPDATE tu_title_library SET is_deleted = 1 WHERE id = #{id}")
     int delete(String id);
 
     @Select("SELECT COUNT(*) FROM tu_title_library WHERE is_deleted = 0")
     int countAll();
+
+    @Select("SELECT " +
+            "u.id as userId, u.username, u.email, " +
+            "u.is_account_opened as isAccountOpened, u.is_distributor as isDistributor, u.is_trial as isTrial, " +
+            "t.id as trackId, t.name as trackName, " +
+            "r.id as recommendationId, r.subscription_post_id as subscriptionPostId, " +
+            "sp.title as postTitle " +
+            "FROM tu_user u " +
+            "INNER JOIN tu_user_track ut ON u.id = ut.user_id " +
+            "INNER JOIN tu_track t ON ut.track_id = t.id AND t.is_deleted = 0 " +
+            "LEFT JOIN tu_title_recommendation r ON u.id = r.user_id " +
+            "    AND r.recommend_date = #{date} " +
+            "    AND r.track_id = ut.track_id " +
+            "LEFT JOIN tu_subscription_post sp ON r.subscription_post_id = sp.id AND sp.is_deleted = 0 " +
+            "WHERE u.status = 1 AND u.is_deleted = 0 " +
+            "    AND (u.is_account_opened = 1 OR u.is_distributor = 1 OR u.is_trial = 1) " +
+            "ORDER BY u.id, ut.created_at")
+    List<Map<String, Object>> findPushOverview(@Param("date") LocalDate date);
 }

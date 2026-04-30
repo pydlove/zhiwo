@@ -4,6 +4,7 @@ import com.example.blogger.entity.TitleRecommendation;
 import org.apache.ibatis.annotations.*;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @Mapper
 public interface TitleRecommendationMapper {
@@ -70,4 +71,16 @@ public interface TitleRecommendationMapper {
             "ORDER BY r.created_at DESC " +
             "LIMIT 1")
     TitleRecommendation findLatestByUserAndDate(@Param("userId") String userId, @Param("date") LocalDate date);
+
+    @Select("SELECT DISTINCT track_id FROM tu_title_recommendation " +
+            "WHERE user_id = #{userId} AND recommend_date = #{date} " +
+            "AND subscription_post_id IS NOT NULL AND subscription_post_id != ''")
+    List<String> findRecommendedTrackIdsByUserAndDate(@Param("userId") String userId, @Param("date") LocalDate date);
+
+    @Select("SELECT r.*, t.title as titleLibraryTitle " +
+            "FROM tu_title_recommendation r " +
+            "LEFT JOIN tu_title_library t ON r.title_library_id = t.id AND t.is_deleted = 0 " +
+            "WHERE r.user_id = #{userId} AND r.recommend_date = #{date} " +
+            "ORDER BY r.created_at DESC")
+    List<Map<String, Object>> findByUserAndDate(@Param("userId") String userId, @Param("date") LocalDate date);
 }

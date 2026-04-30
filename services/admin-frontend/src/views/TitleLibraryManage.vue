@@ -1,16 +1,86 @@
 <script setup>
-import { ref, onMounted, computed, h, nextTick } from 'vue'
+import { ref, onMounted, computed, h, nextTick, watch } from 'vue'
 import dayjs from 'dayjs'
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Descriptions, DatePicker, Tabs } from 'ant-design-vue'
-import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, unbindRecommendation, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, listUnpushedUsers, batchPushEmail } from '../api/titleLibrary.js'
+import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, unbindRecommendation, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed } from '../api/titleLibrary.js'
 import { listTracks } from '../api/track.js'
 import { listUsers } from '../api/user.js'
 import { renderAsync } from 'docx-preview'
+
+const activeTab = ref(localStorage.getItem('titleLibrary_activeTab') || 'full')
 
 const tableData = ref([])
 const tracks = ref([])
 const allUsers = ref([])
 const loading = ref(false)
+
+// 从 localStorage 恢复搜索条件
+const savedSearch = JSON.parse(localStorage.getItem('titleLibrary_search') || '{}')
+
+async function handleMarkUsed(record) {
+  try {
+    await markTitleUsed(record.id)
+    record.isUsed = record.isUsed === 1 ? 0 : 1
+    message.success(record.isUsed === 1 ? '已标记为使用' : '已取消使用标记')
+  } catch (e) {
+    message.error('操作失败')
+  }
+}
+
+const simpleColumns = [
+  {
+    title: '标题内容',
+    key: 'title',
+    customRender: ({ record }) => {
+      const isUsed = record.isUsed === 1 || !!(record.subscriptionPostId)
+      return h('div', {
+        style: 'display: flex; align-items: center; gap: 8px;'
+      }, [
+        h(Button, {
+          type: 'link',
+          size: 'small',
+          style: 'padding: 0; flex-shrink: 0; font-size: 12px;',
+          onClick: () => {
+            navigator.clipboard.writeText(record.title).then(() => {
+              message.success('已复制')
+            }).catch(() => {
+              message.error('复制失败')
+            })
+          }
+        }, () => '复制'),
+        h(Button, {
+          type: isUsed ? 'default' : 'primary',
+          ghost: !isUsed,
+          size: 'small',
+          style: 'padding: 0 4px; flex-shrink: 0; font-size: 12px;',
+          onClick: () => handleMarkUsed(record)
+        }, () => isUsed ? '取消使用' : '使用了'),
+        h('span', {
+          style: `flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; ${isUsed ? 'text-decoration: line-through; color: #999;' : ''}`
+        }, record.title)
+      ])
+    },
+  },
+  {
+    title: '是否使用',
+    key: 'isUsed',
+    width: 90,
+    align: 'center',
+    customRender: ({ record }) => {
+      const isUsed = record.isUsed === 1 || !!(record.subscriptionPostId)
+      return h(Tag, { color: isUsed ? 'green' : 'default' }, () => isUsed ? '已使用' : '未使用')
+    },
+  },
+  {
+    title: '平台/赛道',
+    key: 'platformTrack',
+    ellipsis: true,
+    width: 140,
+    customRender: ({ record }) => {
+      return h('span', {}, `${record.platform || '-'} / ${record.trackName || '-'}`)
+    },
+  },
+]
 
 const selectedRowKeys = ref([])
 const selectedRows = ref([])
@@ -22,51 +92,80 @@ const rowSelection = {
   },
 }
 
-const searchKeyword = ref('')
-const searchPlatform = ref('')
-const searchTrack = ref('')
-const searchUserName = ref('')
-const searchMatched = ref('')
-const searchPushDate = ref(null)
+const searchKeyword = ref(savedSearch.keyword || '')
+const searchPlatform = ref(savedSearch.platform || '')
+const searchTrack = ref(savedSearch.trackId || '')
+const searchUserName = ref(savedSearch.userName || '')
+const searchMatched = ref(savedSearch.matched || '')
+const searchPushDate = ref(savedSearch.pushDate ? dayjs(savedSearch.pushDate) : null)
+const searchIsUsed = ref(savedSearch.isUsed || '')
+
+const filteredTracksForSearch = computed(() => {
+  if (!searchPlatform.value) {
+    return tracks.value
+  }
+  return tracks.value.filter(t => {
+    if (!t.platforms) return false
+    const trackPlatforms = t.platforms.split(',')
+    return trackPlatforms.includes(searchPlatform.value)
+  })
+})
+
+watch(searchPlatform, (newPlatform) => {
+  if (!newPlatform) return
+  if (!searchTrack.value) return
+  const track = tracks.value.find(t => t.id === searchTrack.value)
+  if (!track || !track.platforms || !track.platforms.split(',').includes(newPlatform)) {
+    searchTrack.value = ''
+  }
+})
+
+function saveSearchState() {
+  const state = {
+    keyword: searchKeyword.value,
+    platform: searchPlatform.value,
+    trackId: searchTrack.value,
+    userName: searchUserName.value,
+    matched: searchMatched.value,
+    pushDate: searchPushDate.value ? searchPushDate.value.format('YYYY-MM-DD') : null,
+    isUsed: searchIsUsed.value,
+  }
+  localStorage.setItem('titleLibrary_search', JSON.stringify(state))
+}
+
+function saveActiveTab() {
+  localStorage.setItem('titleLibrary_activeTab', activeTab.value)
+}
 
 // 右侧面板
 const PANEL_DATE_KEY = 'titleLibrary_panelDate'
 const savedDate = localStorage.getItem(PANEL_DATE_KEY)
 const panelDate = ref(savedDate ? dayjs(savedDate) : dayjs())
 const activePanelTab = ref('unrecommended')
-const unrecommendedUsers = ref([])
-const unpushedUsers = ref([])
+const activeUnrecommendedSubTab = ref('accountOpened')
+const unrecommendedAccountOpened = ref([])
+const unrecommendedDistributor = ref([])
+const unrecommendedTrial = ref([])
 const panelLoading = ref(false)
-const panelPushLoading = ref(false)
-const selectedPushUserIds = ref([])
-
-const panelPushRowSelection = {
-  onChange: (keys) => {
-    selectedPushUserIds.value = keys
-  },
-}
 
 const unrecommendedColumns = [
   { title: '用户名', dataIndex: 'username', ellipsis: true },
   { title: '邮箱', dataIndex: 'email', ellipsis: true },
-  { title: '赛道信息', dataIndex: 'trackInfo', ellipsis: true },
-]
-
-const unpushedColumns = [
-  { title: '用户名', dataIndex: 'username', ellipsis: true },
-  { title: '邮箱', dataIndex: 'email', ellipsis: true },
+  { title: '未推荐赛道', dataIndex: 'missingTracks', ellipsis: true },
 ]
 
 async function loadPanelData() {
   const dateStr = panelDate.value.format('YYYY-MM-DD')
   panelLoading.value = true
   try {
-    const [unrec, unp] = await Promise.all([
-      listUnrecommendedUsers(dateStr).catch(() => []),
-      listUnpushedUsers(dateStr).catch(() => []),
+    const [unrecAcc, unrecDist, unrecTrial] = await Promise.all([
+      listUnrecommendedUsers(dateStr, 'accountOpened').catch(() => []),
+      listUnrecommendedUsers(dateStr, 'distributor').catch(() => []),
+      listUnrecommendedUsers(dateStr, 'trial').catch(() => []),
     ])
-    unrecommendedUsers.value = unrec || []
-    unpushedUsers.value = unp || []
+    unrecommendedAccountOpened.value = unrecAcc || []
+    unrecommendedDistributor.value = unrecDist || []
+    unrecommendedTrial.value = unrecTrial || []
   } catch (e) {
     message.error('面板数据加载失败')
   } finally {
@@ -79,38 +178,6 @@ function onPanelDateChange() {
     localStorage.setItem(PANEL_DATE_KEY, panelDate.value.format('YYYY-MM-DD'))
   }
   loadPanelData()
-}
-
-async function handleBatchPushEmail() {
-  if (selectedPushUserIds.value.length === 0) {
-    message.warning('请选择要推送的用户')
-    return
-  }
-  Modal.confirm({
-    title: '确认批量推送邮件？',
-    content: `将向 ${selectedPushUserIds.value.length} 位用户发送当日推荐文章邮件，确认吗？`,
-    async onOk() {
-      panelPushLoading.value = true
-      try {
-        const result = await batchPushEmail({
-          date: panelDate.value.format('YYYY-MM-DD'),
-          userIds: selectedPushUserIds.value,
-        })
-        const { success = 0, failed = 0 } = result
-        if (failed === 0) {
-          message.success(`推送成功，共发送 ${success} 封邮件`)
-        } else {
-          message.success(`推送完成：成功 ${success} 封，失败 ${failed} 封`)
-        }
-        selectedPushUserIds.value = []
-        loadPanelData()
-      } catch (e) {
-        message.error(e?.response?.data?.msg || e?.message || '推送失败')
-      } finally {
-        panelPushLoading.value = false
-      }
-    },
-  })
 }
 
 const platformOptions = [
@@ -130,12 +197,20 @@ const columns = [
     customRender: ({ record }) => {
       const btnStyle = 'padding: 0; max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block;'
       if (record.subscriptionPostFileUrl) {
-        return h(Button, {
-          type: 'link',
-          size: 'small',
-          style: btnStyle,
-          onClick: () => handlePreviewPost(record),
-        }, () => record.title)
+        return h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
+          h(Button, {
+            type: 'link',
+            size: 'small',
+            style: btnStyle,
+            onClick: () => handlePreviewPost(record),
+          }, () => record.title),
+          h(Button, {
+            type: 'link',
+            size: 'small',
+            style: 'padding: 0; flex-shrink: 0; font-size: 12px;',
+            onClick: () => handleDownloadPost(record),
+          }, () => '下载'),
+        ])
       }
       return h('span', { style: btnStyle }, record.title)
     },
@@ -211,6 +286,7 @@ async function loadData() {
     if (searchUserName.value) params.recommendUserName = searchUserName.value.trim()
     if (searchMatched.value !== '' && searchMatched.value !== undefined) params.matched = searchMatched.value
     if (searchPushDate.value) params.pushDate = searchPushDate.value.format('YYYY-MM-DD')
+    if (searchIsUsed.value !== '' && searchIsUsed.value !== undefined) params.isUsed = searchIsUsed.value
     params.page = currentPage.value
     params.pageSize = pageSize.value
 
@@ -244,6 +320,7 @@ async function loadData() {
 
 function handleSearch() {
   currentPage.value = 1
+  saveSearchState()
   loadData()
 }
 
@@ -258,7 +335,9 @@ function handleReset() {
   searchUserName.value = ''
   searchMatched.value = ''
   searchPushDate.value = null
+  searchIsUsed.value = ''
   currentPage.value = 1
+  saveSearchState()
   loadData()
 }
 
@@ -489,7 +568,27 @@ async function handleSaveExportRule() {
   }
 }
 
-async function handleExportTitleList() {
+function openExportFileNameModal(type) {
+  pendingExportType.value = type
+  exportFileNameInput.value = localStorage.getItem(EXPORT_FILENAME_KEY) || ''
+  exportFileNameModalOpen.value = true
+}
+
+async function handleExportConfirm() {
+  const fileName = exportFileNameInput.value.trim()
+  if (fileName) {
+    localStorage.setItem(EXPORT_FILENAME_KEY, fileName)
+  }
+  exportFileNameModalOpen.value = false
+
+  if (pendingExportType.value === 'titleList') {
+    await doExportTitleList()
+  } else if (pendingExportType.value === 'fromRule') {
+    await doExportFromRule()
+  }
+}
+
+async function doExportTitleList() {
   try {
     let blob
     if (selectedRowKeys.value.length > 0) {
@@ -502,12 +601,15 @@ async function handleExportTitleList() {
       if (searchUserName.value) params.recommendUserName = searchUserName.value.trim()
       if (searchMatched.value !== '' && searchMatched.value !== undefined) params.matched = searchMatched.value
       if (searchPushDate.value) params.pushDate = searchPushDate.value.format('YYYY-MM-DD')
+      if (searchIsUsed.value !== '' && searchIsUsed.value !== undefined) params.isUsed = searchIsUsed.value
       blob = await exportTitleList(params)
     }
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `标题库_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`
+    const defaultName = `标题库_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`
+    const name = exportFileNameInput.value.trim() || defaultName
+    a.download = name.endsWith('.xlsx') ? name : name + '.xlsx'
     a.click()
     URL.revokeObjectURL(url)
     message.success('导出成功')
@@ -516,7 +618,7 @@ async function handleExportTitleList() {
   }
 }
 
-async function handleExportFromRule() {
+async function doExportFromRule() {
   exportRuleModalOpen.value = false
   try {
     let blob
@@ -530,18 +632,29 @@ async function handleExportFromRule() {
       if (searchUserName.value) params.recommendUserName = searchUserName.value.trim()
       if (searchMatched.value !== '' && searchMatched.value !== undefined) params.matched = searchMatched.value
       if (searchPushDate.value) params.pushDate = searchPushDate.value.format('YYYY-MM-DD')
+      if (searchIsUsed.value !== '' && searchIsUsed.value !== undefined) params.isUsed = searchIsUsed.value
       blob = await exportTitleLibrary(params)
     }
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `标题库导出_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`
+    const defaultName = `标题库导出_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`
+    const name = exportFileNameInput.value.trim() || defaultName
+    a.download = name.endsWith('.xlsx') ? name : name + '.xlsx'
     a.click()
     URL.revokeObjectURL(url)
     message.success('导出成功')
   } catch (e) {
     message.error('导出失败')
   }
+}
+
+async function handleExportTitleList() {
+  openExportFileNameModal('titleList')
+}
+
+async function handleExportFromRule() {
+  openExportFileNameModal('fromRule')
 }
 
 // Import articles modal
@@ -755,19 +868,24 @@ const previewFileType = computed(() => {
   return 'other'
 })
 
+function getPostFileUrl(postId, download = false) {
+  if (!postId) return ''
+  return `${apiBaseUrl}/api/subscription-posts/${postId}/file${download ? '?download=1' : ''}`
+}
+
 async function handlePreviewPost(record) {
   previewRecord.value = record
   previewHtmlContent.value = ''
   previewModalOpen.value = true
   previewLoading.value = true
 
-  const fileUrl = record.subscriptionPostFileUrl
-  if (!fileUrl) {
+  const postId = record.subscriptionPostId
+  if (!postId) {
     previewLoading.value = false
     return
   }
 
-  const url = fileUrl.startsWith('http') ? fileUrl : apiBaseUrl + fileUrl
+  const url = getPostFileUrl(postId)
 
   try {
     const type = previewFileType.value
@@ -809,13 +927,17 @@ async function handlePreviewPost(record) {
 }
 
 function handleDownloadPost(record) {
-  if (!record.subscriptionPostFileUrl) return
-  const url = record.subscriptionPostFileUrl.startsWith('http')
-    ? record.subscriptionPostFileUrl
-    : apiBaseUrl + record.subscriptionPostFileUrl
+  const postId = record.subscriptionPostId
+  if (!postId) return
+  const url = getPostFileUrl(postId, true)
+  // 从原始路径中提取文件扩展名
+  const urlPath = record.subscriptionPostFileUrl || ''
+  const extMatch = urlPath.split('?')[0].match(/\.([a-zA-Z0-9]+)$/)
+  const ext = extMatch ? '.' + extMatch[1] : ''
+  const fileName = (record.subscriptionPostTitle || record.title || 'download') + ext
   const a = document.createElement('a')
   a.href = url
-  a.download = record.subscriptionPostTitle + '.html'
+  a.download = fileName
   a.click()
 }
 
@@ -888,6 +1010,12 @@ const generateProgress = ref(0)
 const generateTaskId = ref(null)
 const generateStatusMsg = ref('')
 let generatePollTimer = null
+
+// Export file name modal
+const EXPORT_FILENAME_KEY = 'titleLibrary_exportFileName'
+const exportFileNameModalOpen = ref(false)
+const exportFileNameInput = ref(localStorage.getItem(EXPORT_FILENAME_KEY) || '')
+const pendingExportType = ref(null) // 'titleList' | 'fromRule'
 
 const filteredTracksForGenerate = computed(() => {
   if (!generatePlatforms.value || generatePlatforms.value.length === 0) {
@@ -1006,15 +1134,47 @@ async function handleCancelGenerate() {
   }
 }
 
-onMounted(loadData)
+onMounted(() => {
+  loadData()
+  loadPanelData()
+})
 
 </script>
 
 <template>
-  <div style="display: flex; gap: 16px;">
-    <!-- 左侧主内容 -->
-    <div style="width: 60%; min-width: 0;">
-      <Card title="标题库管理" :bordered="false">
+  <!-- 全局生成进度条：放在 Tabs 外面，确保任何 tab 下都可见 -->
+  <div v-if="generating" style="background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <div style="font-size: 13px; color: #096dd9;">
+        <strong>正在生成标题</strong> — {{ generateStatusMsg }}
+      </div>
+      <Button type="link" danger size="small" style="padding: 0;" @click="handleCancelGenerate">取消生成</Button>
+    </div>
+    <div style="width: 100%; background: #d9d9d9; border-radius: 4px; height: 8px;">
+      <div :style="{ width: generateProgress + '%', background: '#1890ff', height: '8px', borderRadius: '4px', transition: 'width 0.5s' }" />
+    </div>
+    <div style="font-size: 12px; color: #096dd9; margin-top: 4px; text-align: right;">{{ generateProgress }}%</div>
+  </div>
+
+  <div v-if="generatingPost" style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <div style="font-size: 13px; color: #389e0d;">
+        <strong>正在生成文章</strong> — {{ generatePostStatusMsg }}
+      </div>
+      <Button type="link" danger size="small" style="padding: 0;" @click="handleCancelGeneratePost">取消生成</Button>
+    </div>
+    <div style="width: 100%; background: #d9d9d9; border-radius: 4px; height: 8px;">
+      <div :style="{ width: generatePostProgress + '%', background: '#52c41a', height: '8px', borderRadius: '4px', transition: 'width 0.5s' }" />
+    </div>
+    <div style="font-size: 12px; color: #389e0d; margin-top: 4px; text-align: right;">{{ generatePostProgress }}%</div>
+  </div>
+
+  <Tabs v-model:activeKey="activeTab" @change="saveActiveTab">
+    <Tabs.TabPane key="full" tab="标题库管理">
+      <div style="display: flex; gap: 16px;">
+        <!-- 左侧主内容 -->
+        <div style="width: 60%; min-width: 0;">
+          <Card title="标题库管理" :bordered="false">
         <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
           <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
           <Select v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear>
@@ -1040,32 +1200,6 @@ onMounted(loadData)
           <Button @click="openImportArticleModal">导入文章</Button>
           <Button type="primary" @click="handleAdd">+ 新增标题</Button>
         </div>
-
-    <div v-if="generating" style="background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <div style="font-size: 13px; color: #096dd9;">
-          <strong>正在生成标题</strong> — {{ generateStatusMsg }}
-        </div>
-        <Button type="link" danger size="small" style="padding: 0;" @click="handleCancelGenerate">取消生成</Button>
-      </div>
-      <div style="width: 100%; background: #d9d9d9; border-radius: 4px; height: 8px;">
-        <div :style="{ width: generateProgress + '%', background: '#1890ff', height: '8px', borderRadius: '4px', transition: 'width 0.5s' }" />
-      </div>
-      <div style="font-size: 12px; color: #096dd9; margin-top: 4px; text-align: right;">{{ generateProgress }}%</div>
-    </div>
-
-    <div v-if="generatingPost" style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <div style="font-size: 13px; color: #389e0d;">
-          <strong>正在生成文章</strong> — {{ generatePostStatusMsg }}
-        </div>
-        <Button type="link" danger size="small" style="padding: 0;" @click="handleCancelGeneratePost">取消生成</Button>
-      </div>
-      <div style="width: 100%; background: #d9d9d9; border-radius: 4px; height: 8px;">
-        <div :style="{ width: generatePostProgress + '%', background: '#52c41a', height: '8px', borderRadius: '4px', transition: 'width 0.5s' }" />
-      </div>
-      <div style="font-size: 12px; color: #389e0d; margin-top: 4px; text-align: right;">{{ generatePostProgress }}%</div>
-    </div>
 
     <Table :columns="columns" :data-source="paginatedData" :pagination="false" row-key="id" :loading="loading" :row-selection="rowSelection" :scroll="{ x: 'max-content' }" />
 
@@ -1096,56 +1230,103 @@ onMounted(loadData)
         </div>
 
         <Tabs v-model:activeKey="activePanelTab">
-          <!-- Tab 1: 未推荐用户 -->
-          <Tabs.TabPane key="unrecommended" :tab="`未推荐用户 (${unrecommendedUsers.length})`">
-            <div v-if="panelLoading" style="text-align: center; padding: 40px; color: #999;">加载中...</div>
-            <div v-else-if="unrecommendedUsers.length === 0" style="text-align: center; padding: 40px; color: #999;">
-              该日期下所有用户均已推荐文章
-            </div>
-            <Table
-              v-else
-              :columns="unrecommendedColumns"
-              :data-source="unrecommendedUsers"
-              :pagination="false"
-              size="small"
-              row-key="id"
-              :scroll="{ y: 480 }"
-            />
+          <!-- Tab 1: 未推荐用户（分三个子Tab） -->
+          <Tabs.TabPane key="unrecommended" :tab="`未推荐用户`">
+            <Tabs v-model:activeKey="activeUnrecommendedSubTab" size="small">
+              <Tabs.TabPane key="accountOpened" :tab="`开户 (${unrecommendedAccountOpened.length})`">
+                <div v-if="panelLoading" style="text-align: center; padding: 40px; color: #999;">加载中...</div>
+                <div v-else-if="unrecommendedAccountOpened.length === 0" style="text-align: center; padding: 40px; color: #999;">
+                  该日期下所有开户用户均已完整推荐
+                </div>
+                <Table
+                  v-else
+                  :columns="unrecommendedColumns"
+                  :data-source="unrecommendedAccountOpened"
+                  :pagination="false"
+                  size="small"
+                  row-key="id"
+                  :scroll="{ y: 440 }"
+                />
+              </Tabs.TabPane>
+              <Tabs.TabPane key="distributor" :tab="`分成 (${unrecommendedDistributor.length})`">
+                <div v-if="panelLoading" style="text-align: center; padding: 40px; color: #999;">加载中...</div>
+                <div v-else-if="unrecommendedDistributor.length === 0" style="text-align: center; padding: 40px; color: #999;">
+                  该日期下所有分成用户均已完整推荐
+                </div>
+                <Table
+                  v-else
+                  :columns="unrecommendedColumns"
+                  :data-source="unrecommendedDistributor"
+                  :pagination="false"
+                  size="small"
+                  row-key="id"
+                  :scroll="{ y: 440 }"
+                />
+              </Tabs.TabPane>
+              <Tabs.TabPane key="trial" :tab="`试用 (${unrecommendedTrial.length})`">
+                <div v-if="panelLoading" style="text-align: center; padding: 40px; color: #999;">加载中...</div>
+                <div v-else-if="unrecommendedTrial.length === 0" style="text-align: center; padding: 40px; color: #999;">
+                  该日期下所有试用用户均已完整推荐
+                </div>
+                <Table
+                  v-else
+                  :columns="unrecommendedColumns"
+                  :data-source="unrecommendedTrial"
+                  :pagination="false"
+                  size="small"
+                  row-key="id"
+                  :scroll="{ y: 440 }"
+                />
+              </Tabs.TabPane>
+            </Tabs>
           </Tabs.TabPane>
 
-          <!-- Tab 2: 未推送用户 -->
-          <Tabs.TabPane key="unpushed" :tab="`未推送用户 (${unpushedUsers.length})`">
-            <div v-if="panelLoading" style="text-align: center; padding: 40px; color: #999;">加载中...</div>
-            <div v-else-if="unpushedUsers.length === 0" style="text-align: center; padding: 40px; color: #999;">
-              该日期下所有用户均已推送邮件
-            </div>
-            <div v-else>
-              <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
-                <Button
-                  type="primary"
-                  size="small"
-                  :loading="panelPushLoading"
-                  :disabled="selectedPushUserIds.length === 0"
-                  @click="handleBatchPushEmail"
-                >
-                  批量推送 ({{ selectedPushUserIds.length }})
-                </Button>
-              </div>
-              <Table
-                :columns="unpushedColumns"
-                :data-source="unpushedUsers"
-                :pagination="false"
-                size="small"
-                row-key="id"
-                :row-selection="panelPushRowSelection"
-                :scroll="{ y: 440 }"
-              />
-            </div>
-          </Tabs.TabPane>
         </Tabs>
       </Card>
     </div>
   </div>
+    </Tabs.TabPane>
+
+    <Tabs.TabPane key="simple" tab="简洁视图">
+      <Card title="标题库简洁视图" :bordered="false">
+        <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+          <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
+          <Select v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear>
+            <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value">{{ p.label }}</Select.Option>
+          </Select>
+          <Select v-model:value="searchTrack" placeholder="选择赛道" style="width: 160px;" allowClear :disabled="!searchPlatform">
+            <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          </Select>
+          <Select v-model:value="searchIsUsed" placeholder="使用状态" style="width: 130px;" allowClear>
+            <Select.Option value="1">已使用</Select.Option>
+            <Select.Option value="0">未使用</Select.Option>
+          </Select>
+          <Button type="primary" @click="handleSearch">查询</Button>
+          <Button @click="handleReset">重置</Button>
+          <Button @click="openGenerateModal" style="margin-left: auto;">生成标题</Button>
+        </div>
+        <Table
+          :columns="simpleColumns"
+          :data-source="paginatedData"
+          :pagination="false"
+          row-key="id"
+          :loading="loading"
+          :scroll="{ x: 'max-content' }"
+        />
+        <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+          <Pagination
+            v-model:current="currentPage"
+            v-model:pageSize="pageSize"
+            :total="totalCount"
+            show-size-changer
+            :page-size-options="['10', '20', '50']"
+            :show-total="total => `共 ${total} 条`"
+            @change="handlePageChange"
+          />
+        </div>
+      </Card>
+    </Tabs.TabPane>
+  </Tabs>
 
   <Modal v-model:open="modalOpen" :title="modalTitle" :mask-closable="false" :confirm-loading="saving" @ok="handleSave">
     <Form layout="vertical" style="margin-top: 12px;">
@@ -1252,6 +1433,21 @@ onMounted(loadData)
     </Form>
   </Modal>
 
+  <Modal v-model:open="exportFileNameModalOpen" title="设置导出文件名" :mask-closable="false" width="400">
+    <Form layout="vertical" style="margin-top: 12px;">
+      <Form.Item label="文件名">
+        <Input v-model:value="exportFileNameInput" placeholder="例如：标题库导出" />
+        <div style="font-size: 12px; color: #999; margin-top: 4px;">留空则使用默认文件名，会自动补 .xlsx 后缀</div>
+      </Form.Item>
+    </Form>
+    <template #footer>
+      <div style="display: flex; justify-content: flex-end; gap: 12px;">
+        <Button @click="exportFileNameModalOpen = false">取消</Button>
+        <Button type="primary" @click="handleExportConfirm">确认导出</Button>
+      </div>
+    </template>
+  </Modal>
+
   <Modal v-model:open="previewModalOpen" title="文章预览" :footer="null" :mask-closable="true" width="900">
     <div v-if="previewRecord" style="margin-top: 12px;">
       <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">{{ previewRecord.subscriptionPostTitle }}</div>
@@ -1271,7 +1467,7 @@ onMounted(loadData)
         <!-- PDF / DOC / Other -->
         <iframe
           v-else-if="previewRecord.subscriptionPostFileUrl"
-          :src="previewRecord.subscriptionPostFileUrl.startsWith('http') ? previewRecord.subscriptionPostFileUrl : (apiBaseUrl + previewRecord.subscriptionPostFileUrl)"
+          :src="getPostFileUrl(previewRecord.subscriptionPostId)"
           style="width: 100%; height: 560px; border: 0;"
         />
         <div v-else style="padding: 24px; color: #999; text-align: center;">暂无文件</div>

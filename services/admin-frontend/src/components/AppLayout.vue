@@ -48,6 +48,8 @@ const allMenuItems = [
   { key: '/config', label: '系统配置', perm: 'config' },
   { key: '/membership-plans', label: '会员权益', perm: 'membership-plan' },
   { key: '/title-library', label: '标题库', perm: 'title-library' },
+  { key: '/push-overview', label: '推送概览', perm: 'title-library' },
+  { key: '/banned-words', label: '违禁词管理', perm: 'config' },
 ]
 
 const logoImage = computed(() => {

@@ -1,0 +1,59 @@
+import request from './request.js'
+
+// 标题审核相关
+export function listTitleReviews(params) {
+  return request.get('/title-review/list', { params })
+}
+
+export function approveTitleReview(id) {
+  return request.post('/title-review/' + id + '/approve')
+}
+
+export function rejectTitleReview(id, data) {
+  return request.post('/title-review/' + id + '/reject', data)
+}
+
+export function batchApproveTitleReviews(ids) {
+  return request.post('/title-review/batch-approve', { ids })
+}
+
+export function batchRejectTitleReviews(ids, reason) {
+  return request.post('/title-review/batch-reject', { ids, reason })
+}
+
+export function pushTitleReview(id, data) {
+  return request.post('/title-review/' + id + '/push', data)
+}
+
+export function batchPushTitleReviews(data) {
+  return request.post('/title-review/batch-push', data)
+}
+
+export function getTitleReviewStats() {
+  return request.get('/title-review/stats')
+}
+
+export function listPushLogs(params) {
+  return request.get('/title-review/push-logs', { params })
+}
+
+// 服务器配置相关
+export function listServerConfigs() {
+  return request.get('/server-configs')
+}
+
+export function saveServerConfig(data) {
+  return request.post('/server-configs', data)
+}
+
+export function deleteServerConfig(id) {
+  return request.delete('/server-configs/' + id)
+}
+
+export function testServerConfig(id) {
+  return request.post('/server-configs/' + id + '/test')
+}
+
+export function testServerConfigDirect(data) {
+  return request.post('/server-configs/test-direct', data)
+}

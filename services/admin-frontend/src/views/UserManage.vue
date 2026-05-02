@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, h } from 'vue'
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Checkbox, Upload, Switch, Tabs, DatePicker } from 'ant-design-vue'
 import { listUsers, getUserTracks, addUserTrack, removeUserTrack, exportUsers, importUsers } from '../api/user.js'
+import { createOrder } from '../api/order.js'
 import { listSubscriptionPosts, saveSubscriptionPost } from '../api/subscriptionPost.js'
 import { listTracks } from '../api/track.js'
 import { listCreations } from '../api/creation.js'
@@ -44,9 +45,21 @@ const allStyles = ref([])
 const allPlans = ref([])
 
 const columns = [
-  { title: '用户名', dataIndex: 'username', key: 'username', width: 120 },
+  {
+    title: '用户名',
+    key: 'username',
+    width: 160,
+    customRender: ({ record }) => {
+      const name = record.username || '-'
+      const nick = record.nickName
+      if (nick) {
+        return h('span', { title: `${name} (${nick})` }, [name, h('span', { style: 'color: #8c8c8c; font-size: 12px;' }, ` (${nick})`)])
+      }
+      return h('span', {}, name)
+    },
+  },
   { title: '邮箱', dataIndex: 'email', key: 'email', width: 150 },
-  { title: '公众号名称', dataIndex: 'wxName', key: 'wxName', width: 120 },
+  { title: '公众号名称', dataIndex: 'wxName', key: 'wxName', width: 130, ellipsis: true },
   { title: '赛道信息', key: 'trackInfo', width: 140 },
   { title: '可选赛道', dataIndex: 'trackLimitText', key: 'trackLimitText', width: 90 },
   { title: '状态', key: 'status', width: 75 },
@@ -89,8 +102,8 @@ const creationColumns = [
 ]
 const platformOptions = ['公众号', '今日头条', '百家号']
 
-const addForm = ref({ username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined, isReal: 1, isTrial: 0, isAccountOpened: 1, wxName: '' })
-const editForm = ref({ id: null, username: '', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', status: 1, remark: '', canSetEmail: 0, membershipPlanId: undefined, template: '', isReal: 0, isDistributor: 0, isTrial: 0, isAccountOpened: 0, wxName: '', email: '', invitedBy: '' })
+const addForm = ref({ username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined, isReal: 1, isTrial: 0, isAccountOpened: 1, wxName: '', nickName: '' })
+const editForm = ref({ id: null, username: '', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', status: 1, remark: '', canSetEmail: 0, membershipPlanId: undefined, template: '', isReal: 0, isDistributor: 0, isTrial: 0, isAccountOpened: 0, wxName: '', nickName: '', email: '', invitedBy: '' })
 
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -151,6 +164,42 @@ const nextTitleUserTrackIds = ref([])
 const importModalOpen = ref(false)
 const importExcelFile = ref(null)
 const importLoading = ref(false)
+
+// Order creation modal state
+const orderModalOpen = ref(false)
+const orderForm = ref({ userId: '', type: 'renew', planId: '', amount: '', remark: '' })
+const orderLoading = ref(false)
+
+function openOrderModal(userId, type) {
+  orderForm.value = { userId, type, planId: '', amount: '', remark: '' }
+  orderModalOpen.value = true
+}
+
+async function handleCreateOrder() {
+  if (!orderForm.value.planId) {
+    message.warning('请选择套餐')
+    return
+  }
+  orderLoading.value = true
+  try {
+    const payload = {
+      userId: orderForm.value.userId,
+      planId: orderForm.value.planId,
+      type: orderForm.value.type,
+      remark: orderForm.value.remark || undefined,
+    }
+    if (orderForm.value.amount) {
+      payload.amount = parseFloat(orderForm.value.amount)
+    }
+    await createOrder(payload)
+    message.success(orderForm.value.type === 'renew' ? '续费订单创建成功' : '升级订单创建成功')
+    orderModalOpen.value = false
+  } catch (e) {
+    message.error('创建失败')
+  } finally {
+    orderLoading.value = false
+  }
+}
 
 const selectedRecommendTrack = computed(() => {
   return recommendUserTracks.value.find(t => t.id === selectedRecommendTrackId.value) || null
@@ -522,18 +571,18 @@ function computeExpireDate(planId, fallback) {
 
 function handleAdd() {
   addModalOpen.value = true
-  addForm.value = { username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: ['公众号'], template: '基础风格', expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined, isReal: 1, isTrial: 0, isAccountOpened: 1, wxName: '' }
+  addForm.value = { username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: ['公众号'], template: '基础风格', expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined, isReal: 1, isTrial: 0, isAccountOpened: 1, wxName: '', nickName: '' }
 }
 
 function handleEdit(record) {
   editModalOpen.value = true
   const rawPlatforms = record.platformLimit || ''
-  editForm.value = { id: record.id, username: record.username || '', trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : ['公众号'], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0, membershipPlanId: record.membershipPlanId || undefined, template: record.template || '', inviteCode: record.inviteCode || '', invitedBy: record.invitedBy || '', isReal: record.isReal === 1 ? 1 : 0, isDistributor: record.isDistributor === 1 ? 1 : 0, isTrial: record.isTrial === 1 ? 1 : 0, isAccountOpened: record.isAccountOpened === 1 ? 1 : 0, wxName: record.wxName || '', email: record.email || '' }
+  editForm.value = { id: record.id, username: record.username || '', trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : ['公众号'], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0, membershipPlanId: record.membershipPlanId || undefined, template: record.template || '', inviteCode: record.inviteCode || '', invitedBy: record.invitedBy || '', isReal: record.isReal === 1 ? 1 : 0, isDistributor: record.isDistributor === 1 ? 1 : 0, isTrial: record.isTrial === 1 ? 1 : 0, isAccountOpened: record.isAccountOpened === 1 ? 1 : 0, wxName: record.wxName || '', nickName: record.nickName || '', email: record.email || '' }
 }
 
 async function saveAdd() {
-  if (!addForm.value.username || !addForm.value.contact) {
-    message.warning('请填写必填项')
+  if (!addForm.value.username) {
+    message.warning('请填写用户名')
     return
   }
   const platformCount = getPlanPlatformCount(addForm.value.membershipPlanId)
@@ -557,6 +606,7 @@ async function saveAdd() {
       isTrial: addForm.value.isTrial ? 1 : 0,
       isAccountOpened: addForm.value.isAccountOpened ? 1 : 0,
       wxName: addForm.value.wxName || undefined,
+      nickName: addForm.value.nickName || undefined,
     }
     if (addForm.value.contactType === '手机号') payload.phone = addForm.value.contact
     else if (addForm.value.contactType === '邮箱') payload.email = addForm.value.contact
@@ -597,6 +647,7 @@ async function saveEdit() {
     isTrial: editForm.value.isTrial ? 1 : 0,
     isAccountOpened: editForm.value.isAccountOpened ? 1 : 0,
     wxName: editForm.value.wxName || undefined,
+    nickName: editForm.value.nickName || undefined,
     email: editForm.value.email || undefined,
   }
   console.log('saveEdit payload:', payload, 'id:', editForm.value.id)
@@ -1085,7 +1136,7 @@ onMounted(loadData)
       <Form.Item label="用户名" required>
         <Input v-model:value="addForm.username" placeholder="请输入用户名" />
       </Form.Item>
-      <Form.Item label="联系方式" required>
+      <Form.Item label="联系方式">
         <div style="display: grid; grid-template-columns: 120px 1fr; gap: 12px; align-items: flex-end;">
           <Select v-model:value="addForm.contactType">
             <Select.Option value="手机号">手机号</Select.Option>
@@ -1097,6 +1148,9 @@ onMounted(loadData)
       </Form.Item>
       <Form.Item label="公众号名称">
         <Input v-model:value="addForm.wxName" placeholder="请输入公众号名称" />
+      </Form.Item>
+      <Form.Item label="微信名称">
+        <Input v-model:value="addForm.nickName" placeholder="请输入微信名称" />
       </Form.Item>
       <Form.Item label="初始密码" required>
         <Input v-model:value="addForm.password" readonly />
@@ -1150,6 +1204,16 @@ onMounted(loadData)
       <Form.Item label="公众号名称">
         <Input v-model:value="editForm.wxName" placeholder="请输入公众号名称" />
       </Form.Item>
+      <Form.Item label="微信名称">
+        <Input v-model:value="editForm.nickName" placeholder="请输入微信名称" />
+      </Form.Item>
+      <div v-if="editForm.isAccountOpened === 1" style="margin-bottom: 16px; padding: 12px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px;">
+        <div style="font-size: 13px; color: #52c41a; font-weight: 500; margin-bottom: 8px;">订单操作</div>
+        <div style="display: flex; gap: 12px;">
+          <Button size="small" @click="openOrderModal(editForm.id, 'renew')">创建续费订单</Button>
+          <Button size="small" type="primary" @click="openOrderModal(editForm.id, 'upgrade')">创建升级订单</Button>
+        </div>
+      </div>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <Form.Item label="邀请码">
           <Input v-model:value="editForm.inviteCode" placeholder="请输入邀请码" />
@@ -1426,6 +1490,30 @@ onMounted(loadData)
           <Input v-model:value="item.title" :placeholder="`请输入该赛道的标题`" />
         </div>
       </template>
+    </Form>
+  </Modal>
+
+  <!-- Create Order Modal -->
+  <Modal
+    v-model:open="orderModalOpen"
+    :title="orderForm.type === 'renew' ? '创建续费订单' : '创建升级订单'"
+    :mask-closable="false"
+    :confirm-loading="orderLoading"
+    @ok="handleCreateOrder"
+    :width="480"
+  >
+    <Form layout="vertical" style="margin-top: 12px;">
+      <Form.Item label="套餐" required>
+        <Select v-model:value="orderForm.planId" placeholder="选择套餐" allowClear>
+          <Select.Option v-for="p in allPlans" :key="p.id" :value="p.id">{{ p.name }}（¥{{ p.price }}）</Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item label="金额（留空自动取套餐价格）">
+        <Input v-model:value="orderForm.amount" placeholder="自动计算" />
+      </Form.Item>
+      <Form.Item label="备注">
+        <Input v-model:value="orderForm.remark" placeholder="选填" />
+      </Form.Item>
     </Form>
   </Modal>
 

@@ -23,8 +23,10 @@ export function importTitles(excelFile) {
   })
 }
 
-export function matchTodayTitles() {
-  return request.post('/title-library/match-today')
+export function matchTodayTitles(date) {
+  const params = {}
+  if (date) params.date = date
+  return request.post('/title-library/match-today', null, { params })
 }
 
 export function unbindRecommendation(titleId) {
@@ -56,18 +58,16 @@ export function cancelGeneratePost(taskId) {
 }
 
 export function exportTitleLibrary(params) {
-  const hasSavePath = params && params.savePath
   return request.post('/title-library/export', null, {
     params,
-    responseType: hasSavePath ? undefined : 'blob',
+    responseType: 'blob',
   })
 }
 
-export function exportTitleLibraryBatch(titleIds, savePath) {
-  const params = savePath ? { titleIds, savePath } : { titleIds }
+export function exportTitleLibraryBatch(titleIds, baseName) {
   return request.post('/title-library/export', null, {
-    params,
-    responseType: savePath ? undefined : 'blob',
+    params: { titleIds, baseName },
+    responseType: 'blob',
     paramsSerializer: {
       indexes: null,
       serialize: (p) => {
@@ -77,8 +77,8 @@ export function exportTitleLibraryBatch(titleIds, savePath) {
             parts.push(`titleIds=${encodeURIComponent(id)}`)
           }
         }
-        if (p.savePath) {
-          parts.push(`savePath=${encodeURIComponent(p.savePath)}`)
+        if (p.baseName) {
+          parts.push(`baseName=${encodeURIComponent(p.baseName)}`)
         }
         return parts.join('&')
       }
@@ -87,18 +87,16 @@ export function exportTitleLibraryBatch(titleIds, savePath) {
 }
 
 export function exportTitleList(params) {
-  const hasSavePath = params && params.savePath
   return request.post('/title-library/export-titles', null, {
     params,
-    responseType: hasSavePath ? undefined : 'blob',
+    responseType: 'blob',
   })
 }
 
-export function exportTitleListBatch(titleIds, savePath) {
-  const params = savePath ? { titleIds, savePath } : { titleIds }
+export function exportTitleListBatch(titleIds) {
   return request.post('/title-library/export-titles', null, {
-    params,
-    responseType: savePath ? undefined : 'blob',
+    params: { titleIds },
+    responseType: 'blob',
     paramsSerializer: {
       indexes: null,
       serialize: (p) => {
@@ -107,9 +105,6 @@ export function exportTitleListBatch(titleIds, savePath) {
           for (const id of p.titleIds) {
             parts.push(`titleIds=${encodeURIComponent(id)}`)
           }
-        }
-        if (p.savePath) {
-          parts.push(`savePath=${encodeURIComponent(p.savePath)}`)
         }
         return parts.join('&')
       }

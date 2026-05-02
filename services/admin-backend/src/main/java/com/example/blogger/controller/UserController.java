@@ -188,6 +188,7 @@ public class UserController {
         if (user.getEmail() != null) existing.setEmail(user.getEmail());
         if (user.getWxId() != null) existing.setWxId(user.getWxId());
         if (user.getWxName() != null) existing.setWxName(user.getWxName());
+        if (user.getNickName() != null) existing.setNickName(user.getNickName());
         if (user.getAiLimit() != null) existing.setAiLimit(user.getAiLimit());
         if (user.getTrackLimit() != null) existing.setTrackLimit(user.getTrackLimit());
         if (user.getPlatformLimit() != null) existing.setPlatformLimit(user.getPlatformLimit());

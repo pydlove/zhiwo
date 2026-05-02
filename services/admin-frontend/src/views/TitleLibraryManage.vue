@@ -7,7 +7,10 @@ import { listTracks } from '../api/track.js'
 import { listUsers } from '../api/user.js'
 import { renderAsync } from 'docx-preview'
 
-const activeTab = ref(localStorage.getItem('titleLibrary_activeTab') || 'full')
+const activeTab = ref(localStorage.getItem('titleLibrary_activeTab') || 'all')
+
+// 兼容旧版 localStorage
+if (activeTab.value === 'full') activeTab.value = 'all'
 
 const tableData = ref([])
 const tracks = ref([])
@@ -186,6 +189,13 @@ const platformOptions = [
   { label: '百家号', value: '百家号' },
 ]
 
+const mainTabs = [
+  { key: 'all', label: '全部' },
+  { key: 'accountOpened', label: '开户' },
+  { key: 'distributor', label: '分成' },
+  { key: 'trial', label: '试用' },
+]
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
 
 const columns = [
@@ -287,6 +297,9 @@ async function loadData() {
     if (searchMatched.value !== '' && searchMatched.value !== undefined) params.matched = searchMatched.value
     if (searchPushDate.value) params.pushDate = searchPushDate.value.format('YYYY-MM-DD')
     if (searchIsUsed.value !== '' && searchIsUsed.value !== undefined) params.isUsed = searchIsUsed.value
+    // 按用户类型过滤（全部、开户、分成、试用）
+    const userTypeMap = { accountOpened: 'accountOpened', distributor: 'distributor', trial: 'trial' }
+    if (userTypeMap[activeTab.value]) params.userType = userTypeMap[activeTab.value]
     params.page = currentPage.value
     params.pageSize = pageSize.value
 
@@ -497,11 +510,13 @@ function handleDelete(record) {
 
 // Match today
 const matching = ref(false)
+const matchDate = ref(dayjs())
 
 async function handleMatchToday() {
   matching.value = true
   try {
-    const result = await matchTodayTitles()
+    const dateStr = matchDate.value ? matchDate.value.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD')
+    const result = await matchTodayTitles(dateStr)
     message.success(`匹配完成：成功匹配 ${result.matched} 条，跳过 ${result.skipped} 条`)
     loadData()
   } catch (e) {
@@ -571,18 +586,13 @@ async function handleSaveExportRule() {
 function openExportFileNameModal(type) {
   pendingExportType.value = type
   exportFileNameInput.value = localStorage.getItem(EXPORT_FILENAME_KEY) || ''
-  exportSavePathInput.value = localStorage.getItem(EXPORT_SAVEPATH_KEY) || ''
   exportFileNameModalOpen.value = true
 }
 
 async function handleExportConfirm() {
   const fileName = exportFileNameInput.value.trim()
-  const savePath = exportSavePathInput.value.trim()
   if (fileName) {
     localStorage.setItem(EXPORT_FILENAME_KEY, fileName)
-  }
-  if (savePath) {
-    localStorage.setItem(EXPORT_SAVEPATH_KEY, savePath)
   }
   exportFileNameModalOpen.value = false
 
@@ -595,10 +605,9 @@ async function handleExportConfirm() {
 
 async function doExportTitleList() {
   try {
-    const savePath = exportSavePathInput.value.trim() || null
-    let res
+    let blob
     if (selectedRowKeys.value.length > 0) {
-      res = await exportTitleListBatch(selectedRowKeys.value, savePath)
+      blob = await exportTitleListBatch(selectedRowKeys.value)
     } else {
       const params = {}
       if (searchKeyword.value) params.keyword = searchKeyword.value.trim()
@@ -608,15 +617,8 @@ async function doExportTitleList() {
       if (searchMatched.value !== '' && searchMatched.value !== undefined) params.matched = searchMatched.value
       if (searchPushDate.value) params.pushDate = searchPushDate.value.format('YYYY-MM-DD')
       if (searchIsUsed.value !== '' && searchIsUsed.value !== undefined) params.isUsed = searchIsUsed.value
-      if (savePath) params.savePath = savePath
-      res = await exportTitleList(params)
+      blob = await exportTitleList(params)
     }
-    if (savePath) {
-      const path = res?.data?.path || res?.path || savePath
-      message.success(`导出成功，已保存到：${path}`)
-      return
-    }
-    const blob = res
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -627,19 +629,19 @@ async function doExportTitleList() {
     URL.revokeObjectURL(url)
     message.success('导出成功')
   } catch (e) {
-    message.error('导出失败：' + (e?.response?.data?.msg || e?.message || ''))
+    message.error('导出失败')
   }
 }
 
 async function doExportFromRule() {
   exportRuleModalOpen.value = false
   try {
-    const savePath = exportSavePathInput.value.trim() || null
-    let res
+    const baseName = exportFileNameInput.value.trim() || `标题库导出_${new Date().toISOString().slice(0,10).replace(/-/g,'')}`
+    let blob
     if (selectedRowKeys.value.length > 0) {
-      res = await exportTitleLibraryBatch(selectedRowKeys.value, savePath)
+      blob = await exportTitleLibraryBatch(selectedRowKeys.value, baseName)
     } else {
-      const params = {}
+      const params = { baseName }
       if (searchKeyword.value) params.keyword = searchKeyword.value.trim()
       if (searchPlatform.value) params.platform = searchPlatform.value
       if (searchTrack.value) params.trackId = searchTrack.value
@@ -647,26 +649,17 @@ async function doExportFromRule() {
       if (searchMatched.value !== '' && searchMatched.value !== undefined) params.matched = searchMatched.value
       if (searchPushDate.value) params.pushDate = searchPushDate.value.format('YYYY-MM-DD')
       if (searchIsUsed.value !== '' && searchIsUsed.value !== undefined) params.isUsed = searchIsUsed.value
-      if (savePath) params.savePath = savePath
-      res = await exportTitleLibrary(params)
+      blob = await exportTitleLibrary(params)
     }
-    if (savePath) {
-      const path = res?.data?.path || res?.path || savePath
-      message.success(`导出成功，已保存到：${path}`)
-      return
-    }
-    const blob = res
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    const defaultName = `标题库导出_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`
-    const name = exportFileNameInput.value.trim() || defaultName
-    a.download = name.endsWith('.xlsx') ? name : name + '.xlsx'
+    a.download = baseName + '.zip'
     a.click()
     URL.revokeObjectURL(url)
     message.success('导出成功')
   } catch (e) {
-    message.error('导出失败：' + (e?.response?.data?.msg || e?.message || ''))
+    message.error('导出失败')
   }
 }
 
@@ -1046,10 +1039,8 @@ function saveGenerateConfig() {
 
 // Export file name modal
 const EXPORT_FILENAME_KEY = 'titleLibrary_exportFileName'
-const EXPORT_SAVEPATH_KEY = 'titleLibrary_exportSavePath'
 const exportFileNameModalOpen = ref(false)
 const exportFileNameInput = ref(localStorage.getItem(EXPORT_FILENAME_KEY) || '')
-const exportSavePathInput = ref(localStorage.getItem(EXPORT_SAVEPATH_KEY) || '')
 const pendingExportType = ref(null) // 'titleList' | 'fromRule'
 
 const filteredTracksForGenerate = computed(() => {
@@ -1201,122 +1192,122 @@ onMounted(() => {
     <div style="font-size: 12px; color: #389e0d; margin-top: 4px; text-align: right;">{{ generatePostProgress }}%</div>
   </div>
 
-  <Tabs v-model:activeKey="activeTab" @change="saveActiveTab">
-    <Tabs.TabPane key="full" tab="标题库管理">
+  <Tabs v-model:activeKey="activeTab" @change="() => { currentPage = 1; saveActiveTab(); loadData(); }">
+    <Tabs.TabPane v-for="t in mainTabs" :key="t.key" :tab="t.label">
       <div style="display: flex; gap: 16px;">
         <!-- 左侧主内容 -->
         <div style="width: 60%; min-width: 0;">
-          <Card title="标题库管理" :bordered="false">
-        <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
-          <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
-          <Select v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear>
-            <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value">{{ p.label }}</Select.Option>
-          </Select>
-          <Select v-model:value="searchTrack" placeholder="选择赛道" style="width: 160px;" allowClear>
-            <Select.Option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
-          </Select>
-          <Input v-model:value="searchUserName" placeholder="关联用户" style="width: 140px;" @pressEnter="handleSearch" />
-          <Select v-model:value="searchMatched" placeholder="匹配状态" style="width: 130px;" allowClear>
-            <Select.Option value="1">已匹配</Select.Option>
-            <Select.Option value="0">未匹配</Select.Option>
-          </Select>
-          <DatePicker v-model:value="searchPushDate" placeholder="推荐日期" style="width: 140px;" />
-          <Button type="primary" @click="handleSearch">查询</Button>
-          <Button @click="handleReset">重置</Button>
-          <Button style="margin-left: auto;" @click="openImportModal">导入标题</Button>
-          <Button @click="handleExportTitleList">导出标题</Button>
-          <Button type="primary" ghost :loading="matching" @click="handleMatchToday">匹配今日推荐</Button>
-          <Button @click="openGenerateModal">生成标题</Button>
-          <Button type="primary" ghost :disabled="selectedRowKeys.length === 0" @click="handleBatchSendEmail">批量发邮件</Button>
-          <Button @click="openExportRuleModal">导出</Button>
-          <Button @click="openImportArticleModal">导入文章</Button>
-          <Button type="primary" @click="handleAdd">+ 新增标题</Button>
+          <Card :title="'标题库 — ' + t.label" :bordered="false">
+            <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+              <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
+              <Select v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear>
+                <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value">{{ p.label }}</Select.Option>
+              </Select>
+              <Select v-model:value="searchTrack" placeholder="选择赛道" style="width: 160px;" allowClear>
+                <Select.Option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+              </Select>
+              <Input v-model:value="searchUserName" placeholder="关联用户" style="width: 140px;" @pressEnter="handleSearch" />
+              <Select v-model:value="searchMatched" placeholder="匹配状态" style="width: 130px;" allowClear>
+                <Select.Option value="1">已匹配</Select.Option>
+                <Select.Option value="0">未匹配</Select.Option>
+              </Select>
+              <DatePicker v-model:value="searchPushDate" placeholder="推荐日期" style="width: 140px;" />
+              <Button type="primary" @click="handleSearch">查询</Button>
+              <Button @click="handleReset">重置</Button>
+              <Button style="margin-left: auto;" @click="openImportModal">导入标题</Button>
+              <Button @click="handleExportTitleList">导出标题</Button>
+              <DatePicker v-model:value="matchDate" placeholder="选择推荐日期" style="width: 140px;" />
+              <Button type="primary" ghost :loading="matching" @click="handleMatchToday">匹配推荐</Button>
+              <Button @click="openGenerateModal">生成标题</Button>
+              <Button type="primary" ghost :disabled="selectedRowKeys.length === 0" @click="handleBatchSendEmail">批量发邮件</Button>
+              <Button @click="openExportRuleModal">导出</Button>
+              <Button @click="openImportArticleModal">导入文章</Button>
+              <Button type="primary" @click="handleAdd">+ 新增标题</Button>
+            </div>
+
+            <Table :columns="columns" :data-source="paginatedData" :pagination="false" row-key="id" :loading="loading" :row-selection="rowSelection" :scroll="{ x: 'max-content' }" />
+
+            <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+              <Pagination
+                v-model:current="currentPage"
+                v-model:pageSize="pageSize"
+                :total="totalCount"
+                show-size-changer
+                :page-size-options="['10', '20', '50']"
+                :show-total="total => `共 ${total} 条`"
+                @change="handlePageChange"
+              />
+            </div>
+          </Card>
         </div>
 
-    <Table :columns="columns" :data-source="paginatedData" :pagination="false" row-key="id" :loading="loading" :row-selection="rowSelection" :scroll="{ x: 'max-content' }" />
+        <!-- 右侧用户面板 -->
+        <div style="width: 40%; flex-shrink: 0;">
+          <Card :bordered="false" style="height: 100%;">
+            <div style="margin-bottom: 16px;">
+              <div style="font-size: 15px; font-weight: 600; margin-bottom: 12px;">用户推荐/推送监控</div>
+              <DatePicker
+                v-model:value="panelDate"
+                style="width: 100%;"
+                @change="onPanelDateChange"
+              />
+            </div>
 
-        <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
-          <Pagination
-            v-model:current="currentPage"
-            v-model:pageSize="pageSize"
-            :total="totalCount"
-            show-size-changer
-            :page-size-options="['10', '20', '50']"
-            :show-total="total => `共 ${total} 条`"
-            @change="handlePageChange"
-          />
-        </div>
-      </Card>
-    </div>
-
-    <!-- 右侧用户面板 -->
-    <div style="width: 40%; flex-shrink: 0;">
-      <Card :bordered="false" style="height: 100%;">
-        <div style="margin-bottom: 16px;">
-          <div style="font-size: 15px; font-weight: 600; margin-bottom: 12px;">用户推荐/推送监控</div>
-          <DatePicker
-            v-model:value="panelDate"
-            style="width: 100%;"
-            @change="onPanelDateChange"
-          />
-        </div>
-
-        <Tabs v-model:activeKey="activePanelTab">
-          <!-- Tab 1: 未推荐用户（分三个子Tab） -->
-          <Tabs.TabPane key="unrecommended" :tab="`未推荐用户`">
-            <Tabs v-model:activeKey="activeUnrecommendedSubTab" size="small">
-              <Tabs.TabPane key="accountOpened" :tab="`开户 (${unrecommendedAccountOpened.length})`">
-                <div v-if="panelLoading" style="text-align: center; padding: 40px; color: #999;">加载中...</div>
-                <div v-else-if="unrecommendedAccountOpened.length === 0" style="text-align: center; padding: 40px; color: #999;">
-                  该日期下所有开户用户均已完整推荐
-                </div>
-                <Table
-                  v-else
-                  :columns="unrecommendedColumns"
-                  :data-source="unrecommendedAccountOpened"
-                  :pagination="false"
-                  size="small"
-                  row-key="id"
-                  :scroll="{ y: 440 }"
-                />
-              </Tabs.TabPane>
-              <Tabs.TabPane key="distributor" :tab="`分成 (${unrecommendedDistributor.length})`">
-                <div v-if="panelLoading" style="text-align: center; padding: 40px; color: #999;">加载中...</div>
-                <div v-else-if="unrecommendedDistributor.length === 0" style="text-align: center; padding: 40px; color: #999;">
-                  该日期下所有分成用户均已完整推荐
-                </div>
-                <Table
-                  v-else
-                  :columns="unrecommendedColumns"
-                  :data-source="unrecommendedDistributor"
-                  :pagination="false"
-                  size="small"
-                  row-key="id"
-                  :scroll="{ y: 440 }"
-                />
-              </Tabs.TabPane>
-              <Tabs.TabPane key="trial" :tab="`试用 (${unrecommendedTrial.length})`">
-                <div v-if="panelLoading" style="text-align: center; padding: 40px; color: #999;">加载中...</div>
-                <div v-else-if="unrecommendedTrial.length === 0" style="text-align: center; padding: 40px; color: #999;">
-                  该日期下所有试用用户均已完整推荐
-                </div>
-                <Table
-                  v-else
-                  :columns="unrecommendedColumns"
-                  :data-source="unrecommendedTrial"
-                  :pagination="false"
-                  size="small"
-                  row-key="id"
-                  :scroll="{ y: 440 }"
-                />
+            <Tabs v-model:activeKey="activePanelTab">
+              <!-- Tab 1: 未推荐用户（分三个子Tab） -->
+              <Tabs.TabPane key="unrecommended" :tab="`未推荐用户`">
+                <Tabs v-model:activeKey="activeUnrecommendedSubTab" size="small">
+                  <Tabs.TabPane key="accountOpened" :tab="`开户 (${unrecommendedAccountOpened.length})`">
+                    <div v-if="panelLoading" style="text-align: center; padding: 40px; color: #999;">加载中...</div>
+                    <div v-else-if="unrecommendedAccountOpened.length === 0" style="text-align: center; padding: 40px; color: #999;">
+                      该日期下所有开户用户均已完整推荐
+                    </div>
+                    <Table
+                      v-else
+                      :columns="unrecommendedColumns"
+                      :data-source="unrecommendedAccountOpened"
+                      :pagination="false"
+                      size="small"
+                      row-key="id"
+                      :scroll="{ y: 440 }"
+                    />
+                  </Tabs.TabPane>
+                  <Tabs.TabPane key="distributor" :tab="`分成 (${unrecommendedDistributor.length})`">
+                    <div v-if="panelLoading" style="text-align: center; padding: 40px; color: #999;">加载中...</div>
+                    <div v-else-if="unrecommendedDistributor.length === 0" style="text-align: center; padding: 40px; color: #999;">
+                      该日期下所有分成用户均已完整推荐
+                    </div>
+                    <Table
+                      v-else
+                      :columns="unrecommendedColumns"
+                      :data-source="unrecommendedDistributor"
+                      :pagination="false"
+                      size="small"
+                      row-key="id"
+                      :scroll="{ y: 440 }"
+                    />
+                  </Tabs.TabPane>
+                  <Tabs.TabPane key="trial" :tab="`试用 (${unrecommendedTrial.length})`">
+                    <div v-if="panelLoading" style="text-align: center; padding: 40px; color: #999;">加载中...</div>
+                    <div v-else-if="unrecommendedTrial.length === 0" style="text-align: center; padding: 40px; color: #999;">
+                      该日期下所有试用用户均已完整推荐
+                    </div>
+                    <Table
+                      v-else
+                      :columns="unrecommendedColumns"
+                      :data-source="unrecommendedTrial"
+                      :pagination="false"
+                      size="small"
+                      row-key="id"
+                      :scroll="{ y: 440 }"
+                    />
+                  </Tabs.TabPane>
+                </Tabs>
               </Tabs.TabPane>
             </Tabs>
-          </Tabs.TabPane>
-
-        </Tabs>
-      </Card>
-    </div>
-  </div>
+          </Card>
+        </div>
+      </div>
     </Tabs.TabPane>
 
     <Tabs.TabPane key="simple" tab="简洁视图">
@@ -1465,13 +1456,9 @@ onMounted(() => {
     </Form>
   </Modal>
 
-  <Modal v-model:open="exportFileNameModalOpen" title="设置导出路径和文件名" :mask-closable="false" width="480">
+  <Modal v-model:open="exportFileNameModalOpen" title="设置导出文件名" :mask-closable="false" width="400">
     <Form layout="vertical" style="margin-top: 12px;">
-      <Form.Item label="保存路径（服务器路径）">
-        <Input v-model:value="exportSavePathInput" placeholder="例如：/Users/panyong/aio_project/导出/标题库.xlsx" />
-        <div style="font-size: 12px; color: #999; margin-top: 4px;">留空则导出为浏览器下载，填写后保存到服务器指定路径</div>
-      </Form.Item>
-      <Form.Item label="文件名（浏览器下载时生效）">
+      <Form.Item label="文件名">
         <Input v-model:value="exportFileNameInput" placeholder="例如：标题库导出" />
         <div style="font-size: 12px; color: #999; margin-top: 4px;">留空则使用默认文件名，会自动补 .xlsx 后缀</div>
       </Form.Item>

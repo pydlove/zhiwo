@@ -28,7 +28,10 @@ function loadFilters() {
     if (!raw) return
     const filters = JSON.parse(raw)
     if (filters.date) selectedDate.value = dayjs(filters.date)
-    if (filters.type) activeTypeTab.value = filters.type
+    if (filters.type) {
+      const validTypes = ['all', 'accountOpened', 'distributor', 'trial']
+      activeTypeTab.value = validTypes.includes(filters.type) ? filters.type : 'all'
+    }
     if (filters.keyword !== undefined) searchKeyword.value = filters.keyword
     if (filters.emailPushed !== undefined) filterEmailPushed.value = filters.emailPushed
     if (filters.articleComplete !== undefined) filterArticleComplete.value = filters.articleComplete
@@ -183,6 +186,18 @@ const columns = [
     customRender: ({ record }) => {
       const names = (record.tracks || []).map(t => t.trackName).join('、')
       return h('span', { title: names }, names || '-')
+    },
+  },
+  {
+    title: '标题数量',
+    key: 'titleCount',
+    width: 100,
+    align: 'center',
+    customRender: ({ record }) => {
+      const total = record.totalTracks || 0
+      const done = record.tracksWithTitle || 0
+      const color = done === total && total > 0 ? '#52c41a' : done > 0 ? '#faad14' : '#f5222d'
+      return h('span', { style: `color: ${color}; font-weight: 500;` }, `${done}/${total}`)
     },
   },
   {
@@ -448,15 +463,27 @@ async function handleBatchPush() {
           <div
             v-for="track in drawerRecord.tracks"
             :key="track.trackId"
-            style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #f6ffed; border-radius: 4px;"
+            style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 4px;"
             :style="track.hasPost ? 'background: #f6ffed; border: 1px solid #b7eb8f;' : 'background: #fff2f0; border: 1px solid #ffccc7;'"
           >
-            <span style="font-weight: 500; min-width: 100px;">{{ track.trackName }}</span>
-            <Badge v-if="track.hasPost" status="success" text="已生成" />
-            <Badge v-else status="error" text="未生成" />
-            <span v-if="track.postTitle" style="color: #666; font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="track.postTitle">
-              {{ track.postTitle }}
-            </span>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="font-weight: 500; min-width: 100px;">{{ track.trackName }}</span>
+              <Badge v-if="track.hasPost" status="success" text="已生成" />
+              <Badge v-else status="error" text="未生成" />
+              <span v-if="track.postTitle" style="color: #666; font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="track.postTitle">
+                {{ track.postTitle }}
+              </span>
+            </div>
+            <div v-if="track.titleName" style="display: flex; align-items: center; gap: 8px; padding-left: 112px;">
+              <Tag size="small" color="blue">标题</Tag>
+              <span style="color: #1890ff; font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="track.titleName">
+                {{ track.titleName }}
+              </span>
+            </div>
+            <div v-else style="display: flex; align-items: center; gap: 8px; padding-left: 112px;">
+              <Tag size="small" color="default">标题</Tag>
+              <span style="color: #999; font-size: 13px;">—</span>
+            </div>
           </div>
         </div>
       </div>

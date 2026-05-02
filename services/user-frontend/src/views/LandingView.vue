@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useViewport } from '../composables/useViewport.js'
 import { listMembershipPlans } from '../api/membershipPlan.js'
+import { getConfigs } from '../api/config.js'
 import { message } from 'ant-design-vue'
 
 const router = useRouter()
@@ -11,6 +12,8 @@ const membershipPlans = ref([])
 
 const currentUser = ref(null)
 const inviteCopied = ref(false)
+const qrCodeUrl = ref('')
+const contactModalOpen = ref(false)
 
 function checkLogin() {
   try {
@@ -165,6 +168,17 @@ async function loadMembershipPlans() {
   }
 }
 
+async function loadConfigs() {
+  try {
+    const data = await getConfigs()
+    if (data) {
+      qrCodeUrl.value = data.qrCodeUrl || ''
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
 function getChartLine(data, w = 240, h = 64) {
   const max = Math.max(...data) * 1.15
   const step = w / (data.length - 1)
@@ -188,6 +202,7 @@ function getChartArea(data, w = 240, h = 64) {
 
 onMounted(() => {
   loadMembershipPlans()
+  loadConfigs()
   checkLogin()
 })
 </script>
@@ -204,6 +219,7 @@ onMounted(() => {
         <a class="nav-link" @click="scrollToCases">真实案例</a>
         <a class="nav-link" @click="scrollToMembership">会员权益</a>
         <a class="nav-link" @click="goAffiliate">分销活动</a>
+        <a class="nav-link" @click="contactModalOpen = true">联系客服</a>
         <button class="login-btn" @click="goLogin">登录</button>
       </div>
     </nav>
@@ -520,7 +536,8 @@ onMounted(() => {
 
             <div class="affiliate-contact">
               <div class="affiliate-qr">
-                <div class="affiliate-qr-placeholder">
+                <img v-if="qrCodeUrl" :src="qrCodeUrl" alt="客服二维码" class="affiliate-qr-img">
+                <div v-else class="affiliate-qr-placeholder">
                   <div style="font-size: 11px; color: #94a3b8; text-align: center;">微信客服</div>
                   <div style="font-size: 10px; color: #cbd5e1; margin-top: 4px;">请替换二维码</div>
                 </div>
@@ -565,6 +582,21 @@ onMounted(() => {
         <p class="footer-copy">让每个人都能轻松运营公众号</p>
       </div>
     </footer>
+
+    <!-- Contact Modal -->
+    <div v-if="contactModalOpen" class="modal-overlay" @click.self="contactModalOpen = false">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 class="modal-title">联系客服</h3>
+          <button class="modal-close" @click="contactModalOpen = false">×</button>
+        </div>
+        <div class="modal-body">
+          <img v-if="qrCodeUrl" :src="qrCodeUrl" alt="客服二维码" class="modal-qr-img">
+          <div v-else style="width: 200px; height: 200px; background: #f3f4f6; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #9ca3af;">客服二维码</div>
+          <p class="modal-desc">扫码添加客服微信</p>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1744,6 +1776,93 @@ onMounted(() => {
 .footer-copy {
   font-size: 13px;
   color: #9ca3af;
+}
+
+/* ========== Modal ========== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-content {
+  background: #fff;
+  border-radius: 16px;
+  width: 360px;
+  max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  animation: scaleIn 0.2s ease;
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 0;
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+}
+
+.modal-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: #f3f4f6;
+  color: #6b7280;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.modal-close:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.modal-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.modal-qr-img {
+  width: 200px;
+  height: 200px;
+  border-radius: 12px;
+  object-fit: contain;
+  border: 1px solid #e5e7eb;
+}
+
+.modal-desc {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0;
 }
 
 /* ========== Responsive ========== */

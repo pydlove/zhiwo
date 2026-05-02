@@ -24,7 +24,7 @@ public interface TrackMapper {
     @Insert("INSERT INTO tu_track(id, name, icon, sort_order, preview_bloggers, intro, platforms, cover_json, is_hot) VALUES(#{id}, #{name}, #{icon}, #{sortOrder}, #{previewBloggers}, #{intro}, #{platforms}, #{coverJson}, #{isHot})")
     int insert(Track track);
 
-    @Update("UPDATE tu_track SET name=#{name}, icon=#{icon}, sort_order=#{sortOrder}, preview_bloggers=#{previewBloggers}, intro=#{intro}, platforms=#{platforms}, cover_json=#{coverJson}, is_hot=#{isHot} WHERE id=#{id}")
+    @Update("UPDATE tu_track SET name=#{name}, icon=#{icon}, sort_order=#{sortOrder}, preview_bloggers=#{previewBloggers}, intro=#{intro}, platforms=#{platforms}, cover_json=#{coverJson}, is_hot=#{isHot}, is_deleted=#{isDeleted} WHERE id=#{id}")
     int update(Track track);
 
     @Update("UPDATE tu_track SET is_deleted = 1 WHERE id = #{id}")

@@ -11,6 +11,7 @@ public class User {
     private String email;
     private String wxId;
     private String wxName;
+    private String nickName;
     private Integer aiLimit;
     private Integer trackLimit;
     private String platformLimit;
@@ -49,6 +50,8 @@ public class User {
     public void setWxId(String wxId) { this.wxId = wxId; }
     public String getWxName() { return wxName; }
     public void setWxName(String wxName) { this.wxName = wxName; }
+    public String getNickName() { return nickName; }
+    public void setNickName(String nickName) { this.nickName = nickName; }
     public Integer getAiLimit() { return aiLimit; }
     public void setAiLimit(Integer aiLimit) { this.aiLimit = aiLimit; }
     public Integer getTrackLimit() { return trackLimit; }

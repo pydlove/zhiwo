@@ -61,6 +61,32 @@ function clearParseHistory() {
   }
 }
 
+const backupLoading = ref(false)
+
+async function handleBackupDb() {
+  backupLoading.value = true
+  try {
+    const res = await fetch('/api/configs/backup', {
+      method: 'POST',
+    })
+    if (!res.ok) throw new Error('备份失败')
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'db_backup_' + new Date().toISOString().slice(0, 10) + '.sql'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    message.success('备份成功')
+  } catch (e) {
+    message.error('备份失败')
+  } finally {
+    backupLoading.value = false
+  }
+}
+
 async function loadConfig() {
   try {
     const data = await request.get('/configs')
@@ -249,6 +275,20 @@ onMounted(() => {
             </div>
           </div>
           <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">登录页「联系管理员开户」展示的图片</div>
+        </Form.Item>
+      </Form>
+    </Card>
+
+    <Card style="border-radius: 2px; margin-bottom: 24px;">
+      <template #title>
+        <span style="font-size: 16px; font-weight: 500; color: #262626;">数据库备份</span>
+      </template>
+      <Form layout="vertical">
+        <Form.Item>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <Button type="primary" :loading="backupLoading" @click="handleBackupDb">手动备份数据库</Button>
+            <span style="font-size: 12px; color: #8c8c8c;">导出所有表数据为 SQL 文件，可用于数据库恢复</span>
+          </div>
         </Form.Item>
       </Form>
     </Card>

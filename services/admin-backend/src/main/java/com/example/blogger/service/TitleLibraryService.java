@@ -62,14 +62,14 @@ public class TitleLibraryService {
         return result;
     }
 
-    public List<TitleLibrary> search(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate, String isUsed) {
-        return titleLibraryMapper.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed);
+    public List<TitleLibrary> search(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate, String isUsed, String userType) {
+        return titleLibraryMapper.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType);
     }
 
-    public Map<String, Object> searchPage(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate, String isUsed, int page, int pageSize) {
+    public Map<String, Object> searchPage(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate, String isUsed, String userType, int page, int pageSize) {
         int offset = (page - 1) * pageSize;
-        List<TitleLibrary> list = titleLibraryMapper.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, offset, pageSize);
-        int total = titleLibraryMapper.countSearch(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed);
+        List<TitleLibrary> list = titleLibraryMapper.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, offset, pageSize);
+        int total = titleLibraryMapper.countSearch(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType);
         Map<String, Object> result = new HashMap<>();
         result.put("list", list);
         result.put("total", total);
@@ -220,6 +220,8 @@ public class TitleLibraryService {
             String recommendationId = (String) row.get("recommendationId");
             String subscriptionPostId = row.get("subscriptionPostId") != null ? row.get("subscriptionPostId").toString() : null;
             String postTitle = (String) row.get("postTitle");
+            String titleLibraryId = row.get("titleLibraryId") != null ? row.get("titleLibraryId").toString() : null;
+            String titleName = (String) row.get("titleName");
 
             Map<String, Object> user = userMap.computeIfAbsent(userId, k -> {
                 Map<String, Object> u = new HashMap<>();
@@ -232,6 +234,7 @@ public class TitleLibraryService {
                 u.put("tracks", new ArrayList<Map<String, Object>>());
                 u.put("totalTracks", 0);
                 u.put("tracksWithPost", 0);
+                u.put("tracksWithTitle", 0);
                 u.put("isEmailPushed", false);
                 return u;
             });
@@ -239,6 +242,7 @@ public class TitleLibraryService {
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> tracks = (List<Map<String, Object>>) user.get("tracks");
             boolean hasPost = subscriptionPostId != null && !subscriptionPostId.isEmpty();
+            boolean hasTitle = titleLibraryId != null && !titleLibraryId.isEmpty();
 
             // 防御重复：同一赛道可能因推荐表多条记录导致重复行，去重并保留有文章的那条
             boolean found = false;
@@ -251,6 +255,10 @@ public class TitleLibraryService {
                         existing.put("subscriptionPostId", subscriptionPostId);
                         existing.put("postTitle", postTitle);
                     }
+                    if (hasTitle && existing.get("titleName") == null) {
+                        existing.put("titleLibraryId", titleLibraryId);
+                        existing.put("titleName", titleName);
+                    }
                     break;
                 }
             }
@@ -262,11 +270,14 @@ public class TitleLibraryService {
                 track.put("recommendationId", recommendationId);
                 track.put("subscriptionPostId", subscriptionPostId);
                 track.put("postTitle", postTitle);
+                track.put("titleLibraryId", titleLibraryId);
+                track.put("titleName", titleName);
                 tracks.add(track);
             }
 
             user.put("totalTracks", tracks.size());
             user.put("tracksWithPost", tracks.stream().filter(t -> Boolean.TRUE.equals(t.get("hasPost"))).count());
+            user.put("tracksWithTitle", tracks.stream().filter(t -> t.get("titleName") != null).count());
         }
 
         // Query email push status for each user
@@ -279,17 +290,19 @@ public class TitleLibraryService {
         List<Map<String, Object>> users = new ArrayList<>(userMap.values());
 
         // Filter by type
-        if (!"all".equals(type)) {
+        if (type != null && !type.isEmpty() && !"all".equals(type)) {
             String key = switch (type) {
                 case "accountOpened" -> "isAccountOpened";
                 case "distributor" -> "isDistributor";
                 case "trial" -> "isTrial";
-                default -> type;
+                default -> null;
             };
-            users = users.stream().filter(u -> {
-                Object val = u.get(key);
-                return val instanceof Number ? ((Number) val).intValue() == 1 : Boolean.TRUE.equals(val);
-            }).collect(Collectors.toList());
+            if (key != null) {
+                users = users.stream().filter(u -> {
+                    Object val = u.get(key);
+                    return val instanceof Number ? ((Number) val).intValue() == 1 : Boolean.TRUE.equals(val);
+                }).collect(Collectors.toList());
+            }
         }
 
         // Filter by keyword

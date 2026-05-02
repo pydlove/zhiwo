@@ -53,20 +53,7 @@ public class TitleLibraryController {
     private final EmailPushLogMapper emailPushLogMapper;
     private final SubscriptionPostMapper subscriptionPostMapper;
     private final BannedWordMapper bannedWordMapper;
-
-    private File resolveExportFile(String savePath, String defaultPrefix) {
-        File outFile = new File(savePath);
-        if (outFile.exists() && outFile.isDirectory() || savePath.endsWith("/") || savePath.endsWith("\\")) {
-            String timestamp = java.time.LocalDateTime.now()
-                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            outFile = new File(outFile, defaultPrefix + "_" + timestamp + ".xlsx");
-        }
-        File parent = outFile.getParentFile();
-        if (parent != null && !parent.exists()) {
-            parent.mkdirs();
-        }
-        return outFile;
-    }
+    private final com.example.blogger.service.TitleReviewService titleReviewService;
 
     // Async generate task storage (for titles)
     private final ConcurrentHashMap<String, Map<String, Object>> generateTasks = new ConcurrentHashMap<>();
@@ -86,7 +73,8 @@ public class TitleLibraryController {
                                   EmailService emailService,
                                   EmailPushLogMapper emailPushLogMapper,
                                   SubscriptionPostMapper subscriptionPostMapper,
-                                  BannedWordMapper bannedWordMapper) {
+                                  BannedWordMapper bannedWordMapper,
+                                  com.example.blogger.service.TitleReviewService titleReviewService) {
         this.titleLibraryService = titleLibraryService;
         this.trackMapper = trackMapper;
         this.userMapper = userMapper;
@@ -100,6 +88,7 @@ public class TitleLibraryController {
         this.emailPushLogMapper = emailPushLogMapper;
         this.subscriptionPostMapper = subscriptionPostMapper;
         this.bannedWordMapper = bannedWordMapper;
+        this.titleReviewService = titleReviewService;
     }
 
     @PostConstruct
@@ -329,6 +318,7 @@ public class TitleLibraryController {
             @RequestParam(value = "matched", required = false) String matched,
             @RequestParam(value = "pushDate", required = false) String pushDate,
             @RequestParam(value = "isUsed", required = false) String isUsed,
+            @RequestParam(value = "userType", required = false) String userType,
             @RequestParam(value = "page", required = false) Integer page,
             @RequestParam(value = "pageSize", required = false) Integer pageSize) {
         boolean hasFilter = (platform != null && !platform.isEmpty())
@@ -337,15 +327,16 @@ public class TitleLibraryController {
                 || (recommendUserName != null && !recommendUserName.isEmpty())
                 || (matched != null && !matched.isEmpty())
                 || (pushDate != null && !pushDate.isEmpty())
-                || (isUsed != null && !isUsed.isEmpty());
+                || (isUsed != null && !isUsed.isEmpty())
+                || (userType != null && !userType.isEmpty());
         if (page != null && pageSize != null && page > 0 && pageSize > 0) {
             if (hasFilter) {
-                return Result.ok(titleLibraryService.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, page, pageSize));
+                return Result.ok(titleLibraryService.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, page, pageSize));
             }
             return Result.ok(titleLibraryService.listPage(page, pageSize));
         }
         if (hasFilter) {
-            return Result.ok(titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed));
+            return Result.ok(titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType));
         }
         return Result.ok(titleLibraryService.list());
     }
@@ -515,8 +506,8 @@ public class TitleLibraryController {
             @RequestParam(value = "matched", required = false) String matched,
             @RequestParam(value = "pushDate", required = false) String pushDate,
             @RequestParam(value = "isUsed", required = false) String isUsed,
-            @RequestParam(value = "titleIds", required = false) List<String> titleIds,
-            @RequestParam(value = "savePath", required = false) String savePath) {
+            @RequestParam(value = "userType", required = false) String userType,
+            @RequestParam(value = "titleIds", required = false) List<String> titleIds) {
         try {
             List<TitleLibrary> titles;
             if (titleIds != null && !titleIds.isEmpty()) {
@@ -534,7 +525,7 @@ public class TitleLibraryController {
                         || (pushDate != null && !pushDate.isEmpty())
                         || (isUsed != null && !isUsed.isEmpty());
                 titles = hasFilter
-                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed)
+                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType)
                         : titleLibraryService.list();
             }
 
@@ -566,20 +557,6 @@ public class TitleLibraryController {
                 sheet.setColumnWidth(i, 20 * 256);
             }
 
-            if (savePath != null && !savePath.isEmpty()) {
-                File outFile = resolveExportFile(savePath, "标题库");
-                try (FileOutputStream fos = new FileOutputStream(outFile)) {
-                    wb.write(fos);
-                }
-                wb.close();
-                response.setContentType("application/json;charset=UTF-8");
-                Map<String, Object> result = new HashMap<>();
-                result.put("success", true);
-                result.put("path", outFile.getAbsolutePath());
-                response.getWriter().write(new ObjectMapper().writeValueAsString(Result.ok(result)));
-                return;
-            }
-
             String timestamp = java.time.LocalDateTime.now()
                     .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
             String fileName = "标题库_" + timestamp + ".xlsx";
@@ -594,12 +571,7 @@ public class TitleLibraryController {
         } catch (Exception e) {
             e.printStackTrace();
             try {
-                if (savePath != null && !savePath.isEmpty()) {
-                    response.setContentType("application/json;charset=UTF-8");
-                    response.getWriter().write(new ObjectMapper().writeValueAsString(Result.error("导出失败：" + e.getMessage())));
-                } else {
-                    response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "导出失败：" + e.getMessage());
-                }
+                response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "导出失败：" + e.getMessage());
             } catch (IOException ignored) {}
         }
     }
@@ -613,8 +585,9 @@ public class TitleLibraryController {
             @RequestParam(value = "matched", required = false) String matched,
             @RequestParam(value = "pushDate", required = false) String pushDate,
             @RequestParam(value = "isUsed", required = false) String isUsed,
+            @RequestParam(value = "userType", required = false) String userType,
             @RequestParam(value = "titleIds", required = false) List<String> titleIds,
-            @RequestParam(value = "savePath", required = false) String savePath) {
+            @RequestParam(value = "baseName", required = false) String baseName) {
         try {
             List<TitleLibrary> titles;
             if (titleIds != null && !titleIds.isEmpty()) {
@@ -632,60 +605,16 @@ public class TitleLibraryController {
                         || (pushDate != null && !pushDate.isEmpty())
                         || (isUsed != null && !isUsed.isEmpty());
                 titles = hasFilter
-                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed)
+                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType)
                         : titleLibraryService.list();
             }
 
-            // Group by platform-trackName
-            Map<String, List<TitleLibrary>> grouped = new LinkedHashMap<>();
-            for (TitleLibrary tl : titles) {
-                String sheetName = tl.getPlatform() != null && !tl.getPlatform().isEmpty()
-                        ? tl.getPlatform()
-                        : "未分类";
-                if (tl.getTrackName() != null && !tl.getTrackName().isEmpty()) {
-                    sheetName = sheetName + "-" + tl.getTrackName();
-                }
-                grouped.computeIfAbsent(sheetName, k -> new ArrayList<>()).add(tl);
+            if (titles == null || titles.isEmpty()) {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "没有可导出的数据");
+                return;
             }
 
-            XSSFWorkbook wb = new XSSFWorkbook();
-            String[] headers = { "ID", "标题名称", "用户名", "样式风格", "描述", "推荐日期", "是否创作完成" };
-
-            for (Map.Entry<String, List<TitleLibrary>> entry : grouped.entrySet()) {
-                String sheetName = entry.getKey();
-                // Excel sheet name max 31 chars, avoid invalid chars
-                if (sheetName.length() > 31) {
-                    sheetName = sheetName.substring(0, 31);
-                }
-                sheetName = sheetName.replace(":", "-").replace("\\", "-").replace("/", "-").replace("?", "-").replace("*", "-").replace("[", "(").replace("]", ")");
-
-                Sheet sheet = wb.createSheet(sheetName);
-                Row headerRow = sheet.createRow(0);
-                for (int i = 0; i < headers.length; i++) {
-                    headerRow.createCell(i).setCellValue(headers[i]);
-                }
-
-                List<TitleLibrary> list = entry.getValue();
-                for (int i = 0; i < list.size(); i++) {
-                    TitleLibrary tl = list.get(i);
-                    Row row = sheet.createRow(i + 1);
-                    row.createCell(0).setCellValue(tl.getId() != null ? tl.getId() : "");
-                    row.createCell(1).setCellValue(tl.getTitle() != null ? tl.getTitle() : "");
-                    row.createCell(2).setCellValue(tl.getRecommendUserName() != null ? tl.getRecommendUserName() : "");
-                    row.createCell(3).setCellValue(tl.getRecommendUserTemplate() != null ? tl.getRecommendUserTemplate() : "");
-                    row.createCell(4).setCellValue(tl.getDescription() != null ? tl.getDescription() : "");
-                    row.createCell(5).setCellValue(tl.getRecommendDate() != null ? tl.getRecommendDate().toString() : "");
-                    boolean completed = tl.getSubscriptionPostTitle() != null && !tl.getSubscriptionPostTitle().isEmpty()
-                            || tl.getSubscriptionPostFileUrl() != null && !tl.getSubscriptionPostFileUrl().isEmpty();
-                    row.createCell(6).setCellValue(completed ? "是" : "");
-                }
-
-                for (int i = 0; i < headers.length; i++) {
-                    sheet.setColumnWidth(i, 20 * 256);
-                }
-            }
-
-            // Add "生成规则" sheet from database template
+            // Build rule content once (shared across all files)
             String defaultRule = "以下是生成规则：\n" +
                 "1、该sheet之前的每个sheet都是需要生成文章，在根目录下根据sheet名称创建文件夹，此文件夹作为该赛道的创作目录，根目录路径是/Users/panyong/aio_project/公众号/自媒体/;\n" +
                 "2、创作规则：根据每个sheet里面的标题进行创作，并且你要根据你创作的内容生成一个120个字符以内的(包含标点符号)描述，描述要求符合SEO的原则，填写到\"描述\"列，\"创作日期\"列如果为空，就填写为为当天日期，如果不为空，就不用管，如果创作完成，\"是否创作完成\"填写是；\n" +
@@ -702,7 +631,6 @@ public class TitleLibraryController {
             String ruleContent = (ruleTemplate != null && ruleTemplate.getContent() != null)
                     ? ruleTemplate.getContent() : defaultRule;
 
-            // Append banned word constraints to rule content
             List<com.example.blogger.entity.BannedWord> bannedWords = bannedWordMapper.findAll();
             if (bannedWords != null && !bannedWords.isEmpty()) {
                 StringBuilder sb = new StringBuilder("\n\n【违禁词约束】\n");
@@ -734,67 +662,96 @@ public class TitleLibraryController {
                 ruleContent = ruleContent + sb.toString();
             }
 
-            Sheet ruleSheet = wb.createSheet("生成规则");
-            Row ruleRow = ruleSheet.createRow(0);
-            Cell ruleCell = ruleRow.createCell(0);
-            ruleCell.setCellValue(ruleContent);
-            ruleSheet.setColumnWidth(0, 60 * 256);
+            String effectiveBaseName = (baseName != null && !baseName.isEmpty()) ? baseName : "标题库导出";
 
-            // Add banned word mapping sheet
-            if (bannedWords != null && !bannedWords.isEmpty()) {
-                Sheet bannedSheet = wb.createSheet("违禁词映射");
-                String[] bannedHeaders = { "违禁词", "替换词", "分类", "等级" };
-                Row bannedHeaderRow = bannedSheet.createRow(0);
-                for (int i = 0; i < bannedHeaders.length; i++) {
-                    bannedHeaderRow.createCell(i).setCellValue(bannedHeaders[i]);
+            response.setContentType("application/zip");
+            String zipFileName = effectiveBaseName + ".zip";
+            response.setHeader("Content-Disposition", "attachment; filename=" + new String(zipFileName.getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1));
+
+            try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(response.getOutputStream(), StandardCharsets.UTF_8)) {
+                String[] headers = { "ID", "标题名称", "用户名", "样式风格", "描述", "推荐日期", "是否创作完成" };
+
+                for (int idx = 0; idx < titles.size(); idx++) {
+                    TitleLibrary tl = titles.get(idx);
+
+                    XSSFWorkbook wb = new XSSFWorkbook();
+
+                    // Title sheet (single row)
+                    String sheetName = tl.getPlatform() != null && !tl.getPlatform().isEmpty() ? tl.getPlatform() : "未分类";
+                    if (tl.getTrackName() != null && !tl.getTrackName().isEmpty()) {
+                        sheetName = sheetName + "-" + tl.getTrackName();
+                    }
+                    if (sheetName.length() > 31) {
+                        sheetName = sheetName.substring(0, 31);
+                    }
+                    sheetName = sheetName.replace(":", "-").replace("\\", "-").replace("/", "-").replace("?", "-").replace("*", "-").replace("[", "(").replace("]", ")");
+
+                    Sheet sheet = wb.createSheet(sheetName);
+                    Row headerRow = sheet.createRow(0);
+                    for (int i = 0; i < headers.length; i++) {
+                        headerRow.createCell(i).setCellValue(headers[i]);
+                    }
+                    Row row = sheet.createRow(1);
+                    row.createCell(0).setCellValue(tl.getId() != null ? tl.getId() : "");
+                    row.createCell(1).setCellValue(tl.getTitle() != null ? tl.getTitle() : "");
+                    row.createCell(2).setCellValue(tl.getRecommendUserName() != null ? tl.getRecommendUserName() : "");
+                    row.createCell(3).setCellValue(tl.getRecommendUserTemplate() != null ? tl.getRecommendUserTemplate() : "");
+                    row.createCell(4).setCellValue(tl.getDescription() != null ? tl.getDescription() : "");
+                    row.createCell(5).setCellValue(tl.getRecommendDate() != null ? tl.getRecommendDate().toString() : "");
+                    boolean completed = tl.getSubscriptionPostTitle() != null && !tl.getSubscriptionPostTitle().isEmpty()
+                            || tl.getSubscriptionPostFileUrl() != null && !tl.getSubscriptionPostFileUrl().isEmpty();
+                    row.createCell(6).setCellValue(completed ? "是" : "");
+                    for (int i = 0; i < headers.length; i++) {
+                        sheet.setColumnWidth(i, 20 * 256);
+                    }
+
+                    // Rule sheet
+                    Sheet ruleSheet = wb.createSheet("生成规则");
+                    Row ruleRow = ruleSheet.createRow(0);
+                    Cell ruleCell = ruleRow.createCell(0);
+                    ruleCell.setCellValue(ruleContent);
+                    ruleSheet.setColumnWidth(0, 60 * 256);
+
+                    // Banned words sheet
+                    if (bannedWords != null && !bannedWords.isEmpty()) {
+                        Sheet bannedSheet = wb.createSheet("违禁词映射");
+                        String[] bannedHeaders = { "违禁词", "替换词", "分类", "等级" };
+                        Row bannedHeaderRow = bannedSheet.createRow(0);
+                        for (int i = 0; i < bannedHeaders.length; i++) {
+                            bannedHeaderRow.createCell(i).setCellValue(bannedHeaders[i]);
+                        }
+                        for (int i = 0; i < bannedWords.size(); i++) {
+                            com.example.blogger.entity.BannedWord bw = bannedWords.get(i);
+                            Row br = bannedSheet.createRow(i + 1);
+                            br.createCell(0).setCellValue(bw.getWord() != null ? bw.getWord() : "");
+                            br.createCell(1).setCellValue(bw.getReplacement() != null ? bw.getReplacement() : "");
+                            br.createCell(2).setCellValue(bw.getCategory() != null ? bw.getCategory() : "");
+                            br.createCell(3).setCellValue("block".equals(bw.getSeverity()) ? "严禁" : "慎用");
+                        }
+                        for (int i = 0; i < bannedHeaders.length; i++) {
+                            bannedSheet.setColumnWidth(i, 20 * 256);
+                        }
+                    }
+
+                    // Write workbook to zip entry
+                    String seq = String.format("%02d", idx + 1);
+                    String entryName = effectiveBaseName + "-" + seq + ".xlsx";
+                    java.util.zip.ZipEntry zipEntry = new java.util.zip.ZipEntry(entryName);
+                    zos.putNextEntry(zipEntry);
+                    try (java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream()) {
+                        wb.write(bos);
+                        zos.write(bos.toByteArray());
+                    }
+                    zos.closeEntry();
+                    wb.close();
                 }
-                for (int i = 0; i < bannedWords.size(); i++) {
-                    com.example.blogger.entity.BannedWord bw = bannedWords.get(i);
-                    Row row = bannedSheet.createRow(i + 1);
-                    row.createCell(0).setCellValue(bw.getWord() != null ? bw.getWord() : "");
-                    row.createCell(1).setCellValue(bw.getReplacement() != null ? bw.getReplacement() : "");
-                    row.createCell(2).setCellValue(bw.getCategory() != null ? bw.getCategory() : "");
-                    row.createCell(3).setCellValue("block".equals(bw.getSeverity()) ? "严禁" : "慎用");
-                }
-                for (int i = 0; i < bannedHeaders.length; i++) {
-                    bannedSheet.setColumnWidth(i, 20 * 256);
-                }
+                zos.finish();
             }
-
-            if (savePath != null && !savePath.isEmpty()) {
-                File outFile = resolveExportFile(savePath, "标题库导出");
-                try (FileOutputStream fos = new FileOutputStream(outFile)) {
-                    wb.write(fos);
-                }
-                wb.close();
-                response.setContentType("application/json;charset=UTF-8");
-                Map<String, Object> result = new HashMap<>();
-                result.put("success", true);
-                result.put("path", outFile.getAbsolutePath());
-                response.getWriter().write(new ObjectMapper().writeValueAsString(Result.ok(result)));
-                return;
-            }
-
-            String timestamp = java.time.LocalDateTime.now()
-                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String fileName = "标题库导出_" + timestamp + ".xlsx";
-
-            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            response.setHeader("Content-Disposition", "attachment; filename=" + new String(fileName.getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1));
-            try (OutputStream out = response.getOutputStream()) {
-                wb.write(out);
-            }
-            wb.close();
 
         } catch (Exception e) {
             e.printStackTrace();
             try {
-                if (savePath != null && !savePath.isEmpty()) {
-                    response.setContentType("application/json;charset=UTF-8");
-                    response.getWriter().write(new ObjectMapper().writeValueAsString(Result.error("导出失败：" + e.getMessage())));
-                } else {
-                    response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "导出失败：" + e.getMessage());
-                }
+                response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "导出失败：" + e.getMessage());
             } catch (IOException ignored) {}
         }
     }
@@ -968,13 +925,18 @@ public class TitleLibraryController {
     }
 
     @PostMapping("/match-today")
-    public Result<Map<String, Object>> matchToday() {
+    public Result<Map<String, Object>> matchToday(@RequestParam(value = "date", required = false) String dateStr) {
         try {
-            LocalDate today = LocalDate.now();
+            LocalDate targetDate;
+            if (dateStr != null && !dateStr.isEmpty()) {
+                targetDate = LocalDate.parse(dateStr);
+            } else {
+                targetDate = LocalDate.now();
+            }
             List<TitleLibrary> allTitles = titleLibraryService.list();
             // Only match titles whose pushDate is today
             List<TitleLibrary> titles = allTitles.stream()
-                    .filter(t -> t.getPushDate() != null && t.getPushDate().equals(today))
+                    .filter(t -> t.getPushDate() != null && t.getPushDate().equals(targetDate))
                     .collect(Collectors.toList());
             List<User> users = userMapper.findAll();
 
@@ -1009,7 +971,7 @@ public class TitleLibraryController {
 
                     // Check if this user already has a recommendation for this platform + track today
                     int existing = titleRecommendationMapper.countByUserPlatformTrackDate(
-                            user.getId(), title.getPlatform(), title.getTrackId(), today);
+                            user.getId(), title.getPlatform(), title.getTrackId(), targetDate);
                     if (existing > 0) continue;
 
                     eligible.add(user);
@@ -1029,7 +991,7 @@ public class TitleLibraryController {
                 rec.setUserId(selected.getId());
                 rec.setPlatform(title.getPlatform());
                 rec.setTrackId(title.getTrackId());
-                rec.setRecommendDate(today);
+                rec.setRecommendDate(targetDate);
                 titleRecommendationMapper.insert(rec);
 
                 matched++;
@@ -1462,68 +1424,62 @@ public class TitleLibraryController {
                         continue;
                     }
 
-                    // 查找用户当日最新推荐（有关联文章的）
-                    TitleRecommendation rec = titleRecommendationMapper.findLatestByUserAndDate(userId, pushDate);
-                    if (rec == null || rec.getSubscriptionPostId() == null || rec.getSubscriptionPostId().isEmpty()) {
+                    // 查找用户当日所有推荐（有关联文章的）
+                    List<Map<String, Object>> recMaps = titleRecommendationMapper.findByUserAndDate(userId, pushDate);
+                    if (recMaps == null || recMaps.isEmpty()) {
                         failed++;
-                        errors.add(Map.of("user", user.getUsername(), "reason", "当日没有关联文章的推荐"));
+                        errors.add(Map.of("userId", userId, "reason", "当日没有关联文章的推荐"));
                         continue;
                     }
 
-                    SubscriptionPost post = subscriptionPostMapper.findById(rec.getSubscriptionPostId());
-                    if (post == null) {
-                        failed++;
-                        errors.add(Map.of("user", user.getUsername(), "reason", "关联文章不存在"));
-                        continue;
+                    for (Map<String, Object> recMap : recMaps) {
+                        String subPostId = recMap.get("subscription_post_id") != null ? recMap.get("subscription_post_id").toString() : null;
+                        String trackId = recMap.get("track_id") != null ? recMap.get("track_id").toString() : null;
+                        String titleLibId = recMap.get("title_library_id") != null ? recMap.get("title_library_id").toString() : null;
+                        if (subPostId == null || subPostId.isEmpty()) {
+                            continue;
+                        }
+                        SubscriptionPost post = subscriptionPostMapper.findById(subPostId);
+                        if (post == null) {
+                            continue;
+                        }
+                        String fileUrl = post.getFileUrl();
+                        if (fileUrl == null || fileUrl.isEmpty()) {
+                            continue;
+                        }
+                        File articleFile = new File(fileUrl.startsWith("/")
+                                ? System.getProperty("user.dir") + fileUrl
+                                : fileUrl);
+                        if (!articleFile.exists()) {
+                            String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
+                            articleFile = new File(articlesDir + File.separator + post.getFileName());
+                        }
+                        if (!articleFile.exists()) {
+                            continue;
+                        }
+                        Track userTrack = trackMapper.findById(trackId);
+                        String trackName = userTrack != null ? userTrack.getName() : "";
+                        TitleLibrary titleLib = titleLibraryService.getById(titleLibId);
+                        String articleTitle = titleLib != null ? titleLib.getTitle() : post.getTitle();
+                        String platform = titleLib != null && titleLib.getPlatform() != null ? titleLib.getPlatform() : "";
+                        emailService.sendDailyRecommendEmail(
+                                user.getEmail(),
+                                user.getUsername(),
+                                trackName,
+                                articleTitle,
+                                platform,
+                                articleFile,
+                                post.getFileName()
+                        );
+                        // 记录推送日志
+                        EmailPushLog log = new EmailPushLog();
+                        log.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
+                        log.setUserId(userId);
+                        log.setPushDate(pushDate);
+                        log.setType("daily_recommend");
+                        log.setTitleLibraryId(titleLibId);
+                        emailPushLogMapper.insert(log);
                     }
-
-                    String fileUrl = post.getFileUrl();
-                    if (fileUrl == null || fileUrl.isEmpty()) {
-                        failed++;
-                        errors.add(Map.of("user", user.getUsername(), "reason", "文章文件路径为空"));
-                        continue;
-                    }
-
-                    String filePath = fileUrl.startsWith("/")
-                            ? System.getProperty("user.dir") + fileUrl
-                            : fileUrl;
-                    File articleFile = new File(filePath);
-                    if (!articleFile.exists()) {
-                        String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
-                        articleFile = new File(articlesDir + File.separator + post.getFileName());
-                    }
-                    if (!articleFile.exists()) {
-                        failed++;
-                        errors.add(Map.of("user", user.getUsername(), "reason", "文章文件不存在"));
-                        continue;
-                    }
-
-                    Track userTrack = trackMapper.findById(rec.getTrackId());
-                    String trackName = userTrack != null ? userTrack.getName() : "";
-
-                    TitleLibrary titleLib = titleLibraryService.getById(rec.getTitleLibraryId());
-                    String articleTitle = titleLib != null ? titleLib.getTitle() : post.getTitle();
-                    String platform = titleLib != null && titleLib.getPlatform() != null ? titleLib.getPlatform() : "";
-
-                    emailService.sendDailyRecommendEmail(
-                            user.getEmail(),
-                            user.getUsername(),
-                            trackName,
-                            articleTitle,
-                            platform,
-                            articleFile,
-                            post.getFileName()
-                    );
-
-                    // 记录推送日志
-                    EmailPushLog log = new EmailPushLog();
-                    log.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
-                    log.setUserId(userId);
-                    log.setPushDate(pushDate);
-                    log.setType("daily_recommend");
-                    log.setTitleLibraryId(rec.getTitleLibraryId());
-                    emailPushLogMapper.insert(log);
-
                     success++;
                 } catch (Exception e) {
                     failed++;
@@ -2247,6 +2203,12 @@ public class TitleLibraryController {
                     tl.setTrackId(trackId);
                     tl.setUseCount(0);
                     titleLibraryService.save(tl);
+                    // 创建审核记录
+                    try {
+                        titleReviewService.createReviewRecord(tl.getId(), "ai_generated");
+                    } catch (Exception e) {
+                        log.error("[生成标题] 创建审核记录失败 title={}: {}", tl.getTitle(), e.getMessage());
+                    }
                     savedCount++;
                 } catch (Exception e) {
                     log.error("[生成标题] 单条入库失败 title={}: {}", row.get("title"), e.getMessage());

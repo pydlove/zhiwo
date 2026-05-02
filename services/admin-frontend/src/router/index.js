@@ -24,6 +24,8 @@ const routes = [
       { path: 'push-overview', name: 'PushOverview', component: () => import('../views/PushOverview.vue'), meta: { title: '推送概览', perm: 'title-library' } },
       { path: 'banned-words', name: 'BannedWordManage', component: () => import('../views/BannedWordManage.vue'), meta: { title: '违禁词管理', perm: 'config' } },
       { path: 'orders', name: 'OrderManage', component: () => import('../views/OrderManage.vue'), meta: { title: '收益管理', perm: 'config' } },
+      { path: 'process', name: 'ProcessManage', component: () => import('../views/ProcessManage.vue'), meta: { title: '流程管理', perm: 'title-library' } },
+      { path: 'customer-dialogues', name: 'CustomerDialogueManage', component: () => import('../views/CustomerDialogueManage.vue'), meta: { title: '客服对话', perm: 'config' } },
     ],
   },
   { path: '/login', name: 'Login', component: () => import('../views/LoginView.vue'), meta: { title: '管理员登录' } },

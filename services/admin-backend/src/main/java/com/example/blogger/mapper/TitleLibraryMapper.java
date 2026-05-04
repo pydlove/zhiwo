@@ -76,9 +76,9 @@ public interface TitleLibraryMapper {
             "AND (#{isUsed} IS NULL OR #{isUsed} = '' OR t.is_used = #{isUsed}) " +
             "<if test='userType != null and userType != \"\"'> " +
             "AND (" +
-            "  (#{userType} = 'accountOpened' AND u.is_account_opened = 1) OR " +
-            "  (#{userType} = 'distributor' AND u.is_distributor = 1) OR " +
-            "  (#{userType} = 'trial' AND u.is_trial = 1)" +
+            "  (#{userType} = '1' AND u.user_type = 1) OR " +
+            "  (#{userType} = '2' AND u.user_type = 2) OR " +
+            "  (#{userType} = '3' AND u.user_type = 3)" +
             ")" +
             "</if>" +
             "ORDER BY t.created_at DESC" +
@@ -111,9 +111,9 @@ public interface TitleLibraryMapper {
             "AND (#{isUsed} IS NULL OR #{isUsed} = '' OR t.is_used = #{isUsed}) " +
             "<if test='userType != null and userType != \"\"'> " +
             "AND (" +
-            "  (#{userType} = 'accountOpened' AND u.is_account_opened = 1) OR " +
-            "  (#{userType} = 'distributor' AND u.is_distributor = 1) OR " +
-            "  (#{userType} = 'trial' AND u.is_trial = 1)" +
+            "  (#{userType} = '1' AND u.user_type = 1) OR " +
+            "  (#{userType} = '2' AND u.user_type = 2) OR " +
+            "  (#{userType} = '3' AND u.user_type = 3)" +
             ")" +
             "</if>" +
             "ORDER BY t.created_at DESC " +
@@ -144,9 +144,9 @@ public interface TitleLibraryMapper {
             "AND (#{isUsed} IS NULL OR #{isUsed} = '' OR t.is_used = #{isUsed}) " +
             "<if test='userType != null and userType != \"\"'> " +
             "AND (" +
-            "  (#{userType} = 'accountOpened' AND u.is_account_opened = 1) OR " +
-            "  (#{userType} = 'distributor' AND u.is_distributor = 1) OR " +
-            "  (#{userType} = 'trial' AND u.is_trial = 1)" +
+            "  (#{userType} = '1' AND u.user_type = 1) OR " +
+            "  (#{userType} = '2' AND u.user_type = 2) OR " +
+            "  (#{userType} = '3' AND u.user_type = 3)" +
             ")" +
             "</if>" +
             "</script>")
@@ -181,6 +181,9 @@ public interface TitleLibraryMapper {
     @Update("UPDATE tu_title_library SET is_used=#{isUsed} WHERE id=#{id}")
     int updateIsUsed(@Param("id") String id, @Param("isUsed") Integer isUsed);
 
+    @Update("UPDATE tu_title_library SET push_date=#{pushDate} WHERE id=#{id}")
+    int updatePushDate(@Param("id") String id, @Param("pushDate") java.time.LocalDate pushDate);
+
     @Update("UPDATE tu_title_library SET is_deleted = 1 WHERE id = #{id}")
     int delete(String id);
 
@@ -190,12 +193,23 @@ public interface TitleLibraryMapper {
     @Select("SELECT t.* FROM tu_title_library t WHERE t.is_deleted = 0 AND t.push_date = #{pushDate}")
     List<TitleLibrary> findByPushDate(@Param("pushDate") String pushDate);
 
+    /**
+     * 统计指定推送日期下，各平台+赛道组合中已经有关联文章的标题数量
+     * （通过 title_recommendation.recommend_date = pushDate 且 subscription_post_id IS NOT NULL 判断）
+     */
+    @Select("SELECT t.platform, t.track_id as trackId, COUNT(DISTINCT r.title_library_id) as cnt " +
+            "FROM tu_title_recommendation r " +
+            "INNER JOIN tu_title_library t ON r.title_library_id = t.id AND t.is_deleted = 0 " +
+            "WHERE r.recommend_date = #{pushDate} AND r.subscription_post_id IS NOT NULL " +
+            "GROUP BY t.platform, t.track_id")
+    List<Map<String, Object>> countCompletedByCombo(@Param("pushDate") String pushDate);
+
     @Select("SELECT t.*, t.track_id as trackId FROM tu_title_library t WHERE t.is_deleted = 0 AND t.title = #{title} AND (t.platform = #{platform} OR (#{platform} IS NULL AND t.platform IS NULL)) LIMIT 1")
     TitleLibrary findByTitlePlatformTrack(@Param("title") String title, @Param("platform") String platform, @Param("trackId") String trackId);
 
     @Select("SELECT " +
             "u.id as userId, u.username, u.email, " +
-            "u.is_account_opened as isAccountOpened, u.is_distributor as isDistributor, u.is_trial as isTrial, " +
+            "u.user_type as userType, " +
             "t.id as trackId, t.name as trackName, " +
             "r.id as recommendationId, r.subscription_post_id as subscriptionPostId, r.title_library_id as titleLibraryId, " +
             "sp.title as postTitle, tl.title as titleName " +
@@ -208,7 +222,22 @@ public interface TitleLibraryMapper {
             "LEFT JOIN tu_subscription_post sp ON r.subscription_post_id = sp.id AND sp.is_deleted = 0 " +
             "LEFT JOIN tu_title_library tl ON r.title_library_id = tl.id AND tl.is_deleted = 0 " +
             "WHERE u.status = 1 AND u.is_deleted = 0 " +
-            "    AND (u.is_account_opened = 1 OR u.is_distributor = 1 OR u.is_trial = 1) " +
+            "    AND u.user_type IN (1, 2, 3) " +
             "ORDER BY u.id, ut.created_at")
     List<Map<String, Object>> findPushOverview(@Param("date") LocalDate date);
+
+    /** 临时：把所有已有关联推荐记录的标题标记为已使用 */
+    @Update("UPDATE tu_title_library t SET t.is_used = 1 WHERE t.is_deleted = 0 AND (t.is_used IS NULL OR t.is_used != 1) AND EXISTS (SELECT 1 FROM tu_title_recommendation r WHERE r.title_library_id = t.id)")
+    int batchMarkUsedForMatched();
+
+    /** 查询 platform 为空或空字符串的标题 */
+    @Select("SELECT * FROM tu_title_library WHERE is_deleted = 0 AND (platform IS NULL OR platform = '')")
+    List<TitleLibrary> findByEmptyPlatform();
+
+    @Update("UPDATE tu_title_library SET platform = #{platform} WHERE id = #{id}")
+    int updatePlatform(@Param("id") String id, @Param("platform") String platform);
+
+    /** 临时：删除 track_id 指向已不存在的赛道的脏数据标题（逻辑删除） */
+    @Update("UPDATE tu_title_library t SET t.is_deleted = 1 WHERE t.is_deleted = 0 AND t.track_id IS NOT NULL AND t.track_id != '' AND NOT EXISTS (SELECT 1 FROM tu_track tr WHERE tr.id = t.track_id AND tr.is_deleted = 0)")
+    int deleteOrphanTitles();
 }

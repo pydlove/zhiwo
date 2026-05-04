@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 function parseReads(val) {
@@ -25,10 +25,35 @@ import { listTracks } from '../api/track.js'
 const route = useRoute()
 
 const searchTitle = ref('')
+const platformFilter = ref(undefined)
 const trackFilter = ref(undefined)
 const bloggerFilter = ref(undefined)
 const page = ref(1)
 const pageSize = ref(10)
+
+const platformOptions = [
+  { label: '公众号', value: '公众号' },
+  { label: '今日头条', value: '今日头条' },
+  { label: '百家号', value: '百家号' },
+]
+
+// 搜索区域：平台-赛道联动
+const filteredTracksForSearch = computed(() => {
+  if (!platformFilter.value) return tracks.value
+  return tracks.value.filter(t => {
+    const ps = (t.platforms || '').split(/[·、,，\s]+/).filter(Boolean)
+    return ps.includes(platformFilter.value)
+  })
+})
+
+watch(() => platformFilter.value, (newVal, oldVal) => {
+  if (newVal !== oldVal) {
+    const validNames = new Set(filteredTracksForSearch.value.map(t => t.name))
+    if (trackFilter.value && !validNames.has(trackFilter.value)) {
+      trackFilter.value = undefined
+    }
+  }
+})
 
 const rawList = ref([])
 const bloggers = ref([])
@@ -110,6 +135,9 @@ const filteredList = computed(() => {
   if (keyword) {
     list = list.filter(p => (p.title || '').includes(keyword))
   }
+  if (platformFilter.value) {
+    list = list.filter(p => (p.platform || '').includes(platformFilter.value))
+  }
   if (trackFilter.value) {
     list = list.filter(p => p.track === trackFilter.value)
   }
@@ -130,6 +158,7 @@ function handleSearch() {
 
 function handleReset() {
   searchTitle.value = ''
+  platformFilter.value = undefined
   trackFilter.value = undefined
   bloggerFilter.value = undefined
   page.value = 1
@@ -325,8 +354,11 @@ onMounted(loadData)
   <Card :body-style="{ padding: '24px' }" style="border-radius: 2px;">
     <div style="display: flex; gap: 12px; margin-bottom: 24px; align-items: center;">
       <Input v-model:value="searchTitle" placeholder="搜索文章标题" style="width: 240px;" />
-      <Select v-model:value="trackFilter" placeholder="全部赛道" style="min-width: 140px;" allow-clear>
-        <Select.Option v-for="t in tracks" :key="t.id" :value="t.name">{{ t.name }}</Select.Option>
+      <Select v-model:value="platformFilter" placeholder="全部平台" style="min-width: 140px;" allow-clear>
+        <Select.Option v-for="opt in platformOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
+      </Select>
+      <Select v-model:value="trackFilter" placeholder="全部赛道" style="min-width: 140px;" allow-clear :disabled="!platformFilter">
+        <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.name">{{ t.name }}</Select.Option>
       </Select>
       <Select v-model:value="bloggerFilter" placeholder="全部博主" style="min-width: 140px;" allow-clear>
         <Select.Option v-for="b in bloggers" :key="b.id" :value="b.name">{{ b.name }}</Select.Option>

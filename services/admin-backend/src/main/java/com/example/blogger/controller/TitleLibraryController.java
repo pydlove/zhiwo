@@ -243,6 +243,7 @@ public class TitleLibraryController {
 
     /**
      * 获取用户当前激活的赛道ID集合（按订阅时间先后，只保留前 trackLimit 个）
+     * trackLimit <= 0 视为无限制，使用所有订阅赛道
      */
     private Set<String> getActiveTrackIdsForUser(User user) {
         List<UserTrack> uts = userTrackMapper.findByUserId(user.getId());
@@ -250,8 +251,9 @@ public class TitleLibraryController {
             return Collections.emptySet();
         }
         int limit = user.getTrackLimit() != null ? user.getTrackLimit() : uts.size();
+        // trackLimit <= 0 视为无限制，使用所有订阅赛道
         if (limit <= 0) {
-            return Collections.emptySet();
+            limit = uts.size();
         }
         // findByUserId 已按 created_at ASC 排序，最早订阅的优先保留
         Set<String> active = new LinkedHashSet<>();
@@ -259,6 +261,85 @@ public class TitleLibraryController {
             active.add(uts.get(i).getTrackId());
         }
         return active;
+    }
+
+    /**
+     * 诊断接口：查询指定用户为何匹配不上指定标题
+     */
+    @GetMapping("/debug-match")
+    public Result<Map<String, Object>> debugMatch(
+            @RequestParam("userId") String userId,
+            @RequestParam(value = "titleId", required = false) String titleId) {
+        Map<String, Object> result = new HashMap<>();
+        User user = userMapper.findById(userId);
+        if (user == null) {
+            return Result.error("用户不存在: " + userId);
+        }
+
+        result.put("userId", userId);
+        result.put("username", user.getUsername());
+        result.put("platformLimit", user.getPlatformLimit());
+        result.put("trackLimit", user.getTrackLimit());
+
+        List<UserTrack> uts = userTrackMapper.findByUserId(userId);
+        List<Map<String, Object>> tracks = new ArrayList<>();
+        if (uts != null) {
+            for (UserTrack ut : uts) {
+                Track track = trackMapper.findById(ut.getTrackId());
+                Map<String, Object> t = new HashMap<>();
+                t.put("trackId", ut.getTrackId());
+                t.put("trackName", track != null ? track.getName() : "未知");
+                t.put("platforms", track != null ? track.getPlatforms() : "未知");
+                tracks.add(t);
+            }
+        }
+        result.put("subscribedTracks", tracks);
+
+        Set<String> activeTrackIds = getActiveTrackIdsForUser(user);
+        result.put("activeTrackIds", activeTrackIds);
+
+        if (titleId != null && !titleId.isEmpty()) {
+            TitleLibrary title = titleLibraryService.getById(titleId);
+            if (title != null) {
+                Map<String, Object> titleInfo = new HashMap<>();
+                titleInfo.put("titleId", titleId);
+                titleInfo.put("title", title.getTitle());
+                titleInfo.put("platform", title.getPlatform());
+                titleInfo.put("trackId", title.getTrackId());
+                result.put("title", titleInfo);
+
+                List<String> reasons = new ArrayList<>();
+                boolean trackIdMatched = false;
+                boolean titleNameMatched = false;
+                if (title.getTrackId() != null && !title.getTrackId().isEmpty()) {
+                    if (activeTrackIds.contains(title.getTrackId())) {
+                        trackIdMatched = true;
+                    }
+                }
+                // Fallback: check if title name contains any active track name
+                if (!trackIdMatched && title.getTitle() != null && !title.getTitle().isEmpty()) {
+                    for (String atid : activeTrackIds) {
+                        Track at = trackMapper.findById(atid);
+                        if (at != null && at.getName() != null && !at.getName().isEmpty()
+                                && title.getTitle().contains(at.getName())) {
+                            titleNameMatched = true;
+                            break;
+                        }
+                    }
+                }
+                if (!trackIdMatched && !titleNameMatched) {
+                    reasons.add("赛道不匹配: trackId=" + title.getTrackId() + " 不在用户活跃赛道 " + activeTrackIds + " 中，且标题名称也不包含任一订阅赛道名称");
+                }
+                result.put("matchBlockReasons", reasons);
+                result.put("canMatch", reasons.isEmpty());
+                result.put("trackIdMatched", trackIdMatched);
+                result.put("titleNameMatched", titleNameMatched);
+            } else {
+                result.put("title", "标题不存在");
+            }
+        }
+
+        return Result.ok(result);
     }
 
     @GetMapping("/debug-recommendations")
@@ -358,6 +439,39 @@ public class TitleLibraryController {
     public Result<Void> delete(@PathVariable String id) {
         titleLibraryService.delete(id);
         return Result.ok(null);
+    }
+
+    @PostMapping("/batch-change-track")
+    public Result<Map<String, Object>> batchChangeTrack(@RequestBody Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
+        List<String> titleIds = (List<String>) body.get("titleIds");
+        String trackId = (String) body.get("trackId");
+        if (titleIds == null || titleIds.isEmpty()) {
+            return Result.error("请选择要修改的标题");
+        }
+        if (trackId == null || trackId.isEmpty()) {
+            return Result.error("请选择赛道");
+        }
+        int success = 0;
+        int failed = 0;
+        for (String id : titleIds) {
+            try {
+                TitleLibrary tl = titleLibraryService.getById(id);
+                if (tl == null) {
+                    failed++;
+                    continue;
+                }
+                tl.setTrackId(trackId);
+                titleLibraryService.save(tl);
+                success++;
+            } catch (Exception e) {
+                failed++;
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", success);
+        result.put("failed", failed);
+        return Result.ok(result);
     }
 
     @PostMapping("/import")
@@ -934,11 +1048,33 @@ public class TitleLibraryController {
                 targetDate = LocalDate.now();
             }
             List<TitleLibrary> allTitles = titleLibraryService.list();
-            // Only match titles whose pushDate is today
-            List<TitleLibrary> titles = allTitles.stream()
-                    .filter(t -> t.getPushDate() != null && t.getPushDate().equals(targetDate))
+
+            // ===== 过滤1：目标日期已经被匹配过的标题，当天不再参与匹配（不同日期可复用） =====
+            Set<String> matchedTodayTitleIds = new HashSet<>(titleRecommendationMapper.findMatchedTitleIdsByDate(targetDate));
+            List<TitleLibrary> unmatchedTitles = allTitles.stream()
+                    .filter(t -> !matchedTodayTitleIds.contains(t.getId()))
                     .collect(Collectors.toList());
-            List<User> users = userMapper.findAll();
+
+            // 在未匹配的标题中，优先匹配 pushDate 等于目标日期的；pushDate 为 null 的也允许匹配
+            List<TitleLibrary> titles = unmatchedTitles.stream()
+                    .filter(t -> t.getPushDate() == null || t.getPushDate().equals(targetDate))
+                    .collect(Collectors.toList());
+
+            List<User> users = userMapper.findAll().stream()
+                    .filter(u -> u.getStatus() != null && u.getStatus() == 1)
+                    .filter(u -> u.getIsDeleted() == null || u.getIsDeleted() != 1)
+                    .filter(u -> u.getUserType() != null && u.getUserType() >= 1 && u.getUserType() <= 3)
+                    .collect(Collectors.toList());
+
+            // ===== 严格过滤2：目标日期同一用户同一赛道已有推荐的，不再重复匹配（不同赛道可匹配多个） =====
+            Set<String> existingCombos = new HashSet<>();
+            for (Map<String, Object> row : titleRecommendationMapper.findUserTrackCombosByDate(targetDate)) {
+                String uid = (String) row.get("user_id");
+                String tid = (String) row.get("track_id");
+                if (uid != null && tid != null) {
+                    existingCombos.add(uid + ":" + tid);
+                }
+            }
 
             // Build user active track subscriptions map (only non-frozen tracks)
             Map<String, Set<String>> userTrackMap = new HashMap<>();
@@ -947,38 +1083,100 @@ public class TitleLibraryController {
                 userTrackMap.put(user.getId(), activeTrackIds);
             }
 
+            // Build trackId -> trackName map for title-name fallback matching
+            List<Track> allTracks = trackMapper.findAll();
+            Map<String, String> trackNameMap = new HashMap<>();
+            for (Track t : allTracks) {
+                if (t.getName() != null) {
+                    trackNameMap.put(t.getId(), t.getName());
+                }
+            }
+
             int matched = 0;
             int skipped = 0;
+            int alreadyMatchedToday = matchedTodayTitleIds.size();
             Random random = new Random();
+            List<Map<String, Object>> skipReasons = new ArrayList<>();
+
+            // ===== 过滤2：本次调用内，同一用户同一赛道已匹配过的不再重复匹配 =====
+            Set<String> matchedCombosThisRun = new HashSet<>();
+
+            // 追踪每个用户每个赛道的未匹配原因（用于诊断）
+            Map<String, Map<String, Integer>> userTrackSkipReasons = new HashMap<>();
+
+            System.out.println("[matchToday] 目标日期=" + targetDate
+                    + ", 总标题=" + allTitles.size()
+                    + ", 当天已匹配=" + alreadyMatchedToday
+                    + ", 未匹配=" + unmatchedTitles.size()
+                    + ", 本次可匹配=" + titles.size()
+                    + ", 用户总数=" + users.size()
+                    + ", 当天已匹配组合=" + existingCombos.size());
 
             for (TitleLibrary title : titles) {
                 // Find eligible users
                 List<User> eligible = new ArrayList<>();
+                int skipNoTrack = 0;
+                int skipAlreadyMatchedToday = 0;
+                int skipAlreadyMatchedThisRun = 0;
+
                 for (User user : users) {
-                    // Check platform match
-                    if (title.getPlatform() != null && !title.getPlatform().isEmpty()) {
-                        String platformLimit = user.getPlatformLimit();
-                        if (platformLimit == null || platformLimit.isEmpty()) continue;
-                        Set<String> userPlatforms = new HashSet<>(Arrays.asList(platformLimit.split(",")));
-                        if (!userPlatforms.contains(title.getPlatform())) continue;
+                    String comboKey = user.getId() + ":" + title.getTrackId();
+                    String userTrackKey = user.getId() + "-" + title.getTrackId();
+                    userTrackSkipReasons.putIfAbsent(userTrackKey, new HashMap<>());
+                    Map<String, Integer> reasons = userTrackSkipReasons.get(userTrackKey);
+
+                    // 当天同一用户同一赛道已经匹配过，跳过
+                    if (existingCombos.contains(comboKey)) {
+                        skipAlreadyMatchedToday++;
+                        reasons.put("alreadyMatchedToday", reasons.getOrDefault("alreadyMatchedToday", 0) + 1);
+                        continue;
                     }
 
-                    // Check track match
+                    // 本次调用内同一用户同一赛道已经匹配过，跳过
+                    if (matchedCombosThisRun.contains(comboKey)) {
+                        skipAlreadyMatchedThisRun++;
+                        reasons.put("alreadyMatchedThisRun", reasons.getOrDefault("alreadyMatchedThisRun", 0) + 1);
+                        continue;
+                    }
+
+                    // Check track match (trackId exact match OR title contains track name)
+                    boolean trackMatched = false;
+                    Set<String> userTracks = userTrackMap.getOrDefault(user.getId(), Collections.emptySet());
                     if (title.getTrackId() != null && !title.getTrackId().isEmpty()) {
-                        Set<String> userTracks = userTrackMap.getOrDefault(user.getId(), Collections.emptySet());
-                        if (!userTracks.contains(title.getTrackId())) continue;
+                        if (userTracks.contains(title.getTrackId())) {
+                            trackMatched = true;
+                        }
                     }
-
-                    // Check if this user already has a recommendation for this platform + track today
-                    int existing = titleRecommendationMapper.countByUserPlatformTrackDate(
-                            user.getId(), title.getPlatform(), title.getTrackId(), targetDate);
-                    if (existing > 0) continue;
+                    // Fallback: title name contains any subscribed track name
+                    if (!trackMatched && title.getTitle() != null && !title.getTitle().isEmpty()) {
+                        for (String utid : userTracks) {
+                            String trackName = trackNameMap.get(utid);
+                            if (trackName != null && !trackName.isEmpty()
+                                    && title.getTitle().contains(trackName)) {
+                                trackMatched = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!trackMatched) {
+                        skipNoTrack++;
+                        reasons.put("noTrack", reasons.getOrDefault("noTrack", 0) + 1);
+                        continue;
+                    }
 
                     eligible.add(user);
                 }
 
                 if (eligible.isEmpty()) {
                     skipped++;
+                    Map<String, Object> reason = new HashMap<>();
+                    reason.put("title", title.getTitle());
+                    reason.put("trackId", title.getTrackId());
+                    reason.put("skipNoTrack", skipNoTrack);
+                    reason.put("skipAlreadyMatchedToday", skipAlreadyMatchedToday);
+                    reason.put("skipAlreadyMatchedThisRun", skipAlreadyMatchedThisRun);
+                    skipReasons.add(reason);
+                    System.out.println("[matchToday] 跳过: " + title.getTitle() + " | 赛道不符=" + skipNoTrack + " 当天已匹配=" + skipAlreadyMatchedToday + " 本次已匹配=" + skipAlreadyMatchedThisRun);
                     continue;
                 }
 
@@ -993,13 +1191,48 @@ public class TitleLibraryController {
                 rec.setTrackId(title.getTrackId());
                 rec.setRecommendDate(targetDate);
                 titleRecommendationMapper.insert(rec);
+                titleLibraryService.updatePushDate(title.getId(), targetDate);
+                titleLibraryService.updateIsUsed(title.getId(), 1);
+
+                // 标记本次调用内该用户+赛道组合已匹配（不同赛道仍可继续匹配）
+                String matchedCombo = selected.getId() + ":" + title.getTrackId();
+                matchedCombosThisRun.add(matchedCombo);
+                // 同时加入当天已匹配集合（影响后续标题的跳过统计）
+                existingCombos.add(matchedCombo);
 
                 matched++;
+                System.out.println("[matchToday] 匹配: " + title.getTitle() + " -> " + selected.getUsername());
             }
+
+            // 统计有多少用户/赛道组合完全没有被匹配上
+            int totalCombos = 0;
+            int unmatchedCombos = 0;
+            Map<String, Integer> globalReasons = new HashMap<>();
+            for (Map<String, Integer> reasons : userTrackSkipReasons.values()) {
+                totalCombos++;
+                unmatchedCombos++;
+                for (Map.Entry<String, Integer> entry : reasons.entrySet()) {
+                    globalReasons.put(entry.getKey(), globalReasons.getOrDefault(entry.getKey(), 0) + entry.getValue());
+                }
+            }
+
+            System.out.println("[matchToday] 完成: 匹配=" + matched + ", 跳过=" + skipped + ", 当天已匹配=" + alreadyMatchedToday
+                    + ", 总用户赛道组合=" + totalCombos + ", 未匹配组合=" + unmatchedCombos
+                    + ", 原因统计=" + globalReasons);
 
             Map<String, Object> result = new HashMap<>();
             result.put("matched", matched);
             result.put("skipped", skipped);
+            result.put("alreadyMatchedToday", alreadyMatchedToday);
+            result.put("targetDate", targetDate.toString());
+            result.put("titleCount", titles.size());
+            result.put("userCount", users.size());
+            result.put("totalCombos", totalCombos);
+            result.put("unmatchedCombos", unmatchedCombos);
+            result.put("unmatchReasons", globalReasons);
+            if (!skipReasons.isEmpty()) {
+                result.put("skipDetails", skipReasons.subList(0, Math.min(skipReasons.size(), 10)));
+            }
             return Result.ok(result);
 
         } catch (Exception e) {
@@ -1019,10 +1252,42 @@ public class TitleLibraryController {
         return Result.ok(null);
     }
 
+    /** 临时接口：把所有已有关联推荐记录的标题标记为已使用 */
+    @PostMapping("/batch-mark-used-for-matched")
+    public Result<Map<String, Object>> batchMarkUsedForMatched() {
+        int updated = titleLibraryService.batchMarkUsedForMatched();
+        Map<String, Object> result = new HashMap<>();
+        result.put("updated", updated);
+        return Result.ok(result);
+    }
+
     @DeleteMapping("/{id}/recommendation")
     public Result<Void> unbindRecommendation(@PathVariable String id) {
         titleRecommendationMapper.deleteByTitleId(id);
         return Result.ok(null);
+    }
+
+    @PostMapping("/batch-unbind")
+    public Result<Map<String, Object>> batchUnbindRecommendations(@RequestBody Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
+        List<String> titleIds = (List<String>) body.get("titleIds");
+        if (titleIds == null || titleIds.isEmpty()) {
+            return Result.error("请选择要解绑的标题");
+        }
+        int success = 0;
+        int failed = 0;
+        for (String id : titleIds) {
+            try {
+                titleRecommendationMapper.deleteByTitleId(id);
+                success++;
+            } catch (Exception e) {
+                failed++;
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", success);
+        result.put("failed", failed);
+        return Result.ok(result);
     }
 
     @PostMapping("/generate")
@@ -2183,6 +2448,22 @@ public class TitleLibraryController {
             wb.close();
 
             int savedCount = 0;
+            int skipCount = 0;
+            // 用于内存去重：同一批次内相同标题+平台+赛道只保留一条
+            Set<String> batchDedupSet = new HashSet<>();
+            // 用于数据库去重：查询已存在的标题+平台+赛道组合
+            Set<String> existingSet = new HashSet<>();
+            List<TitleLibrary> existingTitles = titleLibraryService.list();
+            if (existingTitles != null) {
+                for (TitleLibrary et : existingTitles) {
+                    String key = (et.getTitle() != null ? et.getTitle() : "") + "|"
+                            + (et.getPlatform() != null ? et.getPlatform() : "") + "|"
+                            + (et.getTrackId() != null ? et.getTrackId() : "");
+                    existingSet.add(key);
+                }
+            }
+            LocalDate tomorrow = LocalDate.now().plusDays(1);
+
             for (Map<String, String> row : allRows) {
                 try {
                     String trackName = row.get("track");
@@ -2196,12 +2477,29 @@ public class TitleLibraryController {
                             }
                         }
                     }
+                    String title = row.get("title");
+                    String platform = row.get("platform");
+
+                    // 内存去重：同一批次内相同标题+平台+赛道
+                    String batchKey = title + "|" + platform + "|" + trackId;
+                    if (!batchDedupSet.add(batchKey)) {
+                        skipCount++;
+                        continue;
+                    }
+
+                    // 数据库去重：已存在的标题+平台+赛道跳过
+                    if (existingSet.contains(batchKey)) {
+                        skipCount++;
+                        continue;
+                    }
+
                     TitleLibrary tl = new TitleLibrary();
-                    tl.setTitle(row.get("title"));
+                    tl.setTitle(title);
                     tl.setDescription(row.get("description"));
-                    tl.setPlatform(row.get("platform"));
+                    tl.setPlatform(platform);
                     tl.setTrackId(trackId);
                     tl.setUseCount(0);
+                    tl.setPushDate(tomorrow);  // 设置推荐日期为明天，doCheck 才能查到
                     titleLibraryService.save(tl);
                     // 创建审核记录
                     try {
@@ -2218,9 +2516,9 @@ public class TitleLibraryController {
             task.put("status", "completed");
             task.put("progress", 100);
             task.put("total", allRows.size());
-            task.put("message", "生成完成，共 " + allRows.size() + " 条标题，已自动入库 " + savedCount + " 条");
+            task.put("message", "生成完成，共 " + allRows.size() + " 条标题，入库 " + savedCount + " 条，跳过重复 " + skipCount + " 条");
             task.put("path", finalPath);
-            log.info("[生成标题] 任务完成 taskId={} 总生成={} 入库={} 路径={}", taskId, allRows.size(), savedCount, finalPath);
+            log.info("[生成标题] 任务完成 taskId={} 总生成={} 入库={} 跳过重复={} 路径={}", taskId, allRows.size(), savedCount, skipCount, finalPath);
 
         } catch (Exception e) {
             log.error("[生成标题] 任务异常 taskId={}: {}", taskId, e.getMessage(), e);

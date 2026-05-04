@@ -25,10 +25,7 @@ public class User {
     private String membershipPlanId;
     private String inviteCode;
     private String invitedBy;
-    private Integer isReal;
-    private Integer isDistributor;
-    private Integer isTrial;
-    private Integer isAccountOpened;
+    private Integer userType;
     private Integer isDeleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -78,14 +75,8 @@ public class User {
     public void setInviteCode(String inviteCode) { this.inviteCode = inviteCode; }
     public String getInvitedBy() { return invitedBy; }
     public void setInvitedBy(String invitedBy) { this.invitedBy = invitedBy; }
-    public Integer getIsReal() { return isReal; }
-    public void setIsReal(Integer isReal) { this.isReal = isReal; }
-    public Integer getIsDistributor() { return isDistributor; }
-    public void setIsDistributor(Integer isDistributor) { this.isDistributor = isDistributor; }
-    public Integer getIsTrial() { return isTrial; }
-    public void setIsTrial(Integer isTrial) { this.isTrial = isTrial; }
-    public Integer getIsAccountOpened() { return isAccountOpened; }
-    public void setIsAccountOpened(Integer isAccountOpened) { this.isAccountOpened = isAccountOpened; }
+    public Integer getUserType() { return userType; }
+    public void setUserType(Integer userType) { this.userType = userType; }
     public Integer getIsDeleted() { return isDeleted; }
     public void setIsDeleted(Integer isDeleted) { this.isDeleted = isDeleted; }
     public LocalDateTime getCreatedAt() { return createdAt; }

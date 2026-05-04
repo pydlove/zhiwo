@@ -20,6 +20,13 @@ public class Result<T> {
         return r;
     }
 
+    public static <T> Result<T> error(int code, String msg) {
+        Result<T> r = new Result<>();
+        r.code = code;
+        r.msg = msg;
+        return r;
+    }
+
     public int getCode() { return code; }
     public void setCode(int code) { this.code = code; }
     public String getMsg() { return msg; }

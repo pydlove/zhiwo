@@ -114,10 +114,33 @@ public class TitleReviewService {
         if (review == null) {
             throw new RuntimeException("审核记录不存在");
         }
+        // 允许拒绝：待审核 或 已通过但未推送 的记录
+        if (!"pending".equals(review.getReviewStatus()) && !("approved".equals(review.getReviewStatus()) && "unpushed".equals(review.getPushStatus()))) {
+            throw new RuntimeException("该记录无法拒绝：不在待审核状态或已推送");
+        }
         review.setReviewStatus("rejected");
         review.setReviewReason(reason);
         review.setReviewedBy(reviewedBy);
         review.setReviewedAt(LocalDateTime.now());
+        titleReviewMapper.updateReviewStatus(review);
+    }
+
+    @Transactional
+    public void cancelReview(String id) {
+        TitleReview review = titleReviewMapper.findById(id);
+        if (review == null) {
+            throw new RuntimeException("审核记录不存在");
+        }
+        if (!"approved".equals(review.getReviewStatus())) {
+            throw new RuntimeException("该记录未通过审核，无法取消");
+        }
+        if (!"unpushed".equals(review.getPushStatus())) {
+            throw new RuntimeException("该记录已推送，无法取消审核");
+        }
+        review.setReviewStatus("pending");
+        review.setReviewReason(null);
+        review.setReviewedBy(null);
+        review.setReviewedAt(null);
         titleReviewMapper.updateReviewStatus(review);
     }
 
@@ -143,19 +166,34 @@ public class TitleReviewService {
         }
     }
 
-    public Map<String, Object> getStats() {
-        List<Map<String, Object>> counts = titleReviewMapper.countByStatus();
-        Map<String, Object> stats = new HashMap<>();
-        stats.put("pending", 0);
-        stats.put("approved", 0);
-        stats.put("rejected", 0);
-        for (Map<String, Object> row : counts) {
-            String status = (String) row.get("status");
-            Number count = (Number) row.get("count");
-            if (status != null && count != null) {
-                stats.put(status, count.intValue());
+    @Transactional
+    public void batchCancel(List<String> ids) {
+        for (String id : ids) {
+            try {
+                cancelReview(id);
+            } catch (Exception e) {
+                // 跳过失败的
             }
         }
+    }
+
+    public Map<String, Object> listPushed(String platform, String trackId, String keyword, int page, int pageSize) {
+        int offset = (page - 1) * pageSize;
+        List<TitleReview> list = titleReviewMapper.findPushed(platform, trackId, keyword, offset, pageSize);
+        int total = titleReviewMapper.countPushed(platform, trackId, keyword);
+        Map<String, Object> result = new HashMap<>();
+        result.put("list", list);
+        result.put("total", total);
+        return result;
+    }
+
+    public Map<String, Object> getStats() {
+        Map<String, Object> stats = new HashMap<>();
+        // 使用和列表查询一致的过滤条件，确保数字和列表显示一致
+        stats.put("pending", titleReviewMapper.countByReviewStatus("pending", null, null, null));
+        stats.put("approved", titleReviewMapper.countByReviewStatus("approved", null, null, null));
+        stats.put("rejected", titleReviewMapper.countByReviewStatus("rejected", null, null, null));
+        stats.put("pushed", titleReviewMapper.countPushed(null, null, null));
         return stats;
     }
 

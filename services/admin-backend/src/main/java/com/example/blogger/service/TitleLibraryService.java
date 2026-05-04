@@ -13,6 +13,7 @@ import com.example.blogger.mapper.TrackMapper;
 import com.example.blogger.mapper.UserMapper;
 import com.example.blogger.mapper.UserTrackMapper;
 import org.springframework.stereotype.Service;
+import jakarta.annotation.PostConstruct;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -47,6 +48,56 @@ public class TitleLibraryService {
         this.trackMapper = trackMapper;
         this.subscriptionPostMapper = subscriptionPostMapper;
     }
+
+    /* TODO: 临时逻辑 —— 启动时把已有关联推荐的标题标记为已使用，下次发布前请注释掉下面整个方法 */
+    @PostConstruct
+    public void initMarkUsedForMatched() {
+        int updated = titleLibraryMapper.batchMarkUsedForMatched();
+        System.out.println("[临时] 启动自动标记已关联标题为已使用: " + updated + " 条");
+    }
+    /* TODO: 临时逻辑结束 —— 下次请注释掉上面整个方法 */
+
+    /**
+     * 启动时自动填充标题库中 platform 为空的记录
+     * 根据 track_id 查找赛道，取赛道的第一个 platform 填充
+     */
+    @PostConstruct
+    public void initFillEmptyPlatform() {
+        List<TitleLibrary> emptyList = titleLibraryMapper.findByEmptyPlatform();
+        int filled = 0;
+        int skipped = 0;
+        for (TitleLibrary tl : emptyList) {
+            String trackId = tl.getTrackId();
+            if (trackId == null || trackId.isEmpty()) {
+                skipped++;
+                System.out.println("[启动填充platform] 跳过(无trackId): " + tl.getTitle());
+                continue;
+            }
+            Track track = trackMapper.findById(trackId);
+            if (track == null || track.getPlatforms() == null || track.getPlatforms().isEmpty()) {
+                skipped++;
+                System.out.println("[启动填充platform] 跳过(赛道无platform): " + tl.getTitle() + " trackId=" + trackId);
+                continue;
+            }
+            String platform = track.getPlatforms();
+            if (platform == null || platform.isEmpty()) {
+                skipped++;
+                continue;
+            }
+            titleLibraryMapper.updatePlatform(tl.getId(), platform);
+            filled++;
+            System.out.println("[启动填充platform] 填充: " + tl.getTitle() + " -> " + platform);
+        }
+        System.out.println("[启动填充platform] 完成: 填充=" + filled + ", 跳过=" + skipped);
+    }
+
+    /* TODO: 临时逻辑 —— 启动时删除 track_id 指向已不存在赛道的脏数据标题，下次发布前请注释掉下面整个方法 */
+    @PostConstruct
+    public void initDeleteOrphanTitles() {
+        int deleted = titleLibraryMapper.deleteOrphanTitles();
+        System.out.println("[临时] 启动自动删除孤儿标题(track_id指向已删除赛道): " + deleted + " 条");
+    }
+    /* TODO: 临时逻辑结束 —— 下次请注释掉上面整个方法 */
 
     public List<TitleLibrary> list() {
         return titleLibraryMapper.findAll();
@@ -123,6 +174,14 @@ public class TitleLibraryService {
         titleLibraryMapper.updateIsUsed(id, isUsed);
     }
 
+    public void updatePushDate(String id, java.time.LocalDate pushDate) {
+        titleLibraryMapper.updatePushDate(id, pushDate);
+    }
+
+    public int batchMarkUsedForMatched() {
+        return titleLibraryMapper.batchMarkUsedForMatched();
+    }
+
     private int toIntValue(Object val) {
         if (val instanceof Number) {
             return ((Number) val).intValue();
@@ -141,18 +200,14 @@ public class TitleLibraryService {
         for (Map<String, Object> user : allUsers) {
             String userId = (String) user.get("id");
 
-            // 过滤掉非真实用户（is_real != 1）
-            if (toIntValue(user.get("isReal")) != 1) {
-                continue;
-            }
-
             // 按类型过滤
+            Integer userTypeVal = user.get("userType") != null ? ((Number) user.get("userType")).intValue() : null;
             if ("accountOpened".equals(type)) {
-                if (toIntValue(user.get("isAccountOpened")) != 1) continue;
+                if (userTypeVal == null || userTypeVal != 1) continue;
             } else if ("distributor".equals(type)) {
-                if (toIntValue(user.get("isDistributor")) != 1) continue;
+                if (userTypeVal == null || userTypeVal != 2) continue;
             } else if ("trial".equals(type)) {
-                if (toIntValue(user.get("isTrial")) != 1) continue;
+                if (userTypeVal == null || userTypeVal != 3) continue;
             }
 
             // 获取用户订阅的赛道
@@ -228,9 +283,7 @@ public class TitleLibraryService {
                 u.put("userId", userId);
                 u.put("username", row.get("username"));
                 u.put("email", row.get("email"));
-                u.put("isAccountOpened", row.get("isAccountOpened"));
-                u.put("isDistributor", row.get("isDistributor"));
-                u.put("isTrial", row.get("isTrial"));
+                u.put("userType", row.get("userType"));
                 u.put("tracks", new ArrayList<Map<String, Object>>());
                 u.put("totalTracks", 0);
                 u.put("tracksWithPost", 0);
@@ -291,17 +344,14 @@ public class TitleLibraryService {
 
         // Filter by type
         if (type != null && !type.isEmpty() && !"all".equals(type)) {
-            String key = switch (type) {
-                case "accountOpened" -> "isAccountOpened";
-                case "distributor" -> "isDistributor";
-                case "trial" -> "isTrial";
+            Integer targetType = switch (type) {
+                case "accountOpened" -> 1;
+                case "distributor" -> 2;
+                case "trial" -> 3;
                 default -> null;
             };
-            if (key != null) {
-                users = users.stream().filter(u -> {
-                    Object val = u.get(key);
-                    return val instanceof Number ? ((Number) val).intValue() == 1 : Boolean.TRUE.equals(val);
-                }).collect(Collectors.toList());
+            if (targetType != null) {
+                users = users.stream().filter(u -> targetType.equals(u.get("userType"))).collect(Collectors.toList());
             }
         }
 

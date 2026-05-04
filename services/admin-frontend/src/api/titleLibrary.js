@@ -33,6 +33,10 @@ export function unbindRecommendation(titleId) {
   return request.delete('/title-library/' + titleId + '/recommendation')
 }
 
+export function batchUnbindRecommendations(titleIds) {
+  return request.post('/title-library/batch-unbind', { titleIds })
+}
+
 export function generateTitles(data) {
   return request.post('/title-library/generate', data)
 }
@@ -158,4 +162,8 @@ export function batchPushEmail(data) {
 
 export function markTitleUsed(id) {
   return request.post('/title-library/' + id + '/used')
+}
+
+export function batchChangeTrack(titleIds, trackId) {
+  return request.post('/title-library/batch-change-track', { titleIds, trackId })
 }

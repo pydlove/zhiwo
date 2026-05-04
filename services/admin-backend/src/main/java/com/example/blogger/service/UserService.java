@@ -4,15 +4,22 @@ import com.example.blogger.entity.User;
 import com.example.blogger.mapper.UserMapper;
 import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.List;
 import java.util.UUID;
 
 @Service
 public class UserService {
     private final UserMapper userMapper;
+    private final DataSource dataSource;
 
-    public UserService(UserMapper userMapper) {
+    public UserService(UserMapper userMapper, DataSource dataSource) {
         this.userMapper = userMapper;
+        this.dataSource = dataSource;
     }
 
     @PostConstruct
@@ -34,6 +41,31 @@ public class UserService {
         }
     }
 
+    /* TODO: 临时逻辑 —— 启动时迁移旧的用户类型字段数据到 user_type，下次发布前请注释掉下面整个方法 */
+    @PostConstruct
+    public void initMigrateUserType() {
+        try (Connection conn = dataSource.getConnection()) {
+            DatabaseMetaData meta = conn.getMetaData();
+            boolean hasOldColumns = false;
+            try (ResultSet rs = meta.getColumns(conn.getCatalog(), null, "tu_user", "is_distributor")) {
+                if (rs.next()) hasOldColumns = true;
+            }
+            if (!hasOldColumns) {
+                System.out.println("[临时迁移user_type] 旧字段已不存在，跳过迁移");
+                return;
+            }
+            try (Statement stmt = conn.createStatement()) {
+                stmt.executeUpdate("UPDATE tu_user SET user_type = 2 WHERE is_distributor = 1");
+                stmt.executeUpdate("UPDATE tu_user SET user_type = 1 WHERE is_account_opened = 1 AND user_type != 2");
+                stmt.executeUpdate("UPDATE tu_user SET user_type = 3 WHERE is_trial = 1 AND user_type NOT IN (1, 2)");
+                System.out.println("[临时迁移user_type] 迁移完成");
+            }
+        } catch (Exception e) {
+            System.out.println("[临时迁移user_type] 迁移失败: " + e.getMessage());
+        }
+    }
+    /* TODO: 临时逻辑结束 —— 下次请注释掉上面整个方法 */
+
     public List<User> list() {
         return userMapper.findAll();
     }
@@ -49,10 +81,7 @@ public class UserService {
             if (user.getInviteCode() == null || user.getInviteCode().isEmpty()) {
                 user.setInviteCode(generateInviteCode());
             }
-            if (user.getIsReal() == null) user.setIsReal(1);
-            if (user.getIsDistributor() == null) user.setIsDistributor(0);
-            if (user.getIsTrial() == null) user.setIsTrial(0);
-            if (user.getIsAccountOpened() == null) user.setIsAccountOpened(0);
+            if (user.getUserType() == null) user.setUserType(1);
             if (user.getAiLimit() == null) user.setAiLimit(0);
             if (user.getTrackLimit() == null) user.setTrackLimit(0);
             if (user.getCanSetEmail() == null) user.setCanSetEmail(0);

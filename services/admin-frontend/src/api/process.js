@@ -21,6 +21,14 @@ export function batchRejectTitleReviews(ids, reason) {
   return request.post('/title-review/batch-reject', { ids, reason })
 }
 
+export function cancelTitleReview(id) {
+  return request.post('/title-review/' + id + '/cancel')
+}
+
+export function batchCancelTitleReviews(ids) {
+  return request.post('/title-review/batch-cancel', { ids })
+}
+
 export function pushTitleReview(id, data) {
   return request.post('/title-review/' + id + '/push', data)
 }
@@ -31,6 +39,10 @@ export function batchPushTitleReviews(data) {
 
 export function getTitleReviewStats() {
   return request.get('/title-review/stats')
+}
+
+export function listPushedTitleReviews(params) {
+  return request.get('/title-review/list-pushed', { params })
 }
 
 export function listPushLogs(params) {

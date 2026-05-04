@@ -90,9 +90,7 @@ public class UserController {
             @RequestParam(value = "keyword", required = false) String keyword,
             @RequestParam(value = "platform", required = false) String platform,
             @RequestParam(value = "trackId", required = false) String trackId,
-            @RequestParam(value = "isDistributor", required = false) Integer isDistributor,
-            @RequestParam(value = "isTrial", required = false) Integer isTrial,
-            @RequestParam(value = "isAccountOpened", required = false) Integer isAccountOpened) {
+            @RequestParam(value = "userType", required = false) Integer userType) {
         List<User> users = userService.list();
 
         // 批量查询所有用户赛道，避免 N+1
@@ -141,14 +139,8 @@ public class UserController {
                 return tids.contains(trackId);
             }).collect(Collectors.toList());
         }
-        if (isDistributor != null) {
-            users = users.stream().filter(u -> isDistributor.equals(u.getIsDistributor())).collect(Collectors.toList());
-        }
-        if (isTrial != null) {
-            users = users.stream().filter(u -> isTrial.equals(u.getIsTrial())).collect(Collectors.toList());
-        }
-        if (isAccountOpened != null) {
-            users = users.stream().filter(u -> isAccountOpened.equals(u.getIsAccountOpened())).collect(Collectors.toList());
+        if (userType != null) {
+            users = users.stream().filter(u -> userType.equals(u.getUserType())).collect(Collectors.toList());
         }
 
         return Result.ok(users);
@@ -164,7 +156,7 @@ public class UserController {
         syncPlanLimits(user);
         userService.save(user);
         // Auto-create order if newly created user is marked as account opened
-        if (user.getIsAccountOpened() != null && user.getIsAccountOpened() == 1
+        if (user.getUserType() != null && user.getUserType() == 1
                 && user.getMembershipPlanId() != null) {
             MembershipPlan plan = membershipPlanService.getById(user.getMembershipPlanId());
             if (plan != null) {
@@ -201,13 +193,10 @@ public class UserController {
         if (user.getMembershipPlanId() != null) existing.setMembershipPlanId(user.getMembershipPlanId());
         if (user.getInviteCode() != null) existing.setInviteCode(user.getInviteCode());
         if (user.getInvitedBy() != null) existing.setInvitedBy(user.getInvitedBy());
-        if (user.getIsReal() != null) existing.setIsReal(user.getIsReal());
-        if (user.getIsDistributor() != null) existing.setIsDistributor(user.getIsDistributor());
-        if (user.getIsTrial() != null) existing.setIsTrial(user.getIsTrial());
-        // Detect account opening: isAccountOpened changed from 0/null to 1
-        boolean wasOpened = existing.getIsAccountOpened() != null && existing.getIsAccountOpened() == 1;
-        if (user.getIsAccountOpened() != null) existing.setIsAccountOpened(user.getIsAccountOpened());
-        boolean isNowOpened = existing.getIsAccountOpened() != null && existing.getIsAccountOpened() == 1;
+        // Detect account opening: userType changed to 1 (开户)
+        boolean wasOpened = existing.getUserType() != null && existing.getUserType() == 1;
+        if (user.getUserType() != null) existing.setUserType(user.getUserType());
+        boolean isNowOpened = existing.getUserType() != null && existing.getUserType() == 1;
         if (!wasOpened && isNowOpened) {
             MembershipPlan plan = membershipPlanService.getById(existing.getMembershipPlanId());
             if (plan != null) {
@@ -229,7 +218,7 @@ public class UserController {
     public ResponseEntity<byte[]> exportUsers(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Integer status,
-            @RequestParam(required = false) Integer isAccountOpened,
+            @RequestParam(required = false) Integer userType,
             @RequestParam(required = false) List<String> userIds) {
         try {
             List<User> users = userService.list();
@@ -237,7 +226,7 @@ public class UserController {
             for (User u : users) {
                 if (userIds != null && !userIds.isEmpty() && !userIds.contains(u.getId())) continue;
                 if (status != null && !status.equals(u.getStatus())) continue;
-                if (isAccountOpened != null && !isAccountOpened.equals(u.getIsAccountOpened())) continue;
+                if (userType != null && !userType.equals(u.getUserType())) continue;
                 if (keyword != null && !keyword.isEmpty()) {
                     String name = u.getUsername() != null ? u.getUsername() : "";
                     String phone = u.getPhone() != null ? u.getPhone() : "";

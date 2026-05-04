@@ -10,8 +10,9 @@ import {
 import {
   listTitleReviews, approveTitleReview, rejectTitleReview,
   batchApproveTitleReviews, batchRejectTitleReviews,
+  cancelTitleReview, batchCancelTitleReviews,
   pushTitleReview, batchPushTitleReviews,
-  getTitleReviewStats, listPushLogs,
+  getTitleReviewStats, listPushLogs, listPushedTitleReviews,
   listServerConfigs, saveServerConfig, deleteServerConfig,
   testServerConfig, testServerConfigDirect
 } from '../api/process.js'
@@ -25,15 +26,12 @@ import { generateTitles, getGenerateStatus, cancelGenerate, saveTitle } from '..
 // 流程类型 Tabs
 const processType = ref('title-review')
 
-// 审核状态子 Tabs
-const reviewStatus = ref('pending')
-
 // 数据
 const tableData = ref([])
 const tracks = ref([])
 const serverConfigs = ref([])
 const pushLogData = ref([])
-const stats = ref({ pending: 0, approved: 0, rejected: 0 })
+const stats = ref({ pending: 0, approved: 0, rejected: 0, pushed: 0 })
 const loading = ref(false)
 
 // 分页
@@ -41,10 +39,19 @@ const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 
+// 从 localStorage 读取保存的搜索条件和 tab
+const PROCESS_SEARCH_KEY = 'process_search'
+const PROCESS_TAB_KEY = 'process_tab'
+const savedSearch = JSON.parse(localStorage.getItem(PROCESS_SEARCH_KEY) || '{}')
+const savedTab = localStorage.getItem(PROCESS_TAB_KEY) || 'pending'
+
 // 筛选
 const searchKeyword = ref('')
-const searchPlatform = ref('')
-const searchTrack = ref('')
+const searchPlatform = ref(savedSearch.platform || '')
+const searchTrack = ref(savedSearch.trackId || '')
+
+// 审核状态子 Tabs（从 localStorage 恢复）
+const reviewStatus = ref(savedTab)
 
 // 选择
 const selectedRowKeys = ref([])
@@ -127,14 +134,14 @@ const statusColorMap = {
 
 // 流程阶段列表（用于步骤条）
 const flowStages = [
-  { key: 'checking', label: '标题检查' },
-  { key: 'need_titles', label: '生成标题' },
-  { key: 'reviewing', label: '审核标题' },
-  { key: 'pushing', label: '推送到线上' },
-  { key: 'matching', label: '匹配用户' },
-  { key: 'need_articles', label: '生成文章' },
-  { key: 'article_review', label: '审核文章' },
-  { key: 'scheduled', label: '推送排期' },
+  { key: 'checking', label: '标题检查', env: '线上' },
+  { key: 'need_titles', label: '生成标题', env: '本地' },
+  { key: 'reviewing', label: '审核标题', env: '线上' },
+  { key: 'pushing', label: '推送到线上', env: '线上' },
+  { key: 'matching', label: '匹配用户', env: '线上' },
+  { key: 'need_articles', label: '生成文章', env: '本地' },
+  { key: 'article_review', label: '审核文章', env: '线上' },
+  { key: 'scheduled', label: '推送排期', env: '线上' },
 ]
 
 function getStageIndex(status) {
@@ -176,6 +183,38 @@ const filteredTracksForGenerate = computed(() => {
     return generatePlatforms.value.some(p => trackPlatforms.includes(p))
   })
 })
+
+const filteredTracksForSearch = computed(() => {
+  if (!searchPlatform.value) {
+    return tracks.value
+  }
+  return tracks.value.filter(t => {
+    if (!t.platforms) return false
+    const trackPlatforms = t.platforms.split(/[·、,，\s]+/).filter(Boolean)
+    return trackPlatforms.includes(searchPlatform.value)
+  })
+})
+
+function onSearchTrackChange() {
+  saveSearchConfig()
+  handleSearch()
+}
+
+function saveSearchConfig() {
+  localStorage.setItem(PROCESS_SEARCH_KEY, JSON.stringify({
+    platform: searchPlatform.value,
+    trackId: searchTrack.value,
+  }))
+}
+
+function onSearchPlatformChange() {
+  const validTrackIds = new Set(filteredTracksForSearch.value.map(t => t.id))
+  if (searchTrack.value && !validTrackIds.has(searchTrack.value)) {
+    searchTrack.value = ''
+  }
+  saveSearchConfig()
+  handleSearch()
+}
 
 function saveGenerateConfig() {
   localStorage.setItem(GENERATE_CONFIG_KEY, JSON.stringify({
@@ -289,6 +328,25 @@ async function loadData() {
     await loadPushLogs()
     return
   }
+  if (reviewStatus.value === 'pushed') {
+    loading.value = true
+    try {
+      const res = await listPushedTitleReviews({
+        platform: searchPlatform.value,
+        trackId: searchTrack.value,
+        keyword: searchKeyword.value,
+        page: page.value,
+        pageSize: pageSize.value
+      })
+      tableData.value = res.list || []
+      total.value = res.total || 0
+    } catch (e) {
+      message.error('加载数据失败')
+    } finally {
+      loading.value = false
+    }
+    return
+  }
   loading.value = true
   try {
     const res = await listTitleReviews({
@@ -327,7 +385,7 @@ async function loadPushLogs() {
 async function loadStats() {
   try {
     const res = await getTitleReviewStats()
-    stats.value = res || { pending: 0, approved: 0, rejected: 0 }
+    stats.value = res || { pending: 0, approved: 0, rejected: 0, pushed: 0 }
   } catch (e) {
     // ignore
   }
@@ -361,6 +419,7 @@ function handleReset() {
   searchPlatform.value = ''
   searchTrack.value = ''
   page.value = 1
+  localStorage.removeItem(PROCESS_SEARCH_KEY)
   loadData()
 }
 
@@ -375,6 +434,7 @@ function handleTabChange(key) {
   page.value = 1
   selectedRowKeys.value = []
   selectedRows.value = []
+  localStorage.setItem(PROCESS_TAB_KEY, key)
   loadData()
 }
 
@@ -468,6 +528,34 @@ async function handleBatchRejectConfirm() {
     await batchRejectTitleReviews(rejectForm.value.ids, rejectForm.value.reason)
     message.success('批量拒绝成功')
     rejectModalOpen.value = false
+    selectedRowKeys.value = []
+    selectedRows.value = []
+    loadData()
+    loadStats()
+  } catch (e) {
+    message.error('操作失败')
+  }
+}
+
+async function handleCancel(record) {
+  try {
+    await cancelTitleReview(record.id)
+    message.success('已取消审核')
+    loadData()
+    loadStats()
+  } catch (e) {
+    message.error('操作失败：' + (e?.response?.data?.msg || e.message))
+  }
+}
+
+async function handleBatchCancel() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择要取消审核的标题')
+    return
+  }
+  try {
+    await batchCancelTitleReviews(selectedRowKeys.value)
+    message.success('批量取消审核成功')
     selectedRowKeys.value = []
     selectedRows.value = []
     loadData()
@@ -604,7 +692,13 @@ const columns = [
         )
       } else if (reviewStatus.value === 'approved') {
         buttons.push(
-          h(Button, { type: 'primary', size: 'small', onClick: () => handlePush(record) }, () => '推送')
+          h(Button, { type: 'primary', size: 'small', onClick: () => handlePush(record) }, () => '推送'),
+          h(Button, { type: 'link', size: 'small', onClick: () => handleCancel(record) }, () => '取消审核'),
+          h(Button, { type: 'link', size: 'small', danger: true, onClick: () => handleReject(record) }, () => '拒绝')
+        )
+      } else if (reviewStatus.value === 'pushed') {
+        buttons.push(
+          h(Tag, { color: 'green', size: 'small' }, () => '已推送')
         )
       }
       return h(Space, { size: 'small' }, () => buttons)
@@ -734,11 +828,17 @@ onMounted(() => {
         <div style="display: flex; gap: 8px; overflow-x: auto; padding: 8px 0;">
           <div v-for="(stage, idx) in flowStages" :key="stage.key"
                style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-            <div style="padding: 6px 14px; border-radius: 16px; font-size: 13px;"
+            <div style="padding: 6px 14px; border-radius: 16px; font-size: 13px; text-align: center;"
                  :style="getStageIndex(todayLog?.status) >= idx
                    ? { background: '#e6f7ff', color: '#096dd9', border: '1px solid #91d5ff', fontWeight: 500 }
                    : { background: '#f5f5f5', color: '#999', border: '1px solid #d9d9d9' }">
-              {{ stage.label }}
+              <div>{{ stage.label }}</div>
+              <div style="font-size: 11px; margin-top: 2px; opacity: 0.85;"
+                   :style="stage.env === '线上'
+                     ? { color: getStageIndex(todayLog?.status) >= idx ? '#1890ff' : '#8c8c8c' }
+                     : { color: getStageIndex(todayLog?.status) >= idx ? '#52c41a' : '#8c8c8c' }">
+                [{{ stage.env }}]
+              </div>
             </div>
             <div v-if="idx < flowStages.length - 1" style="color: #d9d9d9;"
                  :style="getStageIndex(todayLog?.status) > idx ? { color: '#1890ff' } : {}">→</div>
@@ -866,6 +966,15 @@ onMounted(() => {
           </span>
         </template>
       </Tabs.TabPane>
+      <Tabs.TabPane key="pushed">
+        <template #tab>
+          <span>
+            已推送
+            <Badge :count="stats.pushed" :overflow-count="999" :offset="[10, -2]"
+                   :show-zero="false" style="margin-left: 4px;" />
+          </span>
+        </template>
+      </Tabs.TabPane>
       <Tabs.TabPane key="rejected">
         <template #tab>
           <span>
@@ -883,14 +992,14 @@ onMounted(() => {
       <Row :gutter="16" align="middle">
         <Col :span="4">
           <Select v-model:value="searchPlatform" placeholder="平台" allow-clear style="width: 100%;"
-                  @change="handleSearch">
+                  @change="onSearchPlatformChange">
             <Select.Option v-for="p in platforms" :key="p" :value="p">{{ p }}</Select.Option>
           </Select>
         </Col>
         <Col :span="4">
           <Select v-model:value="searchTrack" placeholder="赛道" allow-clear style="width: 100%;"
-                  @change="handleSearch">
-            <Select.Option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+                  @change="onSearchTrackChange">
+            <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
           </Select>
         </Col>
         <Col :span="6">
@@ -928,17 +1037,33 @@ onMounted(() => {
           <Button type="primary" :disabled="selectedRowKeys.length === 0" @click="handleBatchPush">
             批量推送
           </Button>
+          <Button :disabled="selectedRowKeys.length === 0" @click="handleBatchCancel">
+            批量取消审核
+          </Button>
+          <Button danger :disabled="selectedRowKeys.length === 0" @click="handleBatchReject">
+            批量拒绝
+          </Button>
         </template>
       </Space>
     </div>
 
     <!-- 数据表格 -->
     <Table
-      v-if="reviewStatus !== 'push-logs'"
+      v-if="reviewStatus !== 'push-logs' && reviewStatus !== 'pushed'"
       :columns="columns"
       :data-source="tableData"
       :loading="loading"
       :row-selection="rowSelection"
+      :pagination="false"
+      row-key="id"
+      size="middle"
+      :scroll="{ x: 1100 }"
+    />
+    <Table
+      v-if="reviewStatus === 'pushed'"
+      :columns="columns"
+      :data-source="tableData"
+      :loading="loading"
       :pagination="false"
       row-key="id"
       size="middle"

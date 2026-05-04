@@ -22,6 +22,27 @@ log_ok()    { echo -e "${GREEN}[OK]${NC}   $1"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
+# 加载 deploy/.env（如果存在）
+ENV_FILE="$BASE_DIR/deploy/.env"
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  source "$ENV_FILE"
+  set +a
+  log_info "已加载环境变量: $ENV_FILE"
+fi
+
+# 线上 API 地址（本地环境流程管理走线上数据）
+# 请确保 deploy/.env 中设置了 ONLINE_API_BASE_URL，例如：
+# ONLINE_API_BASE_URL=https://your-domain.com
+if [ -z "${ONLINE_API_BASE_URL:-}" ]; then
+  log_warn "未设置 ONLINE_API_BASE_URL，流程管理将使用本地数据"
+  log_warn "如需同步线上状态，请在 deploy/.env 中添加: ONLINE_API_BASE_URL=https://your-domain.com"
+fi
+
+# 本地环境禁用流程调度器（避免和线上重复执行）
+export PROCESS_AUTO_SCHEDULER_ENABLED=false
+log_info "本地调度器已禁用 (PROCESS_AUTO_SCHEDULER_ENABLED=false)"
+
 # 根据端口停止进程
 kill_port() {
   local port=$1

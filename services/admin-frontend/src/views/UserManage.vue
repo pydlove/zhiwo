@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, h } from 'vue'
+import { ref, computed, onMounted, h, watch } from 'vue'
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Checkbox, Upload, Switch, Tabs, DatePicker } from 'ant-design-vue'
 import { listUsers, getUserTracks, addUserTrack, removeUserTrack, exportUsers, importUsers } from '../api/user.js'
 import { createOrder } from '../api/order.js'
@@ -62,6 +62,15 @@ const columns = [
   { title: '公众号名称', dataIndex: 'wxName', key: 'wxName', width: 130, ellipsis: true },
   { title: '赛道信息', key: 'trackInfo', width: 140 },
   { title: '可选赛道', dataIndex: 'trackLimitText', key: 'trackLimitText', width: 90 },
+  {
+    title: '用户类型',
+    key: 'userType',
+    width: 80,
+    customRender: ({ record }) => {
+      const color = record.userType === 2 ? 'purple' : record.userType === 3 ? 'orange' : 'blue'
+      return h(Tag, { color }, () => record.userTypeText || '-')
+    },
+  },
   { title: '状态', key: 'status', width: 75 },
   {
     title: '注册/到期',
@@ -102,8 +111,14 @@ const creationColumns = [
 ]
 const platformOptions = ['公众号', '今日头条', '百家号']
 
-const addForm = ref({ username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined, isReal: 1, isTrial: 0, isAccountOpened: 1, wxName: '', nickName: '' })
-const editForm = ref({ id: null, username: '', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', status: 1, remark: '', canSetEmail: 0, membershipPlanId: undefined, template: '', isReal: 0, isDistributor: 0, isTrial: 0, isAccountOpened: 0, wxName: '', nickName: '', email: '', invitedBy: '' })
+const userTypeOptions = [
+  { label: '开户', value: 1 },
+  { label: '分成', value: 2 },
+  { label: '试用', value: 3 },
+]
+
+const addForm = ref({ username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined, userType: 1, wxName: '', nickName: '' })
+const editForm = ref({ id: null, username: '', trackLimit: 0, platformLimit: [], expireDate: '2026-12-31', status: 1, remark: '', canSetEmail: 0, membershipPlanId: undefined, template: '', userType: 1, wxName: '', nickName: '', email: '', invitedBy: '' })
 
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -127,12 +142,12 @@ const tableColumns = computed(() => {
 })
 
 const trialTabText = computed(() => {
-  const count = data.value.filter(u => u.isTrial === 1).length
+  const count = data.value.filter(u => u.userType === 3).length
   return `试用用户 (${count})`
 })
 
 const distributorTabText = computed(() => {
-  const count = data.value.filter(u => u.isDistributor === 1).length
+  const count = data.value.filter(u => u.userType === 2).length
   return `分成用户 (${count})`
 })
 
@@ -366,13 +381,13 @@ async function loadData() {
       params.status = 1
     }
     if (activeTab.value === 'accountOpened') {
-      params.isAccountOpened = 1
+      params.userType = 1
     }
     if (activeTab.value === 'distributor') {
-      params.isDistributor = 1
+      params.userType = 2
     }
     if (activeTab.value === 'trial') {
-      params.isTrial = 1
+      params.userType = 3
     }
     if (keyword) params.keyword = keyword
     if (s.platform) params.platform = s.platform
@@ -397,6 +412,7 @@ async function loadData() {
       trackIds: u.trackIds || [],
       template: u.template || '-',
       invitedByName: u.invitedBy ? (userNameMap[u.invitedBy] || u.invitedBy) : '-',
+      userTypeText: u.userType === 2 ? '分成' : u.userType === 3 ? '试用' : '开户',
     }))
 
     // 2. 后台异步加载辅助数据，不阻塞表格渲染
@@ -465,13 +481,13 @@ async function handleExport() {
       params.status = 1
     }
     if (activeTab.value === 'accountOpened') {
-      params.isAccountOpened = 1
+      params.userType = 1
     }
     if (activeTab.value === 'distributor') {
-      params.isDistributor = 1
+      params.userType = 2
     }
     if (activeTab.value === 'trial') {
-      params.isTrial = 1
+      params.userType = 3
     }
     if (s.platform) params.platform = s.platform
     if (s.trackId) params.trackId = s.trackId
@@ -571,13 +587,13 @@ function computeExpireDate(planId, fallback) {
 
 function handleAdd() {
   addModalOpen.value = true
-  addForm.value = { username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: ['公众号'], template: '基础风格', expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined, isReal: 1, isTrial: 0, isAccountOpened: 1, wxName: '', nickName: '' }
+  addForm.value = { username: '', contactType: '手机号', contact: '', password: 'Abc123456', trackLimit: 0, platformLimit: ['公众号'], template: '基础风格', expireDate: '2026-12-31', remark: '', canSetEmail: 0, membershipPlanId: undefined, userType: 1, wxName: '', nickName: '' }
 }
 
 function handleEdit(record) {
   editModalOpen.value = true
   const rawPlatforms = record.platformLimit || ''
-  editForm.value = { id: record.id, username: record.username || '', trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : ['公众号'], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0, membershipPlanId: record.membershipPlanId || undefined, template: record.template || '', inviteCode: record.inviteCode || '', invitedBy: record.invitedBy || '', isReal: record.isReal === 1 ? 1 : 0, isDistributor: record.isDistributor === 1 ? 1 : 0, isTrial: record.isTrial === 1 ? 1 : 0, isAccountOpened: record.isAccountOpened === 1 ? 1 : 0, wxName: record.wxName || '', nickName: record.nickName || '', email: record.email || '' }
+  editForm.value = { id: record.id, username: record.username || '', trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : ['公众号'], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0, membershipPlanId: record.membershipPlanId || undefined, template: record.template || '', inviteCode: record.inviteCode || '', invitedBy: record.invitedBy || '', userType: record.userType || 1, wxName: record.wxName || '', nickName: record.nickName || '', email: record.email || '' }
 }
 
 async function saveAdd() {
@@ -602,9 +618,7 @@ async function saveAdd() {
       canSetEmail: addForm.value.canSetEmail ? 1 : 0,
       membershipPlanId: addForm.value.membershipPlanId || undefined,
       template: addForm.value.template || '基础风格',
-      isReal: addForm.value.isReal ? 1 : 0,
-      isTrial: addForm.value.isTrial ? 1 : 0,
-      isAccountOpened: addForm.value.isAccountOpened ? 1 : 0,
+      userType: addForm.value.userType || 1,
       wxName: addForm.value.wxName || undefined,
       nickName: addForm.value.nickName || undefined,
     }
@@ -642,10 +656,7 @@ async function saveEdit() {
     template: editForm.value.template || undefined,
     inviteCode: editForm.value.inviteCode || undefined,
     invitedBy: editForm.value.invitedBy || undefined,
-    isReal: editForm.value.isReal ? 1 : 0,
-    isDistributor: editForm.value.isDistributor ? 1 : 0,
-    isTrial: editForm.value.isTrial ? 1 : 0,
-    isAccountOpened: editForm.value.isAccountOpened ? 1 : 0,
+    userType: editForm.value.userType || 1,
     wxName: editForm.value.wxName || undefined,
     nickName: editForm.value.nickName || undefined,
     email: editForm.value.email || undefined,
@@ -908,6 +919,11 @@ async function handleAddUserTrack() {
     addTrackLoading.value = false
   }
 }
+
+watch(activeTab, () => {
+  currentPage.value = 1
+  loadData()
+})
 
 onMounted(loadData)
 </script>
@@ -1176,17 +1192,11 @@ onMounted(loadData)
       <Form.Item label="功能权限">
         <Checkbox v-model:checked="addForm.canSetEmail" :true-value="1" :false-value="0">允许设置邮箱接收文章</Checkbox>
       </Form.Item>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-        <Form.Item label="真实用户">
-          <Switch v-model:checked="addForm.isReal" :checked-value="1" :un-checked-value="0" />
-        </Form.Item>
-        <Form.Item label="开户用户">
-          <Switch v-model:checked="addForm.isAccountOpened" :checked-value="1" :un-checked-value="0" />
-        </Form.Item>
-        <Form.Item label="试用用户">
-          <Switch v-model:checked="addForm.isTrial" :checked-value="1" :un-checked-value="0" />
-        </Form.Item>
-      </div>
+      <Form.Item label="用户类型">
+        <Select v-model:value="addForm.userType" style="width: 200px;">
+          <Select.Option v-for="opt in userTypeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
+        </Select>
+      </Form.Item>
       <Form.Item label="备注">
         <Input.TextArea v-model:value="addForm.remark" placeholder="可选填，如：客户来源、特殊说明等" :rows="3" />
       </Form.Item>
@@ -1207,7 +1217,7 @@ onMounted(loadData)
       <Form.Item label="微信名称">
         <Input v-model:value="editForm.nickName" placeholder="请输入微信名称" />
       </Form.Item>
-      <div v-if="editForm.isAccountOpened === 1" style="margin-bottom: 16px; padding: 12px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px;">
+      <div v-if="editForm.userType === 1" style="margin-bottom: 16px; padding: 12px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px;">
         <div style="font-size: 13px; color: #52c41a; font-weight: 500; margin-bottom: 8px;">订单操作</div>
         <div style="display: flex; gap: 12px;">
           <Button size="small" @click="openOrderModal(editForm.id, 'renew')">创建续费订单</Button>
@@ -1256,20 +1266,11 @@ onMounted(loadData)
           <Select.Option :value="0">已禁用</Select.Option>
         </Select>
       </Form.Item>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-        <Form.Item label="真实用户">
-          <Switch v-model:checked="editForm.isReal" :checked-value="1" :un-checked-value="0" />
-        </Form.Item>
-        <Form.Item label="开户用户">
-          <Switch v-model:checked="editForm.isAccountOpened" :checked-value="1" :un-checked-value="0" />
-        </Form.Item>
-        <Form.Item label="分成用户">
-          <Switch v-model:checked="editForm.isDistributor" :checked-value="1" :un-checked-value="0" />
-        </Form.Item>
-        <Form.Item label="试用用户">
-          <Switch v-model:checked="editForm.isTrial" :checked-value="1" :un-checked-value="0" />
-        </Form.Item>
-      </div>
+      <Form.Item label="用户类型">
+        <Select v-model:value="editForm.userType" style="width: 200px;">
+          <Select.Option v-for="opt in userTypeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
+        </Select>
+      </Form.Item>
       <Form.Item label="备注">
         <Input.TextArea v-model:value="editForm.remark" placeholder="可选填" :rows="3" />
       </Form.Item>

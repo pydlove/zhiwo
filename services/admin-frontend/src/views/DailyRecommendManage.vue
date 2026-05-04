@@ -42,6 +42,24 @@ const platformOptions = [
   { label: '百家号', value: '百家号' },
 ]
 
+// 搜索区域：平台-赛道联动
+const filteredTracksForSearch = computed(() => {
+  if (!platformFilter.value) return tracks.value
+  return tracks.value.filter(t => {
+    const ps = (t.platforms || '').split(/[·、,，\s]+/).filter(Boolean)
+    return ps.includes(platformFilter.value)
+  })
+})
+
+watch(() => platformFilter.value, (newVal, oldVal) => {
+  if (newVal !== oldVal) {
+    const validIds = new Set(filteredTracksForSearch.value.map(t => t.id))
+    if (trackFilter.value && !validIds.has(trackFilter.value)) {
+      trackFilter.value = undefined
+    }
+  }
+})
+
 const columns = [
   { title: '推荐主题', dataIndex: 'title', key: 'title', ellipsis: true },
   { title: '所属赛道', key: 'trackName', width: 140 },
@@ -283,8 +301,8 @@ onMounted(loadData)
           <Select v-model:value="platformFilter" placeholder="全部平台" style="min-width: 140px;" allow-clear>
             <Select.Option v-for="opt in platformOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
           </Select>
-          <Select v-model:value="trackFilter" placeholder="全部赛道" style="min-width: 160px;" allow-clear>
-            <Select.Option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          <Select v-model:value="trackFilter" placeholder="全部赛道" style="min-width: 160px;" allow-clear :disabled="!platformFilter">
+            <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
           </Select>
           <Select v-model:value="statusFilter" placeholder="全部状态" style="min-width: 140px;" allow-clear>
             <Select.Option value="已上架">已上架</Select.Option>

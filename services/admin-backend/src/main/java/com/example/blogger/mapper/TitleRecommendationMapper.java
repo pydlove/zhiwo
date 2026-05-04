@@ -30,6 +30,10 @@ public interface TitleRecommendationMapper {
     int countByUserAndDate(@Param("userId") String userId, @Param("date") LocalDate date);
 
     @Select("SELECT COUNT(*) FROM tu_title_recommendation " +
+            "WHERE user_id = #{userId} AND track_id = #{trackId} AND recommend_date = #{date}")
+    int countByUserTrackDate(@Param("userId") String userId, @Param("trackId") String trackId, @Param("date") LocalDate date);
+
+    @Select("SELECT COUNT(*) FROM tu_title_recommendation " +
             "WHERE user_id = #{userId} AND recommend_date = #{date} " +
             "AND subscription_post_id IS NOT NULL AND subscription_post_id != ''")
     int countRecommendedByUserAndDate(@Param("userId") String userId, @Param("date") LocalDate date);
@@ -83,4 +87,14 @@ public interface TitleRecommendationMapper {
             "WHERE r.user_id = #{userId} AND r.recommend_date = #{date} " +
             "ORDER BY r.created_at DESC")
     List<Map<String, Object>> findByUserAndDate(@Param("userId") String userId, @Param("date") LocalDate date);
+
+    @Select("SELECT DISTINCT title_library_id FROM tu_title_recommendation WHERE recommend_date = #{date}")
+    List<String> findMatchedTitleIdsByDate(@Param("date") LocalDate date);
+
+    @Select("SELECT DISTINCT user_id FROM tu_title_recommendation WHERE recommend_date = #{date}")
+    List<String> findMatchedUserIdsByDate(@Param("date") LocalDate date);
+
+    /** 查询指定日期下所有已存在的 user_id + track_id 组合 */
+    @Select("SELECT DISTINCT user_id, track_id FROM tu_title_recommendation WHERE recommend_date = #{date}")
+    List<Map<String, Object>> findUserTrackCombosByDate(@Param("date") LocalDate date);
 }

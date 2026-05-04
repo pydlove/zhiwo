@@ -172,9 +172,9 @@ const columns = [
     align: 'center',
     customRender: ({ record }) => {
       const tags = []
-      if (record.isAccountOpened === 1 || record.isAccountOpened === true) tags.push(h(Tag, { color: 'blue' }, () => '开户'))
-      if (record.isDistributor === 1 || record.isDistributor === true) tags.push(h(Tag, { color: 'purple' }, () => '分成'))
-      if (record.isTrial === 1 || record.isTrial === true) tags.push(h(Tag, { color: 'orange' }, () => '试用'))
+      if (record.userType === 1 || record.userType === '1') tags.push(h(Tag, { color: 'blue' }, () => '开户'))
+      if (record.userType === 2 || record.userType === '2') tags.push(h(Tag, { color: 'purple' }, () => '分成'))
+      if (record.userType === 3 || record.userType === '3') tags.push(h(Tag, { color: 'orange' }, () => '试用'))
       return h('div', { style: 'display: flex; gap: 4px; justify-content: center;' }, tags)
     },
   },
@@ -447,9 +447,9 @@ async function handleBatchPush() {
       <div>
         <div style="font-size: 12px; color: #999; margin-bottom: 4px;">用户类型</div>
         <div style="display: flex; gap: 8px;">
-          <Tag v-if="drawerRecord.isAccountOpened === 1 || drawerRecord.isAccountOpened === true" color="blue">开户</Tag>
-          <Tag v-if="drawerRecord.isDistributor === 1 || drawerRecord.isDistributor === true" color="purple">分成</Tag>
-          <Tag v-if="drawerRecord.isTrial === 1 || drawerRecord.isTrial === true" color="orange">试用</Tag>
+          <Tag v-if="drawerRecord.userType === 1 || drawerRecord.userType === '1'" color="blue">开户</Tag>
+          <Tag v-if="drawerRecord.userType === 2 || drawerRecord.userType === '2'" color="purple">分成</Tag>
+          <Tag v-if="drawerRecord.userType === 3 || drawerRecord.userType === '3'" color="orange">试用</Tag>
         </div>
       </div>
       <div>

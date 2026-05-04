@@ -2,7 +2,7 @@
 import { ref, onMounted, computed, h, nextTick, watch } from 'vue'
 import dayjs from 'dayjs'
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Descriptions, DatePicker, Tabs } from 'ant-design-vue'
-import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, unbindRecommendation, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed } from '../api/titleLibrary.js'
+import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, unbindRecommendation, batchUnbindRecommendations, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed, batchChangeTrack } from '../api/titleLibrary.js'
 import { listTracks } from '../api/track.js'
 import { listUsers } from '../api/user.js'
 import { renderAsync } from 'docx-preview'
@@ -15,6 +15,15 @@ if (activeTab.value === 'full') activeTab.value = 'all'
 const tableData = ref([])
 const tracks = ref([])
 const allUsers = ref([])
+const filteredUsersForSelect = computed(() => {
+  return allUsers.value
+    .filter(u => u.status === 1)
+    .map(u => {
+      const parts = [u.nickName, u.email, u.wxName].filter(Boolean)
+      const suffix = parts.length > 0 ? `（${parts.join('-')}）` : ''
+      return { id: u.id, value: u.id, displayText: u.username + suffix }
+    })
+})
 const loading = ref(false)
 
 // 从 localStorage 恢复搜索条件
@@ -83,6 +92,15 @@ const simpleColumns = [
       return h('span', {}, `${record.platform || '-'} / ${record.trackName || '-'}`)
     },
   },
+  {
+    title: '操作',
+    key: 'action',
+    width: 100,
+    align: 'center',
+    customRender: ({ record }) => {
+      return h(Button, { type: 'link', size: 'small', onClick: () => openSingleChangeTrack(record) }, () => '改赛道')
+    },
+  },
 ]
 
 const selectedRowKeys = ref([])
@@ -93,6 +111,45 @@ const rowSelection = {
     selectedRowKeys.value = keys
     selectedRows.value = rows
   },
+}
+
+// 批量/单个修改赛道
+const changeTrackModalOpen = ref(false)
+const changeTrackForm = ref({ titleIds: [], trackId: '', singleRecord: null })
+const changeTrackLoading = ref(false)
+
+function openBatchChangeTrack() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择要修改赛道的标题')
+    return
+  }
+  changeTrackForm.value = { titleIds: selectedRowKeys.value, trackId: '', singleRecord: null }
+  changeTrackModalOpen.value = true
+}
+
+function openSingleChangeTrack(record) {
+  changeTrackForm.value = { titleIds: [record.id], trackId: record.trackId || '', singleRecord: record }
+  changeTrackModalOpen.value = true
+}
+
+async function handleChangeTrackConfirm() {
+  if (!changeTrackForm.value.trackId) {
+    message.warning('请选择赛道')
+    return
+  }
+  changeTrackLoading.value = true
+  try {
+    const result = await batchChangeTrack(changeTrackForm.value.titleIds, changeTrackForm.value.trackId)
+    message.success(`修改成功 ${result.success} 条` + (result.failed > 0 ? `，失败 ${result.failed} 条` : ''))
+    changeTrackModalOpen.value = false
+    selectedRowKeys.value = []
+    selectedRows.value = []
+    loadData()
+  } catch (e) {
+    message.error('修改失败')
+  } finally {
+    changeTrackLoading.value = false
+  }
 }
 
 const searchKeyword = ref(savedSearch.keyword || '')
@@ -109,7 +166,7 @@ const filteredTracksForSearch = computed(() => {
   }
   return tracks.value.filter(t => {
     if (!t.platforms) return false
-    const trackPlatforms = t.platforms.split(',')
+    const trackPlatforms = t.platforms.split(/[·、,，\s]+/).filter(Boolean)
     return trackPlatforms.includes(searchPlatform.value)
   })
 })
@@ -118,7 +175,7 @@ watch(searchPlatform, (newPlatform) => {
   if (!newPlatform) return
   if (!searchTrack.value) return
   const track = tracks.value.find(t => t.id === searchTrack.value)
-  if (!track || !track.platforms || !track.platforms.split(',').includes(newPlatform)) {
+  if (!track || !track.platforms || !track.platforms.split(/[·、,，\s]+/).filter(Boolean).includes(newPlatform)) {
     searchTrack.value = ''
   }
 })
@@ -298,7 +355,7 @@ async function loadData() {
     if (searchPushDate.value) params.pushDate = searchPushDate.value.format('YYYY-MM-DD')
     if (searchIsUsed.value !== '' && searchIsUsed.value !== undefined) params.isUsed = searchIsUsed.value
     // 按用户类型过滤（全部、开户、分成、试用）
-    const userTypeMap = { accountOpened: 'accountOpened', distributor: 'distributor', trial: 'trial' }
+    const userTypeMap = { accountOpened: '1', distributor: '2', trial: '3' }
     if (userTypeMap[activeTab.value]) params.userType = userTypeMap[activeTab.value]
     params.page = currentPage.value
     params.pageSize = pageSize.value
@@ -320,7 +377,14 @@ async function loadData() {
       listUsers().catch(() => []),
     ]).then(([trackList, userList]) => {
       tracks.value = trackList || []
-      allUsers.value = (userList || []).map(u => ({ id: u.id, username: u.username, contact: u.phone || u.email || u.wxId || '-' }))
+      allUsers.value = (userList || []).map(u => ({
+        id: u.id,
+        username: u.username,
+        nickName: u.nickName || '',
+        email: u.email || '',
+        wxName: u.wxName || '',
+        status: u.status,
+      }))
     }).catch(() => {
       // 辅助数据加载失败不影响主表格
     })
@@ -412,6 +476,28 @@ async function handleSendEmail(record) {
   } finally {
     sendEmailLoadingId.value = null
   }
+}
+
+async function handleBatchUnbind() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择要解绑的标题')
+    return
+  }
+  Modal.confirm({
+    title: '确认批量解绑',
+    content: `确定要解绑 ${selectedRowKeys.value.length} 条标题的关联用户吗？`,
+    async onOk() {
+      try {
+        const result = await batchUnbindRecommendations(selectedRowKeys.value)
+        message.success(`解绑成功 ${result.success} 条` + (result.failed > 0 ? `，失败 ${result.failed} 条` : ''))
+        selectedRowKeys.value = []
+        selectedRows.value = []
+        loadData()
+      } catch (e) {
+        message.error('解绑失败')
+      }
+    },
+  })
 }
 
 async function handleBatchSendEmail() {
@@ -510,14 +596,21 @@ function handleDelete(record) {
 
 // Match today
 const matching = ref(false)
-const matchDate = ref(dayjs())
+const matchModalOpen = ref(false)
+const matchForm = ref({ date: dayjs() })
 
-async function handleMatchToday() {
+function openMatchModal() {
+  matchForm.value.date = dayjs()
+  matchModalOpen.value = true
+}
+
+async function handleMatchConfirm() {
   matching.value = true
   try {
-    const dateStr = matchDate.value ? matchDate.value.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD')
+    const dateStr = matchForm.value.date ? matchForm.value.date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD')
     const result = await matchTodayTitles(dateStr)
     message.success(`匹配完成：成功匹配 ${result.matched} 条，跳过 ${result.skipped} 条`)
+    matchModalOpen.value = false
     loadData()
   } catch (e) {
     message.error('匹配失败: ' + (e?.message || '未知错误'))
@@ -1200,11 +1293,11 @@ onMounted(() => {
           <Card :title="'标题库 — ' + t.label" :bordered="false">
             <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
               <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
-              <Select v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear>
+              <Select v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear @change="handleSearch">
                 <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value">{{ p.label }}</Select.Option>
               </Select>
-              <Select v-model:value="searchTrack" placeholder="选择赛道" style="width: 160px;" allowClear>
-                <Select.Option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+              <Select v-model:value="searchTrack" placeholder="选择赛道" style="width: 160px;" allowClear :disabled="!searchPlatform" @change="handleSearch">
+                <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
               </Select>
               <Input v-model:value="searchUserName" placeholder="关联用户" style="width: 140px;" @pressEnter="handleSearch" />
               <Select v-model:value="searchMatched" placeholder="匹配状态" style="width: 130px;" allowClear>
@@ -1216,10 +1309,10 @@ onMounted(() => {
               <Button @click="handleReset">重置</Button>
               <Button style="margin-left: auto;" @click="openImportModal">导入标题</Button>
               <Button @click="handleExportTitleList">导出标题</Button>
-              <DatePicker v-model:value="matchDate" placeholder="选择推荐日期" style="width: 140px;" />
-              <Button type="primary" ghost :loading="matching" @click="handleMatchToday">匹配推荐</Button>
+              <Button type="primary" ghost :loading="matching" @click="openMatchModal">匹配推荐</Button>
               <Button @click="openGenerateModal">生成标题</Button>
               <Button type="primary" ghost :disabled="selectedRowKeys.length === 0" @click="handleBatchSendEmail">批量发邮件</Button>
+              <Button danger :disabled="selectedRowKeys.length === 0" @click="handleBatchUnbind">批量解绑</Button>
               <Button @click="openExportRuleModal">导出</Button>
               <Button @click="openImportArticleModal">导入文章</Button>
               <Button type="primary" @click="handleAdd">+ 新增标题</Button>
@@ -1328,12 +1421,16 @@ onMounted(() => {
           <Button @click="handleReset">重置</Button>
           <Button @click="openGenerateModal" style="margin-left: auto;">生成标题</Button>
         </div>
+        <div v-if="selectedRowKeys.length > 0" style="margin-bottom: 12px;">
+          <Button type="primary" @click="openBatchChangeTrack">批量修改赛道（已选 {{ selectedRowKeys.length }} 项）</Button>
+        </div>
         <Table
           :columns="simpleColumns"
           :data-source="paginatedData"
           :pagination="false"
           row-key="id"
           :loading="loading"
+          :row-selection="rowSelection"
           :scroll="{ x: 'max-content' }"
         />
         <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
@@ -1350,6 +1447,60 @@ onMounted(() => {
       </Card>
     </Tabs.TabPane>
   </Tabs>
+
+  <Modal
+    v-model:open="changeTrackModalOpen"
+    :title="changeTrackForm.singleRecord ? '修改赛道' : '批量修改赛道'"
+    :confirm-loading="changeTrackLoading"
+    @ok="handleChangeTrackConfirm"
+  >
+    <Form layout="vertical" style="margin-top: 12px;"
+    >
+      <Form.Item label="选择赛道" required
+      >
+        <Select v-model:value="changeTrackForm.trackId" placeholder="请选择赛道"
+        >
+          <Select.Option v-for="t in tracks" :key="t.id" :value="t.id"
+          >{{ t.name }}
+          </Select.Option
+          >
+        </Select
+        >
+      </Form.Item
+      >
+      <div v-if="!changeTrackForm.singleRecord" style="color: #999; font-size: 12px;"
+      >
+        已选择 {{ changeTrackForm.titleIds.length }} 条标题
+      </div
+      >
+    </Form
+    >
+  </Modal
+  >
+
+  <Modal
+    v-model:open="matchModalOpen"
+    title="匹配推荐"
+    :confirm-loading="matching"
+    @ok="handleMatchConfirm"
+  >
+    <Form layout="vertical" style="margin-top: 12px;"
+    >
+      <Form.Item label="推荐日期" required
+      >
+        <DatePicker v-model:value="matchForm.date" placeholder="选择推荐日期" style="width: 100%;"
+        />
+      </Form.Item
+      >
+      <div style="color: #999; font-size: 12px;"
+      >
+        系统会将未匹配的标题按推荐日期进行用户匹配分配
+      </div
+      >
+    </Form
+    >
+  </Modal
+  >
 
   <Modal v-model:open="modalOpen" :title="modalTitle" :mask-closable="false" :confirm-loading="saving" @ok="handleSave">
     <Form layout="vertical" style="margin-top: 12px;">
@@ -1374,7 +1525,7 @@ onMounted(() => {
       </Form.Item>
       <Form.Item label="关联用户">
         <Select v-model:value="form.recommendUserId" placeholder="选择关联用户（可选）" allowClear style="width: 100%;" @change="handleUserChange">
-          <Select.Option v-for="u in allUsers" :key="u.id" :value="u.id">{{ u.username }}（{{ u.contact }}）</Select.Option>
+          <Select.Option v-for="u in filteredUsersForSelect" :key="u.id" :value="u.id">{{ u.displayText }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item v-if="form.recommendUserName" label="当前关联">
@@ -1608,5 +1759,12 @@ onMounted(() => {
 :deep(.docx-preview table) {
   max-width: 100%;
   border-collapse: collapse;
+}
+:deep(.ant-tabs-tab:focus),
+:deep(.ant-tabs-tab:active),
+:deep(.ant-menu-item:focus),
+:deep(.ant-menu-item:active) {
+  outline: none;
+  box-shadow: none;
 }
 </style>

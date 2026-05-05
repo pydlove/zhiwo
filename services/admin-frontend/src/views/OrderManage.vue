@@ -2,7 +2,7 @@
 import { ref, onMounted, computed, h } from 'vue'
 import { Card, Row, Col, Table, Button, Tag, Modal, Form, Input, Select, DatePicker, message, Pagination, Statistic } from 'ant-design-vue'
 import dayjs from 'dayjs'
-import { listOrders, createOrder, getOrderStats, exportOrders } from '../api/order.js'
+import { listOrders, createOrder, getOrderStats, refundOrder, exportOrders } from '../api/order.js'
 import { listUsers } from '../api/user.js'
 import { listMembershipPlans } from '../api/membershipPlan.js'
 
@@ -13,6 +13,9 @@ const stats = ref({
   totalAmount: 0,
   orderCount: 0,
   byPlan: [],
+  refundToday: 0,
+  refundMonth: 0,
+  refundTotal: 0,
 })
 const data = ref([])
 const total = ref(0)
@@ -46,6 +49,10 @@ const typeLabelMap = {
   open_account: '开户',
   renew: '续费',
   upgrade: '升级',
+}
+
+function isRefunded(record) {
+  return record.refundAmount != null && Number(record.refundAmount) > 0
 }
 
 async function loadStats() {
@@ -133,9 +140,51 @@ async function handleExport() {
 const createModalOpen = ref(false)
 const createForm = ref({ userId: '', planId: '', type: 'renew', amount: '', remark: '' })
 
+// Refund modal
+const refundModalOpen = ref(false)
+const refundForm = ref({ id: '', amount: '', refundAmount: '' })
+
 function openCreateModal() {
   createForm.value = { userId: '', planId: '', type: 'renew', amount: '', remark: '' }
   createModalOpen.value = true
+}
+
+function openRefundModal(record) {
+  refundForm.value = {
+    id: record.id,
+    amount: record.amount,
+    refundAmount: record.refundAmount || record.amount || '',
+  }
+  refundModalOpen.value = true
+}
+
+async function handleRefund() {
+  if (!refundForm.value.refundAmount && refundForm.value.refundAmount !== 0) {
+    message.warning('请输入退单金额')
+    return
+  }
+  const amt = parseFloat(refundForm.value.refundAmount)
+  if (isNaN(amt) || amt <= 0) {
+    message.warning('退单金额必须大于0')
+    return
+  }
+  const orderAmount = parseFloat(refundForm.value.amount || 0)
+  if (amt > orderAmount) {
+    message.warning('退单金额不能大于订单金额')
+    return
+  }
+  try {
+    await refundOrder({
+      id: refundForm.value.id,
+      refundAmount: amt,
+    })
+    message.success('退单成功')
+    refundModalOpen.value = false
+    loadData()
+    loadStats()
+  } catch (e) {
+    message.error(e.message || '退单失败')
+  }
 }
 
 async function handleCreateOrder() {
@@ -184,12 +233,41 @@ const columns = [
     align: 'right',
     customRender: ({ text }) => '¥' + (text != null ? Number(text).toFixed(2) : '0.00'),
   },
+  {
+    title: '退单金额',
+    dataIndex: 'refundAmount',
+    width: 100,
+    align: 'right',
+    customRender: ({ text }) => {
+      if (text != null && Number(text) > 0) {
+        return h('span', { style: { color: '#ff4d4f' } }, '¥' + Number(text).toFixed(2))
+      }
+      return h('span', { style: { color: '#999' } }, '-')
+    },
+  },
   { title: '备注', dataIndex: 'remark', ellipsis: true, width: 150 },
   {
     title: '时间',
     dataIndex: 'createdAt',
     width: 170,
     customRender: ({ text }) => text ? dayjs(text).format('YYYY-MM-DD HH:mm') : '-',
+  },
+  {
+    title: '操作',
+    key: 'action',
+    width: 100,
+    align: 'center',
+    customRender: ({ record }) => {
+      if (isRefunded(record)) {
+        return h(Tag, { color: 'red' }, () => '已退单')
+      }
+      return h(Button, {
+        type: 'link',
+        size: 'small',
+        danger: true,
+        onClick: () => openRefundModal(record),
+      }, () => '退单')
+    },
   },
 ]
 
@@ -226,10 +304,34 @@ onMounted(() => {
       </Col>
     </Row>
 
+    <!-- Refund Stats -->
+    <Row :gutter="16" style="margin-bottom: 24px;">
+      <Col :span="6" :xs="12" :sm="12" :md="6" :lg="6">
+        <Card size="small">
+          <Statistic title="今日退单" :value="stats.refundToday || 0" :precision="2" prefix="¥" value-style="color: #ff4d4f;" />
+        </Card>
+      </Col>
+      <Col :span="6" :xs="12" :sm="12" :md="6" :lg="6">
+        <Card size="small">
+          <Statistic title="本月退单" :value="stats.refundMonth || 0" :precision="2" prefix="¥" value-style="color: #ff4d4f;" />
+        </Card>
+      </Col>
+      <Col :span="6" :xs="12" :sm="12" :md="6" :lg="6">
+        <Card size="small">
+          <Statistic title="累计退单" :value="stats.refundTotal || 0" :precision="2" prefix="¥" value-style="color: #ff4d4f;" />
+        </Card>
+      </Col>
+      <Col :span="6" :xs="12" :sm="12" :md="6" :lg="6">
+        <Card size="small">
+          <Statistic title="实际总收益" :value="(stats.totalAmount || 0) - (stats.refundTotal || 0)" :precision="2" prefix="¥" value-style="color: #52c41a;" />
+        </Card>
+      </Col>
+    </Row>
+
     <!-- Plan Breakdown -->
     <Row :gutter="16" style="margin-bottom: 24px;">
       <Col :span="24">
-        <Card size="small" title="按套餐统计">
+        <Card size="small" title="按套餐统计（已排除退单）">
           <div style="display: flex; gap: 16px; flex-wrap: wrap;">
             <div v-for="item in stats.byPlan || []" :key="item.planName" style="padding: 8px 16px; background: #f6ffed; border-radius: 4px; border: 1px solid #b7eb8f;">
               <span style="font-weight: 500;">{{ item.planName }}</span>
@@ -310,6 +412,25 @@ onMounted(() => {
       <Form.Item label="备注">
         <Input v-model:value="createForm.remark" placeholder="选填" />
       </Form.Item>
+    </Form>
+  </Modal>
+
+  <!-- Refund Modal -->
+  <Modal
+    v-model:open="refundModalOpen"
+    title="订单退单"
+    @ok="handleRefund"
+  >
+    <Form layout="vertical" :model="refundForm">
+      <Form.Item label="订单金额">
+        <Input :value="'¥' + Number(refundForm.amount || 0).toFixed(2)" disabled />
+      </Form.Item>
+      <Form.Item label="退单金额" required>
+        <Input v-model:value="refundForm.refundAmount" placeholder="请输入退单金额" />
+      </Form.Item>
+      <div style="font-size: 12px; color: #ff4d4f;">
+        退单后该订单金额将不再计入收益统计，退单金额会单独记录。
+      </div>
     </Form>
   </Modal>
 </template>

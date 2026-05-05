@@ -7,7 +7,7 @@ import java.util.Map;
 
 @Mapper
 public interface UserMapper {
-    @Select("SELECT id, username, status, phone, email, wx_id, wx_name as wxName, nick_name as nickName, track_limit as trackLimit, platform_limit as platformLimit, template, expire_date as expireDate, last_login as lastLogin, remark, can_set_email as canSetEmail, email_receive as emailReceive, membership_plan_id as membershipPlanId, invite_code as inviteCode, invited_by as invitedBy, user_type as userType, is_deleted as isDeleted, created_at as createdAt, updated_at as updatedAt FROM tu_user WHERE is_deleted = 0 ORDER BY created_at DESC")
+    @Select("SELECT id, username, status as status, phone, email, wx_id, wx_name as wxName, nick_name as nickName, track_limit as trackLimit, platform_limit as platformLimit, template, expire_date as expireDate, last_login as lastLogin, remark, can_set_email as canSetEmail, email_receive as emailReceive, membership_plan_id as membershipPlanId, invite_code as inviteCode, invited_by as invitedBy, user_type as userType, is_deleted as isDeleted, created_at as createdAt, updated_at as updatedAt FROM tu_user WHERE is_deleted = 0 ORDER BY created_at DESC")
     List<User> findAll();
 
     @Select("SELECT id, username, password, status, phone, email, wx_id, wx_name as wxName, nick_name as nickName, ai_limit, track_limit as trackLimit, platform_limit as platformLimit, avatar, template, expire_date as expireDate, last_login as lastLogin, remark, can_set_email as canSetEmail, email_receive as emailReceive, membership_plan_id as membershipPlanId, invite_code as inviteCode, invited_by as invitedBy, user_type as userType, is_deleted as isDeleted, created_at as createdAt, updated_at as updatedAt FROM tu_user WHERE id = #{id} AND is_deleted = 0")

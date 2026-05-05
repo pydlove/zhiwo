@@ -23,6 +23,7 @@ import {
 } from '../api/processAuto.js'
 import { listTracks } from '../api/track.js'
 import { generateTitles, getGenerateStatus, cancelGenerate, saveTitle } from '../api/titleLibrary.js'
+import { getVisibleTabs } from '../api/config.js'
 
 // 流程类型 Tabs
 const processType = ref('title-review')
@@ -53,6 +54,9 @@ const searchTrack = ref(savedSearch.trackId || '')
 
 // 审核状态子 Tabs（从 localStorage 恢复）
 const reviewStatus = ref(savedTab)
+
+// Tab 可见性配置（从后端获取）
+const visibleTabs = ref(['pending', 'approved', 'pushed', 'rejected', 'pushed-up', 'push-logs'])
 
 // 选择
 const selectedRowKeys = ref([])
@@ -888,12 +892,30 @@ function formatDate(dateStr) {
 }
 
 onMounted(() => {
-  loadData()
+  loadVisibleTabs().then(() => {
+    // 如果当前保存的 tab 不在可见列表中，切换到第一个可见 tab
+    if (!visibleTabs.value.includes(reviewStatus.value)) {
+      reviewStatus.value = visibleTabs.value[0] || 'pending'
+      localStorage.setItem(PROCESS_TAB_KEY, reviewStatus.value)
+    }
+    loadData()
+  })
   loadStats()
   loadTracks()
   loadServerConfigs()
   loadAutoStatus()
 })
+
+async function loadVisibleTabs() {
+  try {
+    const res = await getVisibleTabs()
+    if (res && res.processManage && Array.isArray(res.processManage)) {
+      visibleTabs.value = res.processManage
+    }
+  } catch (e) {
+    // 使用默认全部可见
+  }
+}
 </script>
 
 <template>
@@ -1068,7 +1090,7 @@ onMounted(() => {
 
     <!-- 审核状态子 Tabs -->
     <Tabs v-model:activeKey="reviewStatus" @change="handleTabChange">
-      <Tabs.TabPane key="pending">
+      <Tabs.TabPane v-if="visibleTabs.includes('pending')" key="pending">
         <template #tab>
           <span>
             待审核
@@ -1077,7 +1099,7 @@ onMounted(() => {
           </span>
         </template>
       </Tabs.TabPane>
-      <Tabs.TabPane key="approved">
+      <Tabs.TabPane v-if="visibleTabs.includes('approved')" key="approved">
         <template #tab>
           <span>
             已通过
@@ -1086,7 +1108,7 @@ onMounted(() => {
           </span>
         </template>
       </Tabs.TabPane>
-      <Tabs.TabPane key="pushed">
+      <Tabs.TabPane v-if="visibleTabs.includes('pushed')" key="pushed">
         <template #tab>
           <span>
             已推送
@@ -1095,7 +1117,7 @@ onMounted(() => {
           </span>
         </template>
       </Tabs.TabPane>
-      <Tabs.TabPane key="rejected">
+      <Tabs.TabPane v-if="visibleTabs.includes('rejected')" key="rejected">
         <template #tab>
           <span>
             已拒绝
@@ -1104,8 +1126,8 @@ onMounted(() => {
           </span>
         </template>
       </Tabs.TabPane>
-      <Tabs.TabPane key="pushed-up" tab="推送上来" />
-      <Tabs.TabPane key="push-logs" tab="推送日志" />
+      <Tabs.TabPane v-if="visibleTabs.includes('pushed-up')" key="pushed-up" tab="推送上来" />
+      <Tabs.TabPane v-if="visibleTabs.includes('push-logs')" key="push-logs" tab="推送日志" />
     </Tabs>
 
     <!-- 筛选区 -->

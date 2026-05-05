@@ -12,6 +12,10 @@ export function getOrderStats() {
   return request.get('/orders/stats')
 }
 
+export function refundOrder(data) {
+  return request.post('/orders/refund', data)
+}
+
 export function exportOrders(params) {
   return request.get('/orders/export', {
     params,

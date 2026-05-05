@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.annotation.PostConstruct;
 import java.util.Map;
 
 /**
@@ -34,6 +35,21 @@ public class TitlePushReceiveController {
         this.titleLibraryService = titleLibraryService;
         this.trackMapper = trackMapper;
         this.titleReviewService = titleReviewService;
+    }
+
+    /**
+     * 启动时清理推送上来标题的 push_date（一次性临时程序）
+     */
+    @PostConstruct
+    public void initClearPushDateForPushedUpTitles() {
+        try {
+            int count = titleLibraryMapper.clearPushDateForPushedUpTitles();
+            if (count > 0) {
+                log.info("[init] 已清理 {} 条推送上来标题的 push_date", count);
+            }
+        } catch (Exception e) {
+            log.warn("[init] 清理推送标题 push_date 失败: {}", e.getMessage());
+        }
     }
 
     /**
@@ -113,6 +129,8 @@ public class TitlePushReceiveController {
                     existing.setTrackId(trackId);
                 }
                 existing.setUseCount(existing.getUseCount() != null ? existing.getUseCount() + 1 : 1);
+                // 推送上来的标题清除 pushDate，作为全新可用标题参与匹配
+                existing.setPushDate(null);
                 titleLibraryService.save(existing);
                 log.info("[push-receive] 更新已存在记录: id={}, oldTrackId={}, newTrackId={}", existing.getId(), existing.getTrackId(), trackId);
                 // 同步创建或更新审核记录（推送上来的标题也需要审核）
@@ -126,12 +144,8 @@ public class TitlePushReceiveController {
             newTitle.setDescription((String) payload.get("description"));
             newTitle.setPlatform(platform);
             newTitle.setTrackId(trackId);
-            Object pushDate = payload.get("pushDate");
-            if (pushDate != null && !pushDate.toString().isEmpty()) {
-                try {
-                    newTitle.setPushDate(java.time.LocalDate.parse(pushDate.toString()));
-                } catch (Exception ignored) {}
-            }
+            // 推送上来的标题不携带 pushDate，作为全新可用标题参与匹配
+            newTitle.setPushDate(null);
             Object useCount = payload.get("useCount");
             newTitle.setUseCount(useCount != null ? Integer.parseInt(useCount.toString()) : 0);
             Object isUsed = payload.get("isUsed");

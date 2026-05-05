@@ -71,6 +71,34 @@ public class OrderController {
         return Result.ok(null);
     }
 
+    @PostMapping("/refund")
+    public Result<Void> refund(@RequestBody Map<String, Object> req) {
+        String id = req.get("id") != null ? req.get("id").toString() : "";
+        BigDecimal refundAmount = null;
+        Object amtObj = req.get("refundAmount");
+        if (amtObj instanceof Number) {
+            refundAmount = BigDecimal.valueOf(((Number) amtObj).doubleValue());
+        } else if (amtObj != null) {
+            try {
+                refundAmount = new BigDecimal(amtObj.toString());
+            } catch (Exception e) {
+                return Result.error("退单金额格式错误");
+            }
+        }
+        if (id.isEmpty()) {
+            return Result.error("订单ID不能为空");
+        }
+        if (refundAmount == null) {
+            return Result.error("退单金额不能为空");
+        }
+        try {
+            orderService.refund(id, refundAmount);
+            return Result.ok(null);
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
     @GetMapping("/stats")
     public Result<Map<String, Object>> stats() {
         return Result.ok(orderService.stats());
@@ -87,7 +115,7 @@ public class OrderController {
             List<Order> list = orderService.search(userId, type, planId, dateStart, dateEnd, 1, 10000);
             Workbook wb = new XSSFWorkbook();
             Sheet sheet = wb.createSheet("订单列表");
-            String[] headers = {"用户名", "套餐", "类型", "金额", "备注", "创建时间"};
+            String[] headers = {"用户名", "套餐", "类型", "金额", "退单金额", "备注", "创建时间"};
 
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < headers.length; i++) {
@@ -107,8 +135,9 @@ public class OrderController {
                 row.createCell(1).setCellValue(o.getPlanName() != null ? o.getPlanName() : "");
                 row.createCell(2).setCellValue(typeMap.getOrDefault(o.getType(), o.getType()));
                 row.createCell(3).setCellValue(o.getAmount() != null ? o.getAmount().doubleValue() : 0);
-                row.createCell(4).setCellValue(o.getRemark() != null ? o.getRemark() : "");
-                row.createCell(5).setCellValue(o.getCreatedAt() != null ? o.getCreatedAt().toString() : "");
+                row.createCell(4).setCellValue(o.getRefundAmount() != null ? o.getRefundAmount().doubleValue() : 0);
+                row.createCell(5).setCellValue(o.getRemark() != null ? o.getRemark() : "");
+                row.createCell(6).setCellValue(o.getCreatedAt() != null ? o.getCreatedAt().toString() : "");
             }
 
             for (int i = 0; i < headers.length; i++) {

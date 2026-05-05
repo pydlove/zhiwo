@@ -1075,7 +1075,7 @@ public class TitleLibraryController {
             Set<String> matchedTodayTitleIds = new HashSet<>(titleRecommendationMapper.findMatchedTitleIdsByDate(targetDate));
             Map<String, Long> supplyMap = allTitles.stream()
                     .filter(t -> !matchedTodayTitleIds.contains(t.getId()))
-                    .filter(t -> t.getPushDate() == null || t.getPushDate().equals(targetDate))
+                    .filter(t -> t.getPushDate() == null || !t.getPushDate().isAfter(targetDate))
                     .filter(t -> t.getTrackId() != null && !t.getTrackId().isEmpty())
                     .collect(Collectors.groupingBy(TitleLibrary::getTrackId, Collectors.counting()));
 
@@ -1207,7 +1207,7 @@ public class TitleLibraryController {
             // 在未匹配的标题中，优先匹配 pushDate 等于目标日期的；pushDate 为 null 的也允许匹配
             // 同时过滤掉没有 trackId 的标题（无法匹配任何用户）
             List<TitleLibrary> titles = unmatchedTitles.stream()
-                    .filter(t -> t.getPushDate() == null || t.getPushDate().equals(targetDate))
+                    .filter(t -> t.getPushDate() == null || !t.getPushDate().isAfter(targetDate))
                     .filter(t -> t.getTrackId() != null && !t.getTrackId().isEmpty())
                     .collect(Collectors.toList());
 

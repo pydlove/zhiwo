@@ -22,6 +22,7 @@ const routes = [
   { path: '/open-account', name: 'OpenAccount', component: OpenAccountView, meta: { title: '注册开户 - 知我公众号创作助手' } },
   { path: '/guide/mp-register', name: 'MpRegisterGuide', component: MpRegisterGuideView, meta: { title: '如何注册公众号 - 知我公众号创作助手' } },
   { path: '/customer-dialogue', name: 'CustomerDialogue', component: CustomerDialogueView, meta: { title: '客服话术助手' } },
+  { path: '/income', name: 'IncomeOverview', component: () => import('../views/IncomeOverview.vue'), meta: { title: '收益概览' } },
   { path: '/register', name: 'Register', component: LoginView, meta: { title: '注册 - 知我公众号创作助手' } },
   { path: '/login', name: 'Login', component: LoginView, meta: { title: '登录' } },
   {

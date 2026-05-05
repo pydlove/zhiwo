@@ -45,6 +45,11 @@ online:
     # 内部通信密钥，线上需配置相同值以放行本地请求
     secret: ${ONLINE_API_SECRET:}
 
+# Tab 可见性配置（环境变量控制，逗号分隔）
+app:
+  visible-tabs:
+    process-manage: ${VISIBLE_PROCESS_TABS:pending,approved,pushed,rejected,pushed-up,push-logs}
+
 # Jasypt 配置（生产环境通过环境变量 JASYPT_ENCRYPTOR_PASSWORD 提供密钥）
 jasypt:
   encryptor:

@@ -11,6 +11,7 @@ public class Order {
     private String planName;
     private String type;
     private BigDecimal amount;
+    private BigDecimal refundAmount;
     private String remark;
     private LocalDateTime createdAt;
 
@@ -34,6 +35,9 @@ public class Order {
 
     public BigDecimal getAmount() { return amount; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
+
+    public BigDecimal getRefundAmount() { return refundAmount; }
+    public void setRefundAmount(BigDecimal refundAmount) { this.refundAmount = refundAmount; }
 
     public String getRemark() { return remark; }
     public void setRemark(String remark) { this.remark = remark; }

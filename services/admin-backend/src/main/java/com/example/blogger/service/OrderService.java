@@ -54,6 +54,20 @@ public class OrderService {
         save(order);
     }
 
+    public void refund(String id, BigDecimal refundAmount) {
+        Order order = orderMapper.findById(id);
+        if (order == null) {
+            throw new RuntimeException("订单不存在");
+        }
+        if (refundAmount == null || refundAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("退单金额必须大于0");
+        }
+        if (order.getAmount() != null && refundAmount.compareTo(order.getAmount()) > 0) {
+            throw new RuntimeException("退单金额不能大于订单金额");
+        }
+        orderMapper.refund(id, refundAmount);
+    }
+
     public Map<String, Object> stats() {
         Map<String, Object> result = new HashMap<>();
         result.put("todayAmount", orderMapper.sumToday());
@@ -62,6 +76,9 @@ public class OrderService {
         result.put("totalAmount", orderMapper.sumTotal());
         result.put("orderCount", orderMapper.countAll());
         result.put("byPlan", orderMapper.statsByPlan());
+        result.put("refundToday", orderMapper.sumRefundToday());
+        result.put("refundMonth", orderMapper.sumRefundThisMonth());
+        result.put("refundTotal", orderMapper.sumRefundTotal());
         return result;
     }
 }

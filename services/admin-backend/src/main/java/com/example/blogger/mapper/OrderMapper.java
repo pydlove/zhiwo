@@ -41,21 +41,35 @@ public interface OrderMapper {
     @Select("SELECT * FROM tu_order WHERE id = #{id}")
     Order findById(String id);
 
-    @Insert("INSERT INTO tu_order(id, user_id, user_name, plan_id, plan_name, type, amount, remark, created_at) " +
-            "VALUES(#{id}, #{userId}, #{userName}, #{planId}, #{planName}, #{type}, #{amount}, #{remark}, NOW())")
+    @Insert("INSERT INTO tu_order(id, user_id, user_name, plan_id, plan_name, type, amount, refund_amount, remark, created_at) " +
+            "VALUES(#{id}, #{userId}, #{userName}, #{planId}, #{planName}, #{type}, #{amount}, 0, #{remark}, NOW())")
     int insert(Order order);
 
-    @Select("SELECT COALESCE(SUM(amount), 0) FROM tu_order WHERE DATE(created_at) = CURDATE()")
+    @Update("UPDATE tu_order SET refund_amount = #{refundAmount}, remark = CONCAT(IFNULL(remark, ''), ' [退单]', ' 退单金额:', #{refundAmount}) WHERE id = #{id}")
+    int refund(@Param("id") String id, @Param("refundAmount") BigDecimal refundAmount);
+
+    // 收益统计：只统计未退单的（refund_amount = 0）
+    @Select("SELECT COALESCE(SUM(amount), 0) FROM tu_order WHERE DATE(created_at) = CURDATE() AND (refund_amount IS NULL OR refund_amount = 0)")
     BigDecimal sumToday();
 
-    @Select("SELECT COALESCE(SUM(amount), 0) FROM tu_order WHERE created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')")
+    @Select("SELECT COALESCE(SUM(amount), 0) FROM tu_order WHERE created_at >= DATE_FORMAT(NOW(), '%Y-%m-01') AND (refund_amount IS NULL OR refund_amount = 0)")
     BigDecimal sumThisMonth();
 
-    @Select("SELECT COALESCE(SUM(amount), 0) FROM tu_order WHERE created_at >= DATE_FORMAT(NOW(), '%Y-01-01')")
+    @Select("SELECT COALESCE(SUM(amount), 0) FROM tu_order WHERE created_at >= DATE_FORMAT(NOW(), '%Y-01-01') AND (refund_amount IS NULL OR refund_amount = 0)")
     BigDecimal sumThisYear();
 
     @Select("SELECT COALESCE(SUM(amount), 0) FROM tu_order")
     BigDecimal sumTotal();
+
+    // 退单金额统计
+    @Select("SELECT COALESCE(SUM(refund_amount), 0) FROM tu_order WHERE DATE(created_at) = CURDATE() AND refund_amount > 0")
+    BigDecimal sumRefundToday();
+
+    @Select("SELECT COALESCE(SUM(refund_amount), 0) FROM tu_order WHERE created_at >= DATE_FORMAT(NOW(), '%Y-%m-01') AND refund_amount > 0")
+    BigDecimal sumRefundThisMonth();
+
+    @Select("SELECT COALESCE(SUM(refund_amount), 0) FROM tu_order WHERE refund_amount > 0")
+    BigDecimal sumRefundTotal();
 
     @Select("SELECT COUNT(*) FROM tu_order")
     int countAll();

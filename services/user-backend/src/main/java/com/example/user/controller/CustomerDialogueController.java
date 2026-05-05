@@ -37,10 +37,29 @@ public class CustomerDialogueController {
         if (customerDialogue.getId() == null || customerDialogue.getId().isEmpty()) {
             customerDialogue.setId(UUID.randomUUID().toString().replace("-", ""));
         }
-        if (customerDialogue.getSortOrder() == null) {
-            customerDialogue.setSortOrder(0);
+        if (customerDialogue.getSortOrder() == null || customerDialogue.getSortOrder() == 0) {
+            int nextSort = getNextSortOrder(customerDialogue.getCategory());
+            customerDialogue.setSortOrder(nextSort);
         }
         customerDialogueMapper.insert(customerDialogue);
         return Result.ok(null);
+    }
+
+    private int getNextSortOrder(String category) {
+        if (category == null || category.isEmpty()) {
+            return 0;
+        }
+        List<CustomerDialogue> list = customerDialogueMapper.findByCategory(category);
+        if (list == null || list.isEmpty()) {
+            return 0;
+        }
+        int max = 0;
+        for (CustomerDialogue item : list) {
+            int so = item.getSortOrder() != null ? item.getSortOrder() : 0;
+            if (so > max) {
+                max = so;
+            }
+        }
+        return max + 1;
     }
 }

@@ -289,4 +289,11 @@ public interface TitleLibraryMapper {
     /** 临时：删除 track_id 指向已不存在的赛道的脏数据标题（逻辑删除） */
     @Update("UPDATE tu_title_library t SET t.is_deleted = 1 WHERE t.is_deleted = 0 AND t.track_id IS NOT NULL AND t.track_id != '' AND NOT EXISTS (SELECT 1 FROM tu_track tr WHERE tr.id = t.track_id AND tr.is_deleted = 0)")
     int deleteOrphanTitles();
+
+    /** 清除推送上来标题的 push_date，让它们作为全新可用标题参与匹配 */
+    @Update("UPDATE tu_title_library tl " +
+            "INNER JOIN tu_title_review tr ON tl.id = tr.title_library_id " +
+            "SET tl.push_date = NULL " +
+            "WHERE tr.source = 'pushed_up' AND tl.push_date IS NOT NULL")
+    int clearPushDateForPushedUpTitles();
 }

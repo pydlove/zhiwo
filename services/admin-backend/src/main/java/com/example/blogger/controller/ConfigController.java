@@ -1,5 +1,6 @@
 package com.example.blogger.controller;
 
+import com.example.blogger.config.AppProperties;
 import com.example.blogger.entity.Config;
 import com.example.blogger.entity.Result;
 import com.example.blogger.mapper.ConfigMapper;
@@ -27,10 +28,12 @@ import java.util.Set;
 public class ConfigController {
     private final ConfigMapper configMapper;
     private final DataSource dataSource;
+    private final AppProperties appProperties;
 
-    public ConfigController(ConfigMapper configMapper, DataSource dataSource) {
+    public ConfigController(ConfigMapper configMapper, DataSource dataSource, AppProperties appProperties) {
         this.configMapper = configMapper;
         this.dataSource = dataSource;
+        this.appProperties = appProperties;
     }
 
     @GetMapping
@@ -41,6 +44,13 @@ public class ConfigController {
             map.put(c.getConfigKey(), c.getConfigValue());
         }
         return Result.ok(map);
+    }
+
+    @GetMapping("/visible-tabs")
+    public Result<Map<String, Object>> visibleTabs() {
+        Map<String, Object> result = new HashMap<>();
+        result.put("processManage", appProperties.getProcessManageVisibleTabs());
+        return Result.ok(result);
     }
 
     @PostMapping

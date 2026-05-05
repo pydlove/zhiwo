@@ -24,7 +24,17 @@ public interface TrackMapper {
     @Insert("INSERT INTO tu_track(id, name, icon, sort_order, preview_bloggers, intro, platforms, cover_json, is_hot) VALUES(#{id}, #{name}, #{icon}, #{sortOrder}, #{previewBloggers}, #{intro}, #{platforms}, #{coverJson}, #{isHot})")
     int insert(Track track);
 
-    @Update("UPDATE tu_track SET name=#{name}, icon=#{icon}, sort_order=#{sortOrder}, preview_bloggers=#{previewBloggers}, intro=#{intro}, platforms=#{platforms}, cover_json=#{coverJson}, is_hot=#{isHot}, is_deleted=#{isDeleted} WHERE id=#{id}")
+    @Update("<script>UPDATE tu_track <set>" +
+            "<if test='name != null'>name=#{name},</if>" +
+            "<if test='icon != null'>icon=#{icon},</if>" +
+            "<if test='sortOrder != null'>sort_order=#{sortOrder},</if>" +
+            "<if test='previewBloggers != null'>preview_bloggers=#{previewBloggers},</if>" +
+            "<if test='intro != null'>intro=#{intro},</if>" +
+            "<if test='platforms != null'>platforms=#{platforms},</if>" +
+            "<if test='coverJson != null'>cover_json=#{coverJson},</if>" +
+            "<if test='isHot != null'>is_hot=#{isHot},</if>" +
+            "<if test='isDeleted != null'>is_deleted=#{isDeleted},</if>" +
+            "</set> WHERE id=#{id}</script>")
     int update(Track track);
 
     @Update("UPDATE tu_track SET is_deleted = 1 WHERE id = #{id}")

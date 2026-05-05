@@ -23,6 +23,12 @@ export function importTitles(excelFile) {
   })
 }
 
+export function matchCheck(date) {
+  const params = {}
+  if (date) params.date = date
+  return request.get('/title-library/match-check', { params })
+}
+
 export function matchTodayTitles(date) {
   const params = {}
   if (date) params.date = date
@@ -166,4 +172,14 @@ export function markTitleUsed(id) {
 
 export function batchChangeTrack(titleIds, trackId) {
   return request.post('/title-library/batch-change-track', { titleIds, trackId })
+}
+
+export function clearRecommendationsByDate(date) {
+  const params = {}
+  if (date) params.date = date
+  return request.post('/title-library/clear-recommendations', null, { params })
+}
+
+export function getUserHistory(userId) {
+  return request.get('/title-library/user-history/' + userId)
 }

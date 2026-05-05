@@ -6,7 +6,7 @@ import {
   Drawer, message, Row, Col, Statistic, Spin, Empty, Pagination
 } from 'ant-design-vue'
 import { SearchOutlined } from '@ant-design/icons-vue'
-import { getPushOverview, batchPushEmail } from '../api/titleLibrary.js'
+import { getPushOverview, batchPushEmail, getUserHistory } from '../api/titleLibrary.js'
 
 const STORAGE_KEY = 'push-overview-filters'
 
@@ -154,10 +154,16 @@ onMounted(() => {
 
 const columns = [
   {
-    title: '用户名',
-    dataIndex: 'username',
+    title: '用户',
+    key: 'userInfo',
     ellipsis: true,
-    width: 120,
+    width: 140,
+    customRender: ({ record }) => {
+      return h('div', { style: 'display: flex; flex-direction: column; line-height: 1.4;' }, [
+        h('span', { style: 'font-weight: 500; color: #262626;' }, record.username || '-'),
+        record.wxName ? h('span', { style: 'font-size: 12px; color: #8c8c8c;' }, record.wxName) : null,
+      ].filter(Boolean))
+    },
   },
   {
     title: '邮箱',
@@ -236,7 +242,7 @@ const columns = [
           size: 'small',
           onClick: () => openDrawer(record),
         }, () => '查看详情'),
-        !record.isEmailPushed && record.tracksWithPost > 0
+        record.tracksUnpushed > 0
           ? h(Button, {
               type: 'primary',
               size: 'small',
@@ -251,10 +257,22 @@ const columns = [
 
 const drawerOpen = ref(false)
 const drawerRecord = ref(null)
+const historyList = ref([])
+const historyLoading = ref(false)
 
-function openDrawer(record) {
+async function openDrawer(record) {
   drawerRecord.value = record
   drawerOpen.value = true
+  historyLoading.value = true
+  historyList.value = []
+  try {
+    const list = await getUserHistory(record.userId)
+    historyList.value = list || []
+  } catch (e) {
+    message.error('加载历史绑定失败')
+  } finally {
+    historyLoading.value = false
+  }
 }
 
 const pushLoadingId = ref(null)
@@ -405,6 +423,8 @@ async function handleBatchPush() {
                 <span style="font-weight: 500; min-width: 100px;">{{ track.trackName }}</span>
                 <Tag v-if="track.hasPost" color="success">已生成</Tag>
                 <Tag v-else color="error">未生成</Tag>
+                <Tag v-if="track.hasPost && track.isPushed" color="blue">已推送</Tag>
+                <Tag v-if="track.hasPost && !track.isPushed" color="warning">待推送</Tag>
                 <span v-if="track.postTitle" style="color: #666; font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                   {{ track.postTitle }}
                 </span>
@@ -486,6 +506,29 @@ async function handleBatchPush() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div>
+        <div style="font-size: 12px; color: #999; margin-bottom: 8px;">
+          历史绑定标题（共 {{ historyList.length }} 条）
+        </div>
+        <Spin :spinning="historyLoading">
+          <div v-if="historyList.length > 0" style="display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto;">
+            <div
+              v-for="item in historyList"
+              :key="item.recommendDate + '-' + item.titleName"
+              style="display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px;"
+            >
+              <span style="font-size: 12px; color: #389e0d; min-width: 90px; flex-shrink: 0;">{{ item.recommendDate }}</span>
+              <span style="color: #333; font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="item.titleName">
+                {{ item.titleName }}
+              </span>
+            </div>
+          </div>
+          <div v-else style="color: #999; font-size: 13px; padding: 12px; text-align: center;">
+            暂无历史绑定记录
+          </div>
+        </Spin>
       </div>
     </div>
   </Drawer>

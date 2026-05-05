@@ -113,13 +113,13 @@ public class TitleLibraryService {
         return result;
     }
 
-    public List<TitleLibrary> search(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate, String isUsed, String userType) {
-        return titleLibraryMapper.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType);
+    public List<TitleLibrary> search(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate, String isUsed, String userType, String sortField, String sortOrder) {
+        return titleLibraryMapper.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, sortField, sortOrder);
     }
 
-    public Map<String, Object> searchPage(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate, String isUsed, String userType, int page, int pageSize) {
+    public Map<String, Object> searchPage(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate, String isUsed, String userType, int page, int pageSize, String sortField, String sortOrder) {
         int offset = (page - 1) * pageSize;
-        List<TitleLibrary> list = titleLibraryMapper.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, offset, pageSize);
+        List<TitleLibrary> list = titleLibraryMapper.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, offset, pageSize, sortField, sortOrder);
         int total = titleLibraryMapper.countSearch(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType);
         Map<String, Object> result = new HashMap<>();
         result.put("list", list);
@@ -132,10 +132,10 @@ public class TitleLibraryService {
     }
 
     public void save(TitleLibrary titleLibrary) {
-        if (titleLibrary.getIsUsed() == null) {
-            titleLibrary.setIsUsed(0);
-        }
         if (titleLibrary.getId() == null || titleLibrary.getId().isEmpty()) {
+            if (titleLibrary.getIsUsed() == null) {
+                titleLibrary.setIsUsed(0);
+            }
             titleLibrary.setId(UUID.randomUUID().toString().replace("-", ""));
             titleLibrary.setUseCount(0);
             titleLibraryMapper.insert(titleLibrary);
@@ -282,6 +282,7 @@ public class TitleLibraryService {
                 Map<String, Object> u = new HashMap<>();
                 u.put("userId", userId);
                 u.put("username", row.get("username"));
+                u.put("wxName", row.get("wxName"));
                 u.put("email", row.get("email"));
                 u.put("userType", row.get("userType"));
                 u.put("tracks", new ArrayList<Map<String, Object>>());
@@ -333,11 +334,32 @@ public class TitleLibraryService {
             user.put("tracksWithTitle", tracks.stream().filter(t -> t.get("titleName") != null).count());
         }
 
-        // Query email push status for each user
+        // Query email push status for each user (per title)
         for (Map<String, Object> user : userMap.values()) {
             String userId = (String) user.get("userId");
-            int pushCount = emailPushLogMapper.countByUserAndDate(userId, date);
-            user.put("isEmailPushed", pushCount > 0);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> tracks = (List<Map<String, Object>>) user.get("tracks");
+            List<String> pushedTitleIds = emailPushLogMapper.findPushedTitleIdsByUserAndDate(userId, date);
+            Set<String> pushedSet = new HashSet<>(pushedTitleIds != null ? pushedTitleIds : new ArrayList<>());
+
+            int tracksPushed = 0;
+            int tracksUnpushed = 0;
+            for (Map<String, Object> track : tracks) {
+                String tlibId = track.get("titleLibraryId") != null ? track.get("titleLibraryId").toString() : null;
+                boolean hasPost = Boolean.TRUE.equals(track.get("hasPost"));
+                boolean isPushed = tlibId != null && !tlibId.isEmpty() && pushedSet.contains(tlibId);
+                track.put("isPushed", isPushed);
+                if (hasPost) {
+                    if (isPushed) {
+                        tracksPushed++;
+                    } else {
+                        tracksUnpushed++;
+                    }
+                }
+            }
+            user.put("tracksPushed", tracksPushed);
+            user.put("tracksUnpushed", tracksUnpushed);
+            user.put("isEmailPushed", tracksUnpushed == 0 && tracksPushed > 0);
         }
 
         List<Map<String, Object>> users = new ArrayList<>(userMap.values());

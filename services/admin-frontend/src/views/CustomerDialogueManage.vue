@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, h, computed, watch } from 'vue'
 import { Card, Table, Button, Modal, Form, Input, message, Image, Space, Tooltip, Tabs } from 'ant-design-vue'
-import { CopyOutlined, EditOutlined, DeleteOutlined, PlusOutlined, PictureOutlined } from '@ant-design/icons-vue'
+import { CopyOutlined, EditOutlined, DeleteOutlined, PlusOutlined, PictureOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons-vue'
 import {
   listCustomerDialogues,
   listCategories,
@@ -186,6 +186,53 @@ function handleCopyImageUrl(url) {
   handleCopy(fullUrl, '图片地址')
 }
 
+async function handleExport() {
+  try {
+    const res = await fetch('/api/customer-dialogues/export')
+    if (!res.ok) throw new Error('导出失败')
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'customer_dialogues_' + new Date().toISOString().slice(0, 10) + '.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    message.success('导出成功')
+  } catch (e) {
+    message.error('导出失败')
+  }
+}
+
+async function handleImport(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await request.post('/customer-dialogues/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    const { success = 0, failed = 0, errors = [] } = res
+    if (failed === 0) {
+      message.success(`导入成功，共 ${success} 条`)
+    } else {
+      Modal.warning({
+        title: `导入完成：成功 ${success} 条，失败 ${failed} 条`,
+        content: h('div', { style: 'max-height: 300px; overflow-y: auto;' },
+          errors.map(err => h('div', { style: 'margin-bottom: 4px; font-size: 13px;' }, err))
+        ),
+      })
+    }
+    loadData()
+  } catch (e) {
+    message.error(e.message || '导入失败')
+  } finally {
+    e.target.value = ''
+  }
+}
+
 const columns = [
   {
     title: '排序',
@@ -294,6 +341,18 @@ onMounted(loadData)
       <Button type="primary" @click="() => openModal(null)">
         <PlusOutlined /> 新增对话
       </Button>
+      <Button @click="handleExport">
+        <DownloadOutlined /> 导出
+      </Button>
+      <Button>
+        <UploadOutlined /> 导入
+        <input
+          type="file"
+          accept=".xlsx,.xls"
+          style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;"
+          @change="handleImport"
+        />
+      </Button>
     </div>
 
     <Tabs v-model:activeKey="activeCategory" type="card">
@@ -358,33 +417,24 @@ onMounted(loadData)
         />
       </Form.Item>
 
-      <Form.Item label="图片">
-        <div v-if="form.imageUrl" style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+      <Form.Item label="图片链接">
+        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+          <Input
+            v-model:value="form.imageUrl"
+            placeholder="粘贴图片链接地址，如 https://example.com/img.jpg"
+            style="max-width: 420px;"
+          />
+          <Button v-if="form.imageUrl" size="small" @click="handleRemoveImage">移除</Button>
+        </div>
+        <div v-if="form.imageUrl" style="margin-bottom: 8px;">
           <Image
-            :src="form.imageUrl.startsWith('http') ? form.imageUrl : (form.imageUrl)"
+            :src="form.imageUrl"
             :width="100"
             :height="100"
             style="object-fit: cover; border-radius: 4px;"
           />
-          <Space>
-            <Button size="small" @click="handleRemoveImage">移除图片</Button>
-            <Button size="small" @click="handleCopyImageUrl(form.imageUrl)">
-              <CopyOutlined /> 复制图片地址
-            </Button>
-          </Space>
         </div>
-        <div v-else>
-          <Button :loading="uploadLoading">
-            <PictureOutlined /> 上传图片
-            <input
-              type="file"
-              accept="image/*"
-              style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;"
-              @change="handleUploadImage"
-            />
-          </Button>
-          <span style="color: #999; font-size: 12px; margin-left: 8px;">支持 JPG、PNG、GIF 格式</span>
-        </div>
+        <div style="font-size: 12px; color: #8c8c8c;">直接粘贴图片 URL 即可，无需上传</div>
       </Form.Item>
     </Form>
   </Modal>

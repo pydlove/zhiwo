@@ -96,4 +96,28 @@ public interface TitleReviewMapper {
             "WHERE tr.review_status COLLATE utf8mb4_0900_ai_ci = 'approved' AND tr.push_status COLLATE utf8mb4_0900_ai_ci = 'unpushed' " +
             "ORDER BY tr.created_at DESC")
     List<TitleReview> findApprovedUnpushed();
+
+    @Select("SELECT tr.*, t.title, t.description, t.platform, t.track_id as trackId, trk.name as trackName, t.use_count as useCount, t.is_used as isUsed " +
+            "FROM tu_title_review tr " +
+            "INNER JOIN tu_title_library t ON tr.title_library_id COLLATE utf8mb4_0900_ai_ci = t.id COLLATE utf8mb4_0900_ai_ci AND t.is_deleted = 0 " +
+            "LEFT JOIN tu_track trk ON t.track_id COLLATE utf8mb4_0900_ai_ci = trk.id COLLATE utf8mb4_0900_ai_ci AND trk.is_deleted = 0 " +
+            "WHERE tr.source = #{source} " +
+            "AND (#{platform} IS NULL OR #{platform} = '' OR t.platform = #{platform}) " +
+            "AND (#{trackId} IS NULL OR #{trackId} = '' OR t.track_id = #{trackId}) " +
+            "AND (#{keyword} IS NULL OR #{keyword} = '' OR t.title LIKE CONCAT('%', #{keyword}, '%')) " +
+            "ORDER BY tr.created_at DESC " +
+            "LIMIT #{limit} OFFSET #{offset}")
+    List<TitleReview> findBySource(@Param("source") String source, @Param("platform") String platform,
+                                    @Param("trackId") String trackId, @Param("keyword") String keyword,
+                                    @Param("offset") int offset, @Param("limit") int limit);
+
+    @Select("SELECT COUNT(*) " +
+            "FROM tu_title_review tr " +
+            "INNER JOIN tu_title_library t ON tr.title_library_id COLLATE utf8mb4_0900_ai_ci = t.id COLLATE utf8mb4_0900_ai_ci AND t.is_deleted = 0 " +
+            "WHERE tr.source = #{source} " +
+            "AND (#{platform} IS NULL OR #{platform} = '' OR t.platform = #{platform}) " +
+            "AND (#{trackId} IS NULL OR #{trackId} = '' OR t.track_id = #{trackId}) " +
+            "AND (#{keyword} IS NULL OR #{keyword} = '' OR t.title LIKE CONCAT('%', #{keyword}, '%'))")
+    int countBySource(@Param("source") String source, @Param("platform") String platform,
+                      @Param("trackId") String trackId, @Param("keyword") String keyword);
 }

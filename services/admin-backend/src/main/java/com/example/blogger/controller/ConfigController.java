@@ -13,10 +13,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 
 @RestController
@@ -50,6 +52,65 @@ public class ConfigController {
             configMapper.save(c);
         }
         return Result.ok(null);
+    }
+
+    @PostMapping("/open-account-link")
+    public Result<Map<String, String>> generateOpenAccountLink(@RequestBody Map<String, Object> req) {
+        String platform = req.get("platform") != null ? req.get("platform").toString() : "";
+        Integer count = 3;
+        Object countObj = req.get("count");
+        if (countObj != null) {
+            if (countObj instanceof Number) {
+                count = ((Number) countObj).intValue();
+            } else {
+                try {
+                    count = Integer.parseInt(countObj.toString());
+                } catch (NumberFormatException e) {
+                    count = 3;
+                }
+            }
+        }
+        String baseUrl = req.get("baseUrl") != null ? req.get("baseUrl").toString() : "http://www.mmshuo.tech";
+        String membershipPlanId = req.get("membershipPlanId") != null ? req.get("membershipPlanId").toString() : "";
+
+        if (count == null || count < 1) count = 3;
+        if (count > 20) count = 20;
+
+        String code = generateShortCode(8);
+        Map<String, Object> data = new HashMap<>();
+        data.put("platform", platform);
+        data.put("count", count);
+        if (membershipPlanId != null && !membershipPlanId.isEmpty()) {
+            data.put("membershipPlanId", membershipPlanId);
+        }
+        data.put("createdAt", LocalDateTime.now().toString());
+
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            String json = mapper.writeValueAsString(data);
+            Config c = new Config();
+            c.setConfigKey("oa_link_" + code);
+            c.setConfigValue(json);
+            configMapper.save(c);
+        } catch (Exception e) {
+            return Result.error("生成链接失败: " + e.getMessage());
+        }
+
+        String url = baseUrl + "/open-account?c=" + code;
+        Map<String, String> result = new HashMap<>();
+        result.put("url", url);
+        result.put("code", code);
+        return Result.ok(result);
+    }
+
+    private String generateShortCode(int length) {
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        StringBuilder sb = new StringBuilder();
+        Random random = new Random();
+        for (int i = 0; i < length; i++) {
+            sb.append(chars.charAt(random.nextInt(chars.length())));
+        }
+        return sb.toString();
     }
 
     @PostMapping("/backup")

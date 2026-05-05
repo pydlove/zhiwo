@@ -12,10 +12,16 @@ import TitleSelectView from '../views/TitleSelectView.vue'
 import ProfileView from '../views/ProfileView.vue'
 import LandingView from '../views/LandingView.vue'
 import AffiliateView from '../views/AffiliateView.vue'
+import OpenAccountView from '../views/OpenAccountView.vue'
+import MpRegisterGuideView from '../views/MpRegisterGuideView.vue'
+import CustomerDialogueView from '../views/CustomerDialogueView.vue'
 
 const routes = [
   { path: '/', name: 'Landing', component: LandingView, meta: { title: '知我公众号创作助手' } },
   { path: '/affiliate', name: 'Affiliate', component: AffiliateView, meta: { title: '分销活动 - 知我公众号创作助手' } },
+  { path: '/open-account', name: 'OpenAccount', component: OpenAccountView, meta: { title: '注册开户 - 知我公众号创作助手' } },
+  { path: '/guide/mp-register', name: 'MpRegisterGuide', component: MpRegisterGuideView, meta: { title: '如何注册公众号 - 知我公众号创作助手' } },
+  { path: '/customer-dialogue', name: 'CustomerDialogue', component: CustomerDialogueView, meta: { title: '客服话术助手' } },
   { path: '/register', name: 'Register', component: LoginView, meta: { title: '注册 - 知我公众号创作助手' } },
   { path: '/login', name: 'Login', component: LoginView, meta: { title: '登录' } },
   {

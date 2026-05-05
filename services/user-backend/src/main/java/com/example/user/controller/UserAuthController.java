@@ -3,8 +3,11 @@ package com.example.user.controller;
 import com.example.user.entity.MembershipPlan;
 import com.example.user.entity.Result;
 import com.example.user.entity.User;
+import com.example.user.entity.UserTrack;
 import com.example.user.mapper.MembershipPlanMapper;
+import com.example.user.mapper.StyleMapper;
 import com.example.user.mapper.UserMapper;
+import com.example.user.mapper.UserTrackMapper;
 import com.example.user.service.UserService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
@@ -12,7 +15,9 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -22,12 +27,16 @@ public class UserAuthController {
     private final PasswordEncoder passwordEncoder;
     private final MembershipPlanMapper membershipPlanMapper;
     private final UserService userService;
+    private final UserTrackMapper userTrackMapper;
+    private final StyleMapper styleMapper;
 
-    public UserAuthController(UserMapper userMapper, PasswordEncoder passwordEncoder, MembershipPlanMapper membershipPlanMapper, UserService userService) {
+    public UserAuthController(UserMapper userMapper, PasswordEncoder passwordEncoder, MembershipPlanMapper membershipPlanMapper, UserService userService, UserTrackMapper userTrackMapper, StyleMapper styleMapper) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.membershipPlanMapper = membershipPlanMapper;
         this.userService = userService;
+        this.userTrackMapper = userTrackMapper;
+        this.styleMapper = styleMapper;
     }
 
     @PostMapping("/login")
@@ -118,6 +127,94 @@ public class UserAuthController {
         Map<String, Object> data = new HashMap<>();
         data.put("token", "user-token-" + user.getId());
         data.put("user", user);
+        return Result.ok(data);
+    }
+
+    @PostMapping("/open-account")
+    public Result<Map<String, Object>> openAccount(@RequestBody Map<String, Object> req) {
+        String nickName = req.get("nickName") != null ? req.get("nickName").toString().trim() : "";
+        String wxName = req.get("wxName") != null ? req.get("wxName").toString().trim() : "";
+        String email = req.get("email") != null ? req.get("email").toString().trim() : "";
+        String membershipPlanId = req.get("membershipPlanId") != null ? req.get("membershipPlanId").toString().trim() : "";
+        @SuppressWarnings("unchecked")
+        List<String> trackIds = req.get("trackIds") != null ? (List<String>) req.get("trackIds") : null;
+
+        if (nickName.isEmpty()) {
+            return Result.error("微信名称不能为空");
+        }
+        if (wxName.isEmpty()) {
+            return Result.error("公众号名称不能为空");
+        }
+        if (email.isEmpty()) {
+            return Result.error("邮箱不能为空");
+        }
+        if (trackIds == null || trackIds.isEmpty()) {
+            return Result.error("请至少选择一个订阅赛道");
+        }
+
+        // 用户名和微信名称都对应微信名称
+        String username = nickName;
+
+        User existing = userMapper.findByUsername(username);
+        if (existing != null) {
+            return Result.error("该微信名称已被注册");
+        }
+
+        String defaultPassword = "Abc123456";
+
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword(passwordEncoder.encode(defaultPassword));
+        user.setNickName(nickName);
+        user.setWxName(wxName);
+        user.setEmail(email);
+        user.setStatus(0);
+        user.setUserType(1);
+        user.setAiLimit(50);
+        user.setTrackLimit(trackIds.size());
+        user.setPlatformLimit("");
+        user.setExpireDate(LocalDate.now().plusYears(1));
+        user.setCanSetEmail(0);
+        user.setEmailReceive(1);
+
+        List<com.example.user.entity.Style> styles = styleMapper.findAllEnabled();
+        if (styles != null && !styles.isEmpty()) {
+            user.setTemplate(styles.get(new java.util.Random().nextInt(styles.size())).getName());
+        } else {
+            user.setTemplate("基础风格");
+        }
+
+        if (membershipPlanId != null && !membershipPlanId.isEmpty()) {
+            user.setMembershipPlanId(membershipPlanId);
+            MembershipPlan plan = membershipPlanMapper.findById(membershipPlanId);
+            if (plan != null && plan.getExpireDays() != null && plan.getExpireDays() > 0) {
+                user.setExpireDate(LocalDate.now().plusDays(plan.getExpireDays()));
+            } else {
+                user.setExpireDate(LocalDate.now().plusYears(1));
+            }
+        } else {
+            user.setExpireDate(LocalDate.now().plusYears(1));
+        }
+
+        user.setCreatedAt(LocalDateTime.now());
+        user.setUpdatedAt(LocalDateTime.now());
+
+        userService.save(user);
+
+        // Save track subscriptions
+        for (String trackId : trackIds) {
+            if (trackId != null && !trackId.isEmpty()) {
+                UserTrack ut = new UserTrack();
+                ut.setUserId(user.getId());
+                ut.setTrackId(trackId);
+                userTrackMapper.insert(ut);
+            }
+        }
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("userId", user.getId());
+        data.put("username", user.getUsername());
+        data.put("password", defaultPassword);
         return Result.ok(data);
     }
 

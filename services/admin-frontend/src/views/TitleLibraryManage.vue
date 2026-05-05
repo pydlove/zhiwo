@@ -1,8 +1,8 @@
 <script setup>
 import { ref, onMounted, computed, h, nextTick, watch } from 'vue'
 import dayjs from 'dayjs'
-import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Descriptions, DatePicker, Tabs } from 'ant-design-vue'
-import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, unbindRecommendation, batchUnbindRecommendations, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed, batchChangeTrack } from '../api/titleLibrary.js'
+import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Descriptions, DatePicker, Tabs, Spin } from 'ant-design-vue'
+import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, matchCheck, unbindRecommendation, batchUnbindRecommendations, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed, batchChangeTrack, clearRecommendationsByDate } from '../api/titleLibrary.js'
 import { listTracks } from '../api/track.js'
 import { listUsers } from '../api/user.js'
 import { renderAsync } from 'docx-preview'
@@ -253,6 +253,27 @@ const mainTabs = [
   { key: 'trial', label: '试用' },
 ]
 
+// 弹窗中赛道选项：按平台排序，显示为"平台-赛道"
+const sortedTrackOptions = computed(() => {
+  const platformOrder = platformOptions.map(p => p.value)
+  const list = [...tracks.value].filter(t => t.name)
+  list.sort((a, b) => {
+    const pa = a.platforms ? a.platforms.split(/[,，\s]+/).filter(Boolean)[0] : ''
+    const pb = b.platforms ? b.platforms.split(/[,，\s]+/).filter(Boolean)[0] : ''
+    const ia = platformOrder.indexOf(pa)
+    const ib = platformOrder.indexOf(pb)
+    if (ia !== ib) return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib)
+    return a.name.localeCompare(b.name)
+  })
+  return list.map(t => {
+    // 如果是当前选中的赛道且 form.platform 有值，优先用标题实际的平台（编辑时保持一致）
+    const displayPlatform = (form.value.trackId === t.id && form.value.platform)
+      ? form.value.platform
+      : (t.platforms ? t.platforms.split(/[,，\s]+/).filter(Boolean)[0] : '')
+    return { ...t, displayLabel: displayPlatform ? `${displayPlatform} - ${t.name}` : t.name }
+  })
+})
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
 
 const columns = [
@@ -295,8 +316,10 @@ const columns = [
   {
     title: '关联用户',
     key: 'userInfo',
+    dataIndex: 'recommendUserName',
     ellipsis: true,
     width: 150,
+    sorter: true,
     customRender: ({ record }) => {
       if (!record.recommendUserName) return h('span', { style: 'color: #999;' }, '未匹配')
       const text = record.recommendUserTemplate
@@ -337,6 +360,8 @@ const columns = [
 const currentPage = ref(1)
 const pageSize = ref(10)
 const totalCount = ref(0)
+const sortField = ref('')
+const sortOrder = ref('')
 
 const paginatedData = computed(() => {
   // 服务端已分页，直接使用
@@ -359,6 +384,10 @@ async function loadData() {
     if (userTypeMap[activeTab.value]) params.userType = userTypeMap[activeTab.value]
     params.page = currentPage.value
     params.pageSize = pageSize.value
+    if (sortField.value) {
+      params.sortField = sortField.value
+      params.sortOrder = sortOrder.value
+    }
 
     // 1. 先加载核心数据（标题列表），拿到立刻渲染表格
     const result = await listTitles(params)
@@ -405,6 +434,18 @@ function handlePageChange() {
   loadData()
 }
 
+function handleTableChange(pagination, filters, sorter) {
+  if (sorter && sorter.field) {
+    sortField.value = sorter.field === 'userInfo' ? 'recommendUserName' : sorter.field
+    sortOrder.value = sorter.order || ''
+  } else {
+    sortField.value = ''
+    sortOrder.value = ''
+  }
+  currentPage.value = 1
+  loadData()
+}
+
 function handleReset() {
   searchKeyword.value = ''
   searchPlatform.value = ''
@@ -422,6 +463,22 @@ const modalOpen = ref(false)
 const modalTitle = ref('新增标题')
 const form = ref({ title: '', description: '', pushDate: null, platform: '', trackId: '', recommendUserId: '', recommendUserName: '' })
 const saving = ref(false)
+
+function syncPlatformFromTrack() {
+  if (!form.value.trackId) {
+    form.value.platform = ''
+    return
+  }
+  const track = tracks.value.find(t => t.id === form.value.trackId)
+  if (track && track.platforms) {
+    const firstPlatform = track.platforms.split(/[,，\s]+/).filter(Boolean)[0]
+    form.value.platform = firstPlatform || ''
+  }
+}
+
+function handleTrackChange() {
+  syncPlatformFromTrack()
+}
 
 function handleAdd() {
   modalTitle.value = '新增标题'
@@ -598,10 +655,28 @@ function handleDelete(record) {
 const matching = ref(false)
 const matchModalOpen = ref(false)
 const matchForm = ref({ date: dayjs() })
+const matchCheckData = ref(null)
+const matchCheckLoading = ref(false)
+const clearing = ref(false)
 
-function openMatchModal() {
+async function runMatchCheck() {
+  matchCheckData.value = null
+  matchCheckLoading.value = true
+  try {
+    const dateStr = matchForm.value.date ? matchForm.value.date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD')
+    const result = await matchCheck(dateStr)
+    matchCheckData.value = result
+  } catch (e) {
+    message.error('匹配检测失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
+  } finally {
+    matchCheckLoading.value = false
+  }
+}
+
+async function openMatchModal() {
   matchForm.value.date = dayjs()
   matchModalOpen.value = true
+  await runMatchCheck()
 }
 
 async function handleMatchConfirm() {
@@ -609,13 +684,42 @@ async function handleMatchConfirm() {
   try {
     const dateStr = matchForm.value.date ? matchForm.value.date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD')
     const result = await matchTodayTitles(dateStr)
-    message.success(`匹配完成：成功匹配 ${result.matched} 条，跳过 ${result.skipped} 条`)
+    const msg = `匹配完成：成功匹配 ${result.matched} 条，跳过 ${result.skipped} 条` +
+      (result.existingCombosCount ? `（当天已有 ${result.existingCombosCount} 个组合）` : '')
+    message.success(msg)
+    // 如果匹配数量明显少于预期，在控制台输出详细信息供诊断
+    if (result.matchedTitleIds && result.matchedTitleIds.length > 0) {
+      console.log('[matchToday] 匹配成功的标题ID:', result.matchedTitleIds)
+    }
+    if (result.skipDetails && result.skipDetails.length > 0) {
+      console.log('[matchToday] 跳过的标题详情:', result.skipDetails)
+    }
     matchModalOpen.value = false
+    matchCheckData.value = null
     loadData()
   } catch (e) {
     message.error('匹配失败: ' + (e?.message || '未知错误'))
   } finally {
     matching.value = false
+  }
+}
+
+async function handleClearAndMatch() {
+  clearing.value = true
+  try {
+    const dateStr = matchForm.value.date ? matchForm.value.date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD')
+    const clearResult = await clearRecommendationsByDate(dateStr)
+    message.success(`已清理 ${clearResult.deletedRecommendations || 0} 条推荐记录，${clearResult.clearedTitles || 0} 个标题已重置`)
+    // 清理后重新检测
+    matchCheckLoading.value = true
+    matchCheckData.value = null
+    const result = await matchCheck(dateStr)
+    matchCheckData.value = result
+  } catch (e) {
+    message.error('清理失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
+  } finally {
+    clearing.value = false
+    matchCheckLoading.value = false
   }
 }
 
@@ -1289,7 +1393,7 @@ onMounted(() => {
     <Tabs.TabPane v-for="t in mainTabs" :key="t.key" :tab="t.label">
       <div style="display: flex; gap: 16px;">
         <!-- 左侧主内容 -->
-        <div style="width: 60%; min-width: 0;">
+        <div style="width: 100%; min-width: 0;">
           <Card :title="'标题库 — ' + t.label" :bordered="false">
             <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
               <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
@@ -1318,7 +1422,7 @@ onMounted(() => {
               <Button type="primary" @click="handleAdd">+ 新增标题</Button>
             </div>
 
-            <Table :columns="columns" :data-source="paginatedData" :pagination="false" row-key="id" :loading="loading" :row-selection="rowSelection" :scroll="{ x: 'max-content' }" />
+            <Table :columns="columns" :data-source="paginatedData" :pagination="false" row-key="id" :loading="loading" :row-selection="rowSelection" :scroll="{ x: 'max-content' }" @change="handleTableChange" />
 
             <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
               <Pagination
@@ -1335,7 +1439,7 @@ onMounted(() => {
         </div>
 
         <!-- 右侧用户面板 -->
-        <div style="width: 40%; flex-shrink: 0;">
+        <div v-if="false" style="width: 40%; flex-shrink: 0;">
           <Card :bordered="false" style="height: 100%;">
             <div style="margin-bottom: 16px;">
               <div style="font-size: 15px; font-weight: 600; margin-bottom: 12px;">用户推荐/推送监控</div>
@@ -1488,15 +1592,69 @@ onMounted(() => {
     >
       <Form.Item label="推荐日期" required
       >
-        <DatePicker v-model:value="matchForm.date" placeholder="选择推荐日期" style="width: 100%;"
+        <DatePicker v-model:value="matchForm.date" placeholder="选择推荐日期" style="width: 100%;" @change="runMatchCheck"
         />
       </Form.Item
       >
-      <div style="color: #999; font-size: 12px;"
+      <div style="color: #999; font-size: 12px; margin-bottom: 12px;"
       >
         系统会将未匹配的标题按推荐日期进行用户匹配分配
       </div
       >
+      <!-- 匹配检测结果 -->
+      <div v-if="matchCheckLoading" style="text-align: center; padding: 16px;">
+        <Spin size="small" /> 正在检测标题供需情况...
+      </div>
+      <div v-else-if="matchCheckData" style="border: 1px solid #f0f0f0; border-radius: 4px; padding: 12px;">
+        <div style="font-size: 14px; font-weight: 500; margin-bottom: 8px;">匹配检测结果</div>
+        <div style="font-size: 13px; color: #595959; margin-bottom: 8px;">
+          目标日期：{{ matchCheckData.targetDate }}，
+          活跃用户：{{ matchCheckData.totalUsers }} 位，
+          需匹配组合：{{ matchCheckData.totalCombos }} 个
+          <span v-if="matchCheckData.existingCombosCount > 0" style="color: #fa8c16; margin-left: 8px;">
+            （当天已有 {{ matchCheckData.existingCombosCount }} 个组合被匹配）
+          </span>
+        </div>
+        <div v-if="matchCheckData.existingCombosCount > 0" style="background: #fffbe6; border: 1px solid #ffe58f; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 12px; color: #d48806;">该日期已有匹配记录，继续匹配只会处理剩余未匹配的组合</span>
+            <Button type="link" size="small" danger :loading="clearing" @click="handleClearAndMatch">先清理再重新匹配</Button>
+          </div>
+        </div>
+        <div v-if="matchCheckData.historyBoundUserCount > 0" style="background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px;">
+          <span style="font-size: 12px; color: #096dd9;">
+            历史绑定影响：{{ matchCheckData.historyBoundUserCount }} 位用户历史上共绑定过 {{ matchCheckData.historyBoundTitleCount }} 个标题，匹配时会自动跳过这些组合
+          </span>
+        </div>
+        <!-- 缺口警告 -->
+        <div v-if="matchCheckData.gaps && matchCheckData.gaps.length > 0" style="background: #fff2f0; border: 1px solid #ffccc7; border-radius: 4px; padding: 10px 12px; margin-bottom: 10px;">
+          <div style="color: #cf1322; font-weight: 500; font-size: 13px; margin-bottom: 6px;">
+            以下赛道标题不足，请先生成标题后再匹配
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div v-for="g in matchCheckData.gaps" :key="g.trackId" style="font-size: 13px; color: #cf1322;">
+              {{ g.trackName }}：需求 {{ g.demand }} 条 / 库存 {{ g.supply }} 条，缺口 {{ g.need }} 条
+            </div>
+          </div>
+        </div>
+        <div v-else style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 10px 12px; margin-bottom: 10px;">
+          <div style="color: #389e0d; font-weight: 500; font-size: 13px;">
+            标题库存充足，可以正常匹配
+          </div>
+        </div>
+        <!-- 各组合详细统计 -->
+        <div v-if="matchCheckData.comboStats && matchCheckData.comboStats.length > 0" style="margin-top: 8px;">
+          <div style="font-size: 12px; color: #999; margin-bottom: 4px;">各赛道供需明细：</div>
+          <div style="max-height: 200px; overflow-y: auto;">
+            <div v-for="s in matchCheckData.comboStats" :key="s.trackId" style="display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; border-bottom: 1px solid #f5f5f5;">
+              <span>{{ s.trackName }}</span>
+              <span :style="s.sufficient ? 'color: #52c41a;' : 'color: #f5222d;'">
+                {{ s.supply }} / {{ s.demand }} {{ s.sufficient ? '充足' : '缺' + s.gap + '条' }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
     </Form
     >
   </Modal
@@ -1513,14 +1671,14 @@ onMounted(() => {
       <Form.Item label="推荐日期">
         <DatePicker v-model:value="form.pushDate" placeholder="选择推荐日期" style="width: 100%;" />
       </Form.Item>
-      <Form.Item label="适用平台">
-        <Select v-model:value="form.platform" placeholder="选择平台" allowClear>
-          <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value">{{ p.label }}</Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item label="关联赛道">
-        <Select v-model:value="form.trackId" placeholder="选择赛道" allowClear>
-          <Select.Option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+      <Form.Item label="适用平台-赛道">
+        <Select
+          v-model:value="form.trackId"
+          placeholder="选择平台-赛道"
+          allowClear
+          @change="handleTrackChange"
+        >
+          <Select.Option v-for="t in sortedTrackOptions" :key="t.id" :value="t.id">{{ t.displayLabel }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item label="关联用户">

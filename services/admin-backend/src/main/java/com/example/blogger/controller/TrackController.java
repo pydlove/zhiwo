@@ -52,6 +52,17 @@ public class TrackController {
     }
 
     /**
+     * 手动触发合并重复赛道（不重启服务，直接调用）
+     */
+    @GetMapping("/force-merge-duplicates")
+    public Result<Map<String, Object>> forceMergeDuplicateTracks() {
+        trackService.forceMergeDuplicateTracks();
+        Map<String, Object> result = new HashMap<>();
+        result.put("message", "合并完成，请查看后端控制台日志");
+        return Result.ok(result);
+    }
+
+    /**
      * 诊断接口：查询所有 name 重复的赛道
      */
     @GetMapping("/duplicate-check")

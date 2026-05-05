@@ -94,7 +94,25 @@ public interface TitleRecommendationMapper {
     @Select("SELECT DISTINCT user_id FROM tu_title_recommendation WHERE recommend_date = #{date}")
     List<String> findMatchedUserIdsByDate(@Param("date") LocalDate date);
 
+    @Delete("DELETE FROM tu_title_recommendation WHERE recommend_date = #{date}")
+    int deleteByDate(@Param("date") LocalDate date);
+
+    @Select("SELECT COUNT(*) FROM tu_title_recommendation WHERE title_library_id = #{titleLibraryId}")
+    int countByTitleId(@Param("titleLibraryId") String titleLibraryId);
+
     /** 查询指定日期下所有已存在的 user_id + track_id 组合 */
     @Select("SELECT DISTINCT user_id, track_id FROM tu_title_recommendation WHERE recommend_date = #{date}")
     List<Map<String, Object>> findUserTrackCombosByDate(@Param("date") LocalDate date);
+
+    /** 查询指定用户历史上绑定过的所有标题ID */
+    @Select("SELECT DISTINCT title_library_id FROM tu_title_recommendation WHERE user_id = #{userId}")
+    List<String> findHistoricallyMatchedTitleIdsByUserId(@Param("userId") String userId);
+
+    /** 查询指定用户历史上绑定的所有标题记录，按日期倒序 */
+    @Select("SELECT r.recommend_date as recommendDate, t.title as titleName " +
+            "FROM tu_title_recommendation r " +
+            "INNER JOIN tu_title_library t ON r.title_library_id = t.id AND t.is_deleted = 0 " +
+            "WHERE r.user_id = #{userId} " +
+            "ORDER BY r.recommend_date DESC, r.created_at DESC")
+    List<Map<String, Object>> findHistoryByUserId(@Param("userId") String userId);
 }

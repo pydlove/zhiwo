@@ -6,6 +6,7 @@ import com.example.blogger.entity.Track;
 import com.example.blogger.mapper.TitleLibraryMapper;
 import com.example.blogger.mapper.TrackMapper;
 import com.example.blogger.service.TitleLibraryService;
+import com.example.blogger.service.TitleReviewService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
@@ -26,11 +27,13 @@ public class TitlePushReceiveController {
     private final TitleLibraryMapper titleLibraryMapper;
     private final TitleLibraryService titleLibraryService;
     private final TrackMapper trackMapper;
+    private final TitleReviewService titleReviewService;
 
-    public TitlePushReceiveController(TitleLibraryMapper titleLibraryMapper, TitleLibraryService titleLibraryService, TrackMapper trackMapper) {
+    public TitlePushReceiveController(TitleLibraryMapper titleLibraryMapper, TitleLibraryService titleLibraryService, TrackMapper trackMapper, TitleReviewService titleReviewService) {
         this.titleLibraryMapper = titleLibraryMapper;
         this.titleLibraryService = titleLibraryService;
         this.trackMapper = trackMapper;
+        this.titleReviewService = titleReviewService;
     }
 
     /**
@@ -112,6 +115,8 @@ public class TitlePushReceiveController {
                 existing.setUseCount(existing.getUseCount() != null ? existing.getUseCount() + 1 : 1);
                 titleLibraryService.save(existing);
                 log.info("[push-receive] 更新已存在记录: id={}, oldTrackId={}, newTrackId={}", existing.getId(), existing.getTrackId(), trackId);
+                // 同步创建或更新审核记录（推送上来的标题也需要审核）
+                createOrSyncReviewRecord(existing.getId());
                 return Result.ok(Map.of("id", existing.getId(), "action", "updated"));
             }
 
@@ -134,11 +139,31 @@ public class TitlePushReceiveController {
             titleLibraryService.save(newTitle);
             log.info("[push-receive] 插入新记录: id={}, title={}, trackId={}", newTitle.getId(), title, trackId);
 
+            // 创建审核记录，标记来源为推送
+            createOrSyncReviewRecord(newTitle.getId());
+
             return Result.ok(Map.of("id", newTitle.getId(), "action", "created"));
 
         } catch (Exception e) {
             log.error("[push-receive] 处理推送请求失败", e);
             return Result.error("接收推送失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 为推送上来的标题创建或同步审核记录
+     */
+    private void createOrSyncReviewRecord(String titleLibraryId) {
+        try {
+            com.example.blogger.entity.TitleReview existingReview = titleReviewService.findByTitleLibraryId(titleLibraryId);
+            if (existingReview == null) {
+                titleReviewService.createReviewRecord(titleLibraryId, "pushed_up");
+                log.info("[push-receive] 创建审核记录: titleLibraryId={}, source=pushed_up", titleLibraryId);
+            } else {
+                log.info("[push-receive] 审核记录已存在: titleLibraryId={}, status={}", titleLibraryId, existingReview.getReviewStatus());
+            }
+        } catch (Exception e) {
+            log.warn("[push-receive] 创建审核记录失败: titleLibraryId={}, msg={}", titleLibraryId, e.getMessage());
         }
     }
 }

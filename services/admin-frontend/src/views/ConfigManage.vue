@@ -1,8 +1,9 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { Card, Input, Select, Button, Form, message } from 'ant-design-vue'
 import request from '../api/request.js'
 import { listTracks } from '../api/track.js'
+import { listMembershipPlans } from '../api/membershipPlan.js'
 
 const apiKey = ref('sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
 const model = ref('moonshot-v1-8k')
@@ -18,7 +19,16 @@ const trackOptions = ref([])
 const parseLoading = ref(false)
 const avatarUrls = ref('')
 
+const oaPlatform = ref('公众号')
+const oaCount = ref(3)
+const oaMembershipPlanId = ref('')
+const oaBaseUrl = ref(window.location.hostname === 'localhost' ? 'http://localhost:5174' : 'http://www.mmshuo.tech')
+const oaLink = ref('')
+const oaGenerating = ref(false)
+const membershipPlanOptions = ref([])
+
 const PARSE_HISTORY_KEY = 'blogger_parse_export_history'
+const OA_CONFIG_KEY = 'blogger_open_account_config'
 
 function loadParseHistory() {
   try {
@@ -149,6 +159,131 @@ async function loadTracks() {
   }
 }
 
+async function loadMembershipPlans() {
+  try {
+    const data = await listMembershipPlans()
+    membershipPlanOptions.value = data || []
+  } catch (e) {
+    // ignore
+  }
+}
+
+function saveOpenAccountConfig() {
+  try {
+    const data = {
+      platform: oaPlatform.value,
+      count: oaCount.value,
+      membershipPlanId: oaMembershipPlanId.value,
+      baseUrl: oaBaseUrl.value,
+      link: oaLink.value,
+    }
+    localStorage.setItem(OA_CONFIG_KEY, JSON.stringify(data))
+  } catch (e) {
+    // ignore
+  }
+}
+
+function loadOpenAccountConfig() {
+  try {
+    const raw = localStorage.getItem(OA_CONFIG_KEY)
+    if (raw) {
+      const data = JSON.parse(raw)
+      if (data.platform !== undefined) oaPlatform.value = data.platform
+      if (data.count !== undefined) oaCount.value = data.count
+      if (data.membershipPlanId !== undefined) oaMembershipPlanId.value = data.membershipPlanId
+      if (data.baseUrl !== undefined) oaBaseUrl.value = data.baseUrl
+      if (data.link !== undefined) oaLink.value = data.link
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+watch([oaPlatform, oaCount, oaMembershipPlanId, oaBaseUrl], () => {
+  saveOpenAccountConfig()
+}, { deep: true })
+
+async function generateOpenAccountLink() {
+  oaGenerating.value = true
+  try {
+    const data = await request.post('/configs/open-account-link', {
+      platform: oaPlatform.value,
+      count: oaCount.value,
+      membershipPlanId: oaMembershipPlanId.value || undefined,
+      baseUrl: oaBaseUrl.value,
+    })
+    oaLink.value = data.url
+    saveOpenAccountConfig()
+    message.success('链接生成成功')
+  } catch (e) {
+    message.error(e.message || '链接生成失败')
+  } finally {
+    oaGenerating.value = false
+  }
+}
+
+function copyOpenAccountLink() {
+  if (!oaLink.value) return
+  // 兼容非 HTTPS 环境（localhost）
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(oaLink.value).then(() => {
+      message.success('链接已复制到剪贴板')
+    }).catch(() => {
+      fallbackCopy()
+    })
+  } else {
+    fallbackCopy()
+  }
+}
+
+function fallbackCopy() {
+  const textarea = document.createElement('textarea')
+  textarea.value = oaLink.value
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  try {
+    document.execCommand('copy')
+    message.success('链接已复制到剪贴板')
+  } catch (e) {
+    message.error('复制失败，请手动复制')
+  }
+  document.body.removeChild(textarea)
+}
+
+function copyCustomerDialogueLink() {
+  const url = oaBaseUrl.value + '/customer-dialogue'
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(url).then(() => {
+      message.success('链接已复制到剪贴板')
+    }).catch(() => {
+      fallbackCopyUrl(url)
+    })
+  } else {
+    fallbackCopyUrl(url)
+  }
+}
+
+function fallbackCopyUrl(url) {
+  const textarea = document.createElement('textarea')
+  textarea.value = url
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  try {
+    document.execCommand('copy')
+    message.success('链接已复制到剪贴板')
+  } catch (e) {
+    message.error('复制失败，请手动复制')
+  }
+  document.body.removeChild(textarea)
+}
+
 async function handleParseExport() {
   if (!parseText.value.trim()) {
     message.warning('请输入博主文本')
@@ -193,7 +328,9 @@ async function handleParseExport() {
 onMounted(() => {
   loadConfig()
   loadTracks()
+  loadMembershipPlans()
   loadParseHistory()
+  loadOpenAccountConfig()
 })
 </script>
 
@@ -275,6 +412,63 @@ onMounted(() => {
             </div>
           </div>
           <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">登录页「联系管理员开户」展示的图片</div>
+        </Form.Item>
+      </Form>
+    </Card>
+
+    <Card style="border-radius: 2px; margin-bottom: 24px;">
+      <template #title>
+        <span style="font-size: 16px; font-weight: 500; color: #262626;">开户链接配置</span>
+      </template>
+      <Form layout="vertical">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 600px;">
+          <Form.Item label="平台" required>
+            <Select v-model:value="oaPlatform" style="width: 100%;">
+              <Select.Option value="公众号">公众号</Select.Option>
+              <Select.Option value="今日头条">今日头条</Select.Option>
+              <Select.Option value="百家号">百家号</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item label="可选赛道数量" required>
+            <Input v-model:value="oaCount" type="number" min="1" max="20" placeholder="最多可选几个赛道" />
+          </Form.Item>
+        </div>
+        <Form.Item label="会员套餐">
+          <Select v-model:value="oaMembershipPlanId" placeholder="请选择会员套餐" style="width: 100%; max-width: 600px;" allow-clear>
+            <Select.Option v-for="p in membershipPlanOptions" :key="p.id" :value="p.id">{{ p.name }}</Select.Option>
+          </Select>
+          <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">选择后，通过该链接开户的用户将自动关联此会员套餐</div>
+        </Form.Item>
+        <Form.Item label="基础域名">
+          <Input v-model:value="oaBaseUrl" placeholder="http://www.mmshuo.tech" style="max-width: 480px;" />
+          <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">本地开发用 localhost:5174，线上用 www.mmshuo.tech</div>
+        </Form.Item>
+        <Form.Item>
+          <div style="display: flex; gap: 12px;">
+            <Button type="primary" :loading="oaGenerating" @click="generateOpenAccountLink">生成开户链接</Button>
+          </div>
+        </Form.Item>
+        <Form.Item v-if="oaLink" label="开户链接">
+          <div style="display: flex; gap: 12px; align-items: center; max-width: 600px;">
+            <Input v-model:value="oaLink" readonly />
+            <Button @click="copyOpenAccountLink">复制</Button>
+          </div>
+          <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">该链接包含平台限制和赛道数量限制，请勿泄露给非目标用户</div>
+        </Form.Item>
+      </Form>
+    </Card>
+
+    <Card style="border-radius: 2px; margin-bottom: 24px;">
+      <template #title>
+        <span style="font-size: 16px; font-weight: 500; color: #262626;">客服话术助手链接</span>
+      </template>
+      <Form layout="vertical">
+        <Form.Item label="访问链接">
+          <div style="display: flex; gap: 12px; align-items: center; max-width: 600px;">
+            <Input :value="oaBaseUrl + '/customer-dialogue'" readonly />
+            <Button @click="copyCustomerDialogueLink">复制</Button>
+          </div>
+          <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">该链接为客服话术助手独立页面，可发送给客服人员使用</div>
         </Form.Item>
       </Form>
     </Card>

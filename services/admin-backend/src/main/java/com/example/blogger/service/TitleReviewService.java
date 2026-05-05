@@ -259,6 +259,70 @@ public class TitleReviewService {
         return result;
     }
 
+    /**
+     * 重复推送：对已推送的记录再次推送，用于刷新目标服务器上的脏数据
+     */
+    @Transactional
+    public Map<String, Object> rePushToServer(String reviewId, String serverConfigId, String pushedBy) {
+        Map<String, Object> result = new HashMap<>();
+        TitleReview review = titleReviewMapper.findById(reviewId);
+        if (review == null) {
+            result.put("success", false);
+            result.put("error", "审核记录不存在");
+            return result;
+        }
+        if (!"approved".equals(review.getReviewStatus()) && !"pushed".equals(review.getPushStatus())) {
+            result.put("success", false);
+            result.put("error", "该记录状态不允许重复推送");
+            return result;
+        }
+
+        ServerConfig config = resolveServerConfig(serverConfigId);
+        if (config == null) {
+            result.put("success", false);
+            result.put("error", "没有可用的服务器配置，请先添加并启用配置");
+            return result;
+        }
+
+        TitleLibrary titleLibrary = titleLibraryMapper.findById(review.getTitleLibraryId());
+        if (titleLibrary == null) {
+            result.put("success", false);
+            result.put("error", "标题库记录不存在");
+            return result;
+        }
+
+        String errorMsg = pushTitleToRemoteApi(config, titleLibrary);
+
+        TitlePushLog pushLog = new TitlePushLog();
+        pushLog.setId(UUID.randomUUID().toString().replace("-", ""));
+        pushLog.setTitleLibraryId(titleLibrary.getId());
+        pushLog.setServerConfigId(config.getId());
+        pushLog.setTitle(titleLibrary.getTitle());
+        pushLog.setPlatform(titleLibrary.getPlatform());
+        pushLog.setTrackId(titleLibrary.getTrackId());
+        pushLog.setPushedBy(pushedBy);
+
+        if (errorMsg == null) {
+            review.setPushStatus("pushed");
+            review.setPushedAt(LocalDateTime.now());
+            titleReviewMapper.updatePushStatus(review);
+
+            pushLog.setStatus("success");
+            titlePushLogMapper.insert(pushLog);
+
+            result.put("success", true);
+            result.put("message", "重复推送成功");
+        } else {
+            pushLog.setStatus("failed");
+            pushLog.setErrorMsg(errorMsg);
+            titlePushLogMapper.insert(pushLog);
+
+            result.put("success", false);
+            result.put("error", errorMsg);
+        }
+        return result;
+    }
+
     @Transactional
     public Map<String, Object> batchPushToServer(List<String> reviewIds, String serverConfigId, String pushedBy) {
         Map<String, Object> result = new HashMap<>();
@@ -329,8 +393,8 @@ public class TitleReviewService {
                 trackName = track.getName();
             }
         }
-        log.info("[push] title={}, trackId={}, trackName(fromTitleLibrary)={}, trackName(fallback)={}",
-                titleLibrary.getTitle(), trackId, titleLibrary.getTrackName(), trackName);
+        log.info("[push] title={}, platform={}, trackId={}, trackName(fromTitleLibrary)={}, trackName(fallback)={}",
+                titleLibrary.getTitle(), titleLibrary.getPlatform(), trackId, titleLibrary.getTrackName(), trackName);
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("id", titleLibrary.getId());
@@ -372,6 +436,20 @@ public class TitleReviewService {
      */
     private String getBaseUrl(ServerConfig config) {
         return "http://" + config.getHost() + ":" + config.getPort();
+    }
+
+    public TitleReview findByTitleLibraryId(String titleLibraryId) {
+        return titleReviewMapper.findByTitleLibraryId(titleLibraryId);
+    }
+
+    public Map<String, Object> listBySource(String source, String platform, String trackId, String keyword, int page, int pageSize) {
+        int offset = (page - 1) * pageSize;
+        List<TitleReview> list = titleReviewMapper.findBySource(source, platform, trackId, keyword, offset, pageSize);
+        int total = titleReviewMapper.countBySource(source, platform, trackId, keyword);
+        Map<String, Object> result = new HashMap<>();
+        result.put("list", list);
+        result.put("total", total);
+        return result;
     }
 
     @Transactional

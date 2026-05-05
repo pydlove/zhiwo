@@ -37,6 +37,14 @@ export function batchPushTitleReviews(data) {
   return request.post('/title-review/batch-push', data)
 }
 
+export function rePushTitleReview(id, data) {
+  return request.post('/title-review/' + id + '/re-push', data)
+}
+
+export function batchRePushTitleReviews(data) {
+  return request.post('/title-review/batch-re-push', data)
+}
+
 export function getTitleReviewStats() {
   return request.get('/title-review/stats')
 }
@@ -47,6 +55,10 @@ export function listPushedTitleReviews(params) {
 
 export function listPushLogs(params) {
   return request.get('/title-review/push-logs', { params })
+}
+
+export function listBySource(params) {
+  return request.get('/title-review/list-by-source', { params })
 }
 
 // 服务器配置相关

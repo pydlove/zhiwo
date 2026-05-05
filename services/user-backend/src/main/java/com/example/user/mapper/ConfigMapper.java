@@ -10,7 +10,7 @@ public interface ConfigMapper {
     List<Config> findAll();
 
     @Select("SELECT * FROM tu_config WHERE config_key = #{key}")
-    Config findByKey(String key);
+    Config findByKey(@Param("key") String key);
 
     @Insert("INSERT INTO tu_config(config_key, config_value) VALUES(#{configKey}, #{configValue}) ON DUPLICATE KEY UPDATE config_value=#{configValue}")
     int save(Config config);

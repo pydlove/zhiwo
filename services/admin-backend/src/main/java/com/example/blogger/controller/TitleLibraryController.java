@@ -61,6 +61,21 @@ public class TitleLibraryController {
     private final ConcurrentHashMap<String, Map<String, Object>> generatePostTasks = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newFixedThreadPool(3);
 
+    // 批量推送幂等性校验：记录正在处理中的请求指纹（key -> expireAtMs）
+    private final ConcurrentHashMap<String, Long> pushInProgress = new ConcurrentHashMap<>();
+    private static final long PUSH_IDEMPOTENCY_TTL_MS = 5 * 60 * 1000; // 5分钟
+
+    private String buildPushFingerprint(String dateStr, List<String> userIds) {
+        List<String> sorted = new ArrayList<>(userIds);
+        Collections.sort(sorted);
+        return dateStr + "|" + String.join(",", sorted);
+    }
+
+    private void cleanupExpiredPushFingerprints() {
+        long now = System.currentTimeMillis();
+        pushInProgress.entrySet().removeIf(e -> e.getValue() < now);
+    }
+
     public TitleLibraryController(TitleLibraryService titleLibraryService,
                                   TrackMapper trackMapper,
                                   UserMapper userMapper,
@@ -401,7 +416,9 @@ public class TitleLibraryController {
             @RequestParam(value = "isUsed", required = false) String isUsed,
             @RequestParam(value = "userType", required = false) String userType,
             @RequestParam(value = "page", required = false) Integer page,
-            @RequestParam(value = "pageSize", required = false) Integer pageSize) {
+            @RequestParam(value = "pageSize", required = false) Integer pageSize,
+            @RequestParam(value = "sortField", required = false) String sortField,
+            @RequestParam(value = "sortOrder", required = false) String sortOrder) {
         boolean hasFilter = (platform != null && !platform.isEmpty())
                 || (trackId != null && !trackId.isEmpty())
                 || (keyword != null && !keyword.isEmpty())
@@ -412,12 +429,12 @@ public class TitleLibraryController {
                 || (userType != null && !userType.isEmpty());
         if (page != null && pageSize != null && page > 0 && pageSize > 0) {
             if (hasFilter) {
-                return Result.ok(titleLibraryService.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, page, pageSize));
+                return Result.ok(titleLibraryService.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, page, pageSize, sortField, sortOrder));
             }
             return Result.ok(titleLibraryService.listPage(page, pageSize));
         }
         if (hasFilter) {
-            return Result.ok(titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType));
+            return Result.ok(titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, sortField, sortOrder));
         }
         return Result.ok(titleLibraryService.list());
     }
@@ -639,7 +656,7 @@ public class TitleLibraryController {
                         || (pushDate != null && !pushDate.isEmpty())
                         || (isUsed != null && !isUsed.isEmpty());
                 titles = hasFilter
-                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType)
+                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, null, null)
                         : titleLibraryService.list();
             }
 
@@ -719,7 +736,7 @@ public class TitleLibraryController {
                         || (pushDate != null && !pushDate.isEmpty())
                         || (isUsed != null && !isUsed.isEmpty());
                 titles = hasFilter
-                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType)
+                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, null, null)
                         : titleLibraryService.list();
             }
 
@@ -785,6 +802,9 @@ public class TitleLibraryController {
             try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(response.getOutputStream(), StandardCharsets.UTF_8)) {
                 String[] headers = { "ID", "标题名称", "用户名", "样式风格", "描述", "推荐日期", "是否创作完成" };
 
+                List<com.example.blogger.entity.Style> allStyles = styleMapper.findAll();
+                Random styleRandom = new Random();
+
                 for (int idx = 0; idx < titles.size(); idx++) {
                     TitleLibrary tl = titles.get(idx);
 
@@ -809,7 +829,11 @@ public class TitleLibraryController {
                     row.createCell(0).setCellValue(tl.getId() != null ? tl.getId() : "");
                     row.createCell(1).setCellValue(tl.getTitle() != null ? tl.getTitle() : "");
                     row.createCell(2).setCellValue(tl.getRecommendUserName() != null ? tl.getRecommendUserName() : "");
-                    row.createCell(3).setCellValue(tl.getRecommendUserTemplate() != null ? tl.getRecommendUserTemplate() : "");
+                    String styleValue = tl.getRecommendUserTemplate();
+                    if ((styleValue == null || styleValue.isEmpty()) && !allStyles.isEmpty()) {
+                        styleValue = allStyles.get(styleRandom.nextInt(allStyles.size())).getName();
+                    }
+                    row.createCell(3).setCellValue(styleValue != null ? styleValue : "");
                     row.createCell(4).setCellValue(tl.getDescription() != null ? tl.getDescription() : "");
                     row.createCell(5).setCellValue(tl.getRecommendDate() != null ? tl.getRecommendDate().toString() : "");
                     boolean completed = tl.getSubscriptionPostTitle() != null && !tl.getSubscriptionPostTitle().isEmpty()
@@ -1038,6 +1062,131 @@ public class TitleLibraryController {
         return dp[a.length()][b.length()];
     }
 
+    /**
+     * 匹配前预检测：计算供需缺口
+     */
+    @GetMapping("/match-check")
+    public Result<Map<String, Object>> matchCheck(@RequestParam(value = "date", required = false) String dateStr) {
+        try {
+            LocalDate targetDate = (dateStr != null && !dateStr.isEmpty()) ? LocalDate.parse(dateStr) : LocalDate.now();
+
+            // ===== 1. 计算标题供给（按 trackId 分组） =====
+            List<TitleLibrary> allTitles = titleLibraryService.list();
+            Set<String> matchedTodayTitleIds = new HashSet<>(titleRecommendationMapper.findMatchedTitleIdsByDate(targetDate));
+            Map<String, Long> supplyMap = allTitles.stream()
+                    .filter(t -> !matchedTodayTitleIds.contains(t.getId()))
+                    .filter(t -> t.getPushDate() == null || t.getPushDate().equals(targetDate))
+                    .filter(t -> t.getTrackId() != null && !t.getTrackId().isEmpty())
+                    .collect(Collectors.groupingBy(TitleLibrary::getTrackId, Collectors.counting()));
+
+            // ===== 2. 计算需求（每个用户的活跃赛道） =====
+            List<User> users = userMapper.findAll().stream()
+                    .filter(u -> u.getStatus() != null && u.getStatus() == 1)
+                    .filter(u -> u.getIsDeleted() == null || u.getIsDeleted() != 1)
+                    .filter(u -> u.getUserType() != null && u.getUserType() >= 1 && u.getUserType() <= 3)
+                    .collect(Collectors.toList());
+
+            // 排除当天已有推荐组合的用户-赛道
+            Set<String> existingCombos = new HashSet<>();
+            for (Map<String, Object> row : titleRecommendationMapper.findUserTrackCombosByDate(targetDate)) {
+                String uid = (String) row.get("user_id");
+                String tid = (String) row.get("track_id");
+                if (uid != null && tid != null) existingCombos.add(uid + ":" + tid);
+            }
+
+            Map<String, Integer> demandMap = new HashMap<>();
+            int totalCombos = 0;
+            int userWithNoTracks = 0;
+
+            for (User user : users) {
+                Set<String> activeTracks = getActiveTrackIdsForUser(user);
+                if (activeTracks.isEmpty()) {
+                    userWithNoTracks++;
+                    continue;
+                }
+                for (String trackId : activeTracks) {
+                    String comboKey = user.getId() + ":" + trackId;
+                    if (existingCombos.contains(comboKey)) continue; // 当天已有推荐，不计入需求
+                    demandMap.put(trackId, demandMap.getOrDefault(trackId, 0) + 1);
+                    totalCombos++;
+                }
+            }
+
+            // ===== 3. 构建 trackId -> trackName 映射 =====
+            List<Track> allTracks = trackMapper.findAll();
+            Map<String, String> trackNameMap = new HashMap<>();
+            for (Track t : allTracks) {
+                if (t.getName() != null) trackNameMap.put(t.getId(), t.getName());
+            }
+
+            // ===== 3.5 加载每个用户的历史绑定标题ID，计算历史绑定影响 =====
+            Map<String, Set<String>> userHistoryMap = new HashMap<>();
+            int historyBoundTitleCount = 0;
+            int historyBoundUserCount = 0;
+            for (User user : users) {
+                List<String> historyIds = titleRecommendationMapper.findHistoricallyMatchedTitleIdsByUserId(user.getId());
+                Set<String> historySet = new HashSet<>(historyIds);
+                userHistoryMap.put(user.getId(), historySet);
+                // 统计该用户历史上绑定过多少当前可用的标题
+                int bound = 0;
+                for (TitleLibrary t : allTitles) {
+                    if (historySet.contains(t.getId())) bound++;
+                }
+                if (bound > 0) {
+                    historyBoundTitleCount += bound;
+                    historyBoundUserCount++;
+                }
+            }
+
+            // ===== 4. 计算缺口 =====
+            List<Map<String, Object>> gaps = new ArrayList<>();
+            List<Map<String, Object>> comboStats = new ArrayList<>();
+            for (Map.Entry<String, Integer> entry : demandMap.entrySet()) {
+                String trackId = entry.getKey();
+                int demand = entry.getValue();
+                long supply = supplyMap.getOrDefault(trackId, 0L);
+                Map<String, Object> stat = new HashMap<>();
+                stat.put("trackId", trackId);
+                stat.put("trackName", trackNameMap.getOrDefault(trackId, "未知赛道"));
+                stat.put("demand", demand);
+                stat.put("supply", (int) supply);
+                stat.put("gap", Math.max(0, demand - supply));
+                stat.put("sufficient", supply >= demand);
+                comboStats.add(stat);
+                if (supply < demand) {
+                    Map<String, Object> gap = new HashMap<>();
+                    gap.put("trackId", trackId);
+                    gap.put("trackName", trackNameMap.getOrDefault(trackId, "未知赛道"));
+                    gap.put("demand", demand);
+                    gap.put("supply", (int) supply);
+                    gap.put("need", demand - supply);
+                    gaps.add(gap);
+                }
+            }
+
+            // 按缺口从大到小排序
+            gaps.sort((a, b) -> (Integer.valueOf(((Number) b.get("need")).intValue())).compareTo(((Number) a.get("need")).intValue()));
+            comboStats.sort((a, b) -> (Integer.valueOf(((Number) b.get("gap")).intValue())).compareTo(((Number) a.get("gap")).intValue()));
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("targetDate", targetDate.toString());
+            result.put("totalUsers", users.size());
+            result.put("totalCombos", totalCombos);
+            result.put("userWithNoTracks", userWithNoTracks);
+            result.put("comboStats", comboStats);
+            result.put("gaps", gaps);
+            result.put("gapCount", gaps.size());
+            result.put("canMatch", gaps.isEmpty());
+            result.put("existingCombosCount", existingCombos.size());
+            result.put("historyBoundUserCount", historyBoundUserCount);
+            result.put("historyBoundTitleCount", historyBoundTitleCount);
+            return Result.ok(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("检测失败：" + e.getMessage());
+        }
+    }
+
     @PostMapping("/match-today")
     public Result<Map<String, Object>> matchToday(@RequestParam(value = "date", required = false) String dateStr) {
         try {
@@ -1056,8 +1205,10 @@ public class TitleLibraryController {
                     .collect(Collectors.toList());
 
             // 在未匹配的标题中，优先匹配 pushDate 等于目标日期的；pushDate 为 null 的也允许匹配
+            // 同时过滤掉没有 trackId 的标题（无法匹配任何用户）
             List<TitleLibrary> titles = unmatchedTitles.stream()
                     .filter(t -> t.getPushDate() == null || t.getPushDate().equals(targetDate))
+                    .filter(t -> t.getTrackId() != null && !t.getTrackId().isEmpty())
                     .collect(Collectors.toList());
 
             List<User> users = userMapper.findAll().stream()
@@ -1092,11 +1243,20 @@ public class TitleLibraryController {
                 }
             }
 
+            // ===== 过滤3：加载每个用户历史上绑定过的标题ID集合 =====
+            Map<String, Set<String>> userHistoryMap = new HashMap<>();
+            for (User user : users) {
+                List<String> historyIds = titleRecommendationMapper.findHistoricallyMatchedTitleIdsByUserId(user.getId());
+                userHistoryMap.put(user.getId(), new HashSet<>(historyIds));
+            }
+
             int matched = 0;
             int skipped = 0;
             int alreadyMatchedToday = matchedTodayTitleIds.size();
             Random random = new Random();
             List<Map<String, Object>> skipReasons = new ArrayList<>();
+            List<String> matchedTitleIds = new ArrayList<>();
+            List<String> matchedTitleNames = new ArrayList<>();
 
             // ===== 过滤2：本次调用内，同一用户同一赛道已匹配过的不再重复匹配 =====
             Set<String> matchedCombosThisRun = new HashSet<>();
@@ -1119,6 +1279,7 @@ public class TitleLibraryController {
                 int skipAlreadyMatchedToday = 0;
                 int skipAlreadyMatchedThisRun = 0;
 
+                int skipHistoryBound = 0;
                 for (User user : users) {
                     String comboKey = user.getId() + ":" + title.getTrackId();
                     String userTrackKey = user.getId() + "-" + title.getTrackId();
@@ -1136,6 +1297,14 @@ public class TitleLibraryController {
                     if (matchedCombosThisRun.contains(comboKey)) {
                         skipAlreadyMatchedThisRun++;
                         reasons.put("alreadyMatchedThisRun", reasons.getOrDefault("alreadyMatchedThisRun", 0) + 1);
+                        continue;
+                    }
+
+                    // 历史上该用户已绑定过这个标题，跳过
+                    Set<String> historyIds = userHistoryMap.getOrDefault(user.getId(), Collections.emptySet());
+                    if (historyIds.contains(title.getId())) {
+                        skipHistoryBound++;
+                        reasons.put("historyBound", reasons.getOrDefault("historyBound", 0) + 1);
                         continue;
                     }
 
@@ -1175,8 +1344,9 @@ public class TitleLibraryController {
                     reason.put("skipNoTrack", skipNoTrack);
                     reason.put("skipAlreadyMatchedToday", skipAlreadyMatchedToday);
                     reason.put("skipAlreadyMatchedThisRun", skipAlreadyMatchedThisRun);
+                    reason.put("skipHistoryBound", skipHistoryBound);
                     skipReasons.add(reason);
-                    System.out.println("[matchToday] 跳过: " + title.getTitle() + " | 赛道不符=" + skipNoTrack + " 当天已匹配=" + skipAlreadyMatchedToday + " 本次已匹配=" + skipAlreadyMatchedThisRun);
+                    System.out.println("[matchToday] 跳过: " + title.getTitle() + " | 赛道不符=" + skipNoTrack + " 当天已匹配=" + skipAlreadyMatchedToday + " 本次已匹配=" + skipAlreadyMatchedThisRun + " 历史绑定=" + skipHistoryBound);
                     continue;
                 }
 
@@ -1201,6 +1371,8 @@ public class TitleLibraryController {
                 existingCombos.add(matchedCombo);
 
                 matched++;
+                matchedTitleIds.add(title.getId());
+                matchedTitleNames.add(title.getTitle());
                 System.out.println("[matchToday] 匹配: " + title.getTitle() + " -> " + selected.getUsername());
             }
 
@@ -1208,16 +1380,26 @@ public class TitleLibraryController {
             int totalCombos = 0;
             int unmatchedCombos = 0;
             Map<String, Integer> globalReasons = new HashMap<>();
-            for (Map<String, Integer> reasons : userTrackSkipReasons.values()) {
-                totalCombos++;
-                unmatchedCombos++;
-                for (Map.Entry<String, Integer> entry : reasons.entrySet()) {
-                    globalReasons.put(entry.getKey(), globalReasons.getOrDefault(entry.getKey(), 0) + entry.getValue());
+            for (User user : users) {
+                Set<String> activeTracks = userTrackMap.getOrDefault(user.getId(), Collections.emptySet());
+                for (String trackId : activeTracks) {
+                    String comboKey = user.getId() + ":" + trackId;
+                    totalCombos++;
+                    if (existingCombos.contains(comboKey) || matchedCombosThisRun.contains(comboKey)) {
+                        continue; // 已匹配（当天已有或本次已匹配）
+                    }
+                    unmatchedCombos++;
+                    String userTrackKey = user.getId() + "-" + trackId;
+                    Map<String, Integer> reasons = userTrackSkipReasons.getOrDefault(userTrackKey, Collections.emptyMap());
+                    for (Map.Entry<String, Integer> entry : reasons.entrySet()) {
+                        globalReasons.put(entry.getKey(), globalReasons.getOrDefault(entry.getKey(), 0) + entry.getValue());
+                    }
                 }
             }
 
             System.out.println("[matchToday] 完成: 匹配=" + matched + ", 跳过=" + skipped + ", 当天已匹配=" + alreadyMatchedToday
                     + ", 总用户赛道组合=" + totalCombos + ", 未匹配组合=" + unmatchedCombos
+                    + ", 当天已存在组合=" + existingCombos.size()
                     + ", 原因统计=" + globalReasons);
 
             Map<String, Object> result = new HashMap<>();
@@ -1229,7 +1411,10 @@ public class TitleLibraryController {
             result.put("userCount", users.size());
             result.put("totalCombos", totalCombos);
             result.put("unmatchedCombos", unmatchedCombos);
+            result.put("existingCombosCount", existingCombos.size());
             result.put("unmatchReasons", globalReasons);
+            result.put("matchedTitleIds", matchedTitleIds);
+            result.put("matchedTitleNames", matchedTitleNames);
             if (!skipReasons.isEmpty()) {
                 result.put("skipDetails", skipReasons.subList(0, Math.min(skipReasons.size(), 10)));
             }
@@ -1264,6 +1449,8 @@ public class TitleLibraryController {
     @DeleteMapping("/{id}/recommendation")
     public Result<Void> unbindRecommendation(@PathVariable String id) {
         titleRecommendationMapper.deleteByTitleId(id);
+        titleLibraryService.updatePushDate(id, null);
+        titleLibraryService.updateIsUsed(id, 0);
         return Result.ok(null);
     }
 
@@ -1279,6 +1466,8 @@ public class TitleLibraryController {
         for (String id : titleIds) {
             try {
                 titleRecommendationMapper.deleteByTitleId(id);
+                titleLibraryService.updatePushDate(id, null);
+                titleLibraryService.updateIsUsed(id, 0);
                 success++;
             } catch (Exception e) {
                 failed++;
@@ -1288,6 +1477,57 @@ public class TitleLibraryController {
         result.put("success", success);
         result.put("failed", failed);
         return Result.ok(result);
+    }
+
+    /**
+     * 查询指定用户历史上绑定的所有标题记录
+     */
+    @GetMapping("/user-history/{userId}")
+    public Result<List<Map<String, Object>>> getUserHistory(@PathVariable String userId) {
+        try {
+            List<Map<String, Object>> list = titleRecommendationMapper.findHistoryByUserId(userId);
+            return Result.ok(list);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("查询失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 清理指定日期的所有推荐记录（用于重新匹配）
+     */
+    @PostMapping("/clear-recommendations")
+    public Result<Map<String, Object>> clearRecommendationsByDate(@RequestParam(value = "date", required = false) String dateStr) {
+        try {
+            LocalDate targetDate = (dateStr != null && !dateStr.isEmpty()) ? LocalDate.parse(dateStr) : LocalDate.now();
+
+            // 1. 查询目标日期关联的所有标题ID
+            List<String> titleIds = titleRecommendationMapper.findMatchedTitleIdsByDate(targetDate);
+
+            // 2. 删除目标日期的推荐记录
+            int deleted = titleRecommendationMapper.deleteByDate(targetDate);
+
+            // 3. 清理标题状态：删除后没有其他推荐记录的标题，清空 push_date 和 is_used
+            int cleared = 0;
+            for (String titleId : titleIds) {
+                int remaining = titleRecommendationMapper.countByTitleId(titleId);
+                if (remaining == 0) {
+                    titleLibraryService.updatePushDate(titleId, null);
+                    titleLibraryService.updateIsUsed(titleId, 0);
+                    cleared++;
+                }
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("targetDate", targetDate.toString());
+            result.put("deletedRecommendations", deleted);
+            result.put("affectedTitles", titleIds.size());
+            result.put("clearedTitles", cleared);
+            return Result.ok(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("清理失败：" + e.getMessage());
+        }
     }
 
     @PostMapping("/generate")
@@ -1664,14 +1904,24 @@ public class TitleLibraryController {
                 return Result.error("请选择要推送的用户");
             }
 
-            LocalDate pushDate = LocalDate.parse(dateStr);
-            int total = userIds.size();
-            int success = 0;
-            int failed = 0;
-            List<Map<String, String>> errors = new ArrayList<>();
+            // 幂等性校验：相同日期+用户列表的请求，5分钟内不允许重复提交
+            String fingerprint = buildPushFingerprint(dateStr, userIds);
+            cleanupExpiredPushFingerprints();
+            long expireAt = System.currentTimeMillis() + PUSH_IDEMPOTENCY_TTL_MS;
+            Long existing = pushInProgress.putIfAbsent(fingerprint, expireAt);
+            if (existing != null && existing > System.currentTimeMillis()) {
+                return Result.error("正在推送中，请勿重复提交");
+            }
 
-            for (String userId : userIds) {
-                try {
+            try {
+                LocalDate pushDate = LocalDate.parse(dateStr);
+                int total = userIds.size();
+                int success = 0;
+                int failed = 0;
+                List<Map<String, String>> errors = new ArrayList<>();
+
+                for (String userId : userIds) {
+                    try {
                     User user = userMapper.findById(userId);
                     if (user == null) {
                         failed++;
@@ -1697,10 +1947,19 @@ public class TitleLibraryController {
                         continue;
                     }
 
+                    // 查询该用户当日已推送过的 titleLibraryId，避免重复推送
+                    List<String> pushedTitleIds = emailPushLogMapper.findPushedTitleIdsByUserAndDate(userId, pushDate);
+                    Set<String> pushedSet = new HashSet<>(pushedTitleIds != null ? pushedTitleIds : new ArrayList<>());
+
+                    boolean anyPushed = false;
                     for (Map<String, Object> recMap : recMaps) {
                         String subPostId = recMap.get("subscription_post_id") != null ? recMap.get("subscription_post_id").toString() : null;
                         String trackId = recMap.get("track_id") != null ? recMap.get("track_id").toString() : null;
                         String titleLibId = recMap.get("title_library_id") != null ? recMap.get("title_library_id").toString() : null;
+                        // 已推送过的跳过
+                        if (titleLibId != null && !titleLibId.isEmpty() && pushedSet.contains(titleLibId)) {
+                            continue;
+                        }
                         if (subPostId == null || subPostId.isEmpty()) {
                             continue;
                         }
@@ -1744,20 +2003,28 @@ public class TitleLibraryController {
                         log.setType("daily_recommend");
                         log.setTitleLibraryId(titleLibId);
                         emailPushLogMapper.insert(log);
+                        anyPushed = true;
                     }
-                    success++;
+                    if (anyPushed) {
+                        success++;
+                    } else {
+                        errors.add(Map.of("user", user.getUsername(), "reason", "所有文章已推送过，无需重复推送"));
+                    }
                 } catch (Exception e) {
                     failed++;
                     errors.add(Map.of("userId", userId, "reason", e.getMessage()));
                 }
             }
 
-            Map<String, Object> result = new HashMap<>();
-            result.put("total", total);
-            result.put("success", success);
-            result.put("failed", failed);
-            result.put("errors", errors);
-            return Result.ok(result);
+                Map<String, Object> result = new HashMap<>();
+                result.put("total", total);
+                result.put("success", success);
+                result.put("failed", failed);
+                result.put("errors", errors);
+                return Result.ok(result);
+            } finally {
+                pushInProgress.remove(fingerprint);
+            }
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -2062,12 +2329,10 @@ public class TitleLibraryController {
             });
             readerThread.start();
 
-            boolean finished = process.waitFor(180, java.util.concurrent.TimeUnit.SECONDS);
+            boolean finished = process.waitFor(300, java.util.concurrent.TimeUnit.SECONDS);
             if (!finished) {
-                process.destroyForcibly();
-                try {
-                    process.descendants().forEach(ProcessHandle::destroyForcibly);
-                } catch (Exception ignored) {}
+                log.error("[callClaudeForContent] 命令执行超时(300s)，强制终止进程");
+                killClaudeProcess(process);
                 readerThread.interrupt();
                 return null;
             }
@@ -2087,10 +2352,7 @@ public class TitleLibraryController {
             return null;
         } catch (Exception e) {
             e.printStackTrace();
-            if (process != null && process.isAlive()) {
-                process.destroyForcibly();
-                try { process.descendants().forEach(ProcessHandle::destroyForcibly); } catch (Exception ignored) {}
-            }
+            killClaudeProcess(process);
             return null;
         }
     }
@@ -2368,11 +2630,20 @@ public class TitleLibraryController {
                     prompt.append("   - 突出文章价值点和读者收益\n");
                     prompt.append("   - 语言自然流畅，符合").append(platform).append("的搜索推荐算法偏好\n");
                     prompt.append("   - 适当使用数字、疑问、对比等提升点击率的手法\n");
-                    prompt.append("4. 只输出纯JSON，不要markdown代码块，不要任何额外文字\n\n");
+                    prompt.append("4. 所有生成的标题必须全局唯一，同一批次内不同赛道之间不得出现相同或高度相似的标题\n");
+                    prompt.append("5. 标题和描述中禁止出现英文双引号 \"，如有引用需求请使用中文引号「」或『』代替\n");
+                    prompt.append("6. 只输出纯JSON，不要markdown代码块，不要任何额外文字\n\n");
                     prompt.append("格式：{\"titles\":[{\"track\":\"赛道名称\",\"title\":\"标题文字\",\"description\":\"SEO描述\"},...]}");
 
                     log.info("[生成标题] Prompt 长度={} 内容前200字={}", prompt.length(), prompt.substring(0, Math.min(200, prompt.length())));
                     JsonNode arr = callClaude(prompt.toString());
+                    if (arr == null) {
+                        log.warn("[生成标题] AI 返回空结果，跳过本次批次 platform={} batch={}", platform, batchStart / batchSize + 1);
+                        completedBatches++;
+                        int progress = finalTotalBatches > 0 ? (completedBatches * 100 / finalTotalBatches) : 0;
+                        task.put("progress", progress);
+                        continue;
+                    }
                     int titleCount = 0;
                     if (arr != null && arr.isArray()) {
                         titleCount = arr.size();
@@ -2449,17 +2720,16 @@ public class TitleLibraryController {
 
             int savedCount = 0;
             int skipCount = 0;
-            // 用于内存去重：同一批次内相同标题+平台+赛道只保留一条
+            // 用于内存去重：同一批次内相同标题只保留一条
             Set<String> batchDedupSet = new HashSet<>();
-            // 用于数据库去重：查询已存在的标题+平台+赛道组合
+            // 用于数据库去重：查询已存在的标题（按名称做幂等性）
             Set<String> existingSet = new HashSet<>();
             List<TitleLibrary> existingTitles = titleLibraryService.list();
             if (existingTitles != null) {
                 for (TitleLibrary et : existingTitles) {
-                    String key = (et.getTitle() != null ? et.getTitle() : "") + "|"
-                            + (et.getPlatform() != null ? et.getPlatform() : "") + "|"
-                            + (et.getTrackId() != null ? et.getTrackId() : "");
-                    existingSet.add(key);
+                    if (et.getTitle() != null) {
+                        existingSet.add(et.getTitle());
+                    }
                 }
             }
             LocalDate tomorrow = LocalDate.now().plusDays(1);
@@ -2480,15 +2750,14 @@ public class TitleLibraryController {
                     String title = row.get("title");
                     String platform = row.get("platform");
 
-                    // 内存去重：同一批次内相同标题+平台+赛道
-                    String batchKey = title + "|" + platform + "|" + trackId;
-                    if (!batchDedupSet.add(batchKey)) {
+                    // 内存去重：同一批次内相同标题
+                    if (!batchDedupSet.add(title)) {
                         skipCount++;
                         continue;
                     }
 
-                    // 数据库去重：已存在的标题+平台+赛道跳过
-                    if (existingSet.contains(batchKey)) {
+                    // 数据库去重：已存在的标题（按名称幂等）跳过
+                    if (existingSet.contains(title)) {
                         skipCount++;
                         continue;
                     }
@@ -2559,13 +2828,10 @@ public class TitleLibraryController {
             });
             readerThread.start();
 
-            boolean finished = process.waitFor(180, java.util.concurrent.TimeUnit.SECONDS);
+            boolean finished = process.waitFor(300, java.util.concurrent.TimeUnit.SECONDS);
             if (!finished) {
-                log.error("[callClaude] 命令执行超时(180s)，强制终止进程");
-                process.destroyForcibly();
-                try {
-                    process.descendants().forEach(ProcessHandle::destroyForcibly);
-                } catch (Exception ignored) {}
+                log.error("[callClaude] 命令执行超时(300s)，强制终止进程");
+                killClaudeProcess(process);
                 readerThread.interrupt();
                 return null;
             }
@@ -2629,7 +2895,20 @@ public class TitleLibraryController {
                 if (endPos > 0) {
                     innerJson = innerJson.substring(0, endPos);
                 }
-                JsonNode innerRoot = mapper.readTree(innerJson);
+                JsonNode innerRoot = null;
+                try {
+                    innerRoot = mapper.readTree(innerJson);
+                } catch (Exception parseEx) {
+                    log.warn("[callClaude] innerJson解析失败，尝试修复未转义引号: {}", parseEx.getMessage());
+                    String fixed = fixUnescapedQuotesInJson(innerJson);
+                    try {
+                        innerRoot = mapper.readTree(fixed);
+                        log.info("[callClaude] 修复后解析成功");
+                    } catch (Exception fixEx) {
+                        log.error("[callClaude] 修复后仍解析失败: {}", fixEx.getMessage());
+                        return null;
+                    }
+                }
                 titles = innerRoot.path("titles");
             } else if (resultNode.isObject() || resultNode.isArray()) {
                 // result 直接是 JSON 对象/数组
@@ -2652,12 +2931,32 @@ public class TitleLibraryController {
             return titles;
         } catch (Exception e) {
             log.error("[callClaude] 调用异常: {}", e.getMessage(), e);
-            if (process != null && process.isAlive()) {
-                process.destroyForcibly();
-                try { process.descendants().forEach(ProcessHandle::destroyForcibly); } catch (Exception ignored) {}
-            }
+            killClaudeProcess(process);
             return null;
         }
+    }
+
+    /**
+     * 强制杀死 claude 进程及其所有子进程。
+     * Java 的 destroyForcibly 有时无法杀死处于睡眠/等待网络状态的进程，
+     * 这里使用 kill -9 确保进程被彻底终止。
+     */
+    private void killClaudeProcess(Process process) {
+        if (process == null) return;
+        try {
+            long pid = process.pid();
+            // 先尝试标准方式
+            process.destroyForcibly();
+            process.descendants().forEach(ProcessHandle::destroyForcibly);
+            // 再用 kill -9 兜底
+            try {
+                Runtime.getRuntime().exec("kill -9 " + pid);
+            } catch (Exception ignored) {}
+            // 杀死所有子进程（防止 claude 启动的孙子进程残留）
+            try {
+                Runtime.getRuntime().exec("pkill -9 -P " + pid);
+            } catch (Exception ignored) {}
+        } catch (Exception ignored) {}
     }
 
     private boolean isSocialTrack(String trackName) {
@@ -2666,6 +2965,52 @@ public class TitleLibraryController {
         return lower.contains("社会") || lower.contains("民生") || lower.contains("热点")
                 || lower.contains("时政") || lower.contains("新闻") || lower.contains("时事")
                 || lower.contains("财经") || lower.contains("政策");
+    }
+
+    /**
+     * 修复 JSON 字符串值中未转义的双引号。
+     * Claude 有时会在 title/description 中生成带双引号的内容但没有正确转义，
+     * 导致 Jackson 解析失败。此方法将字符串值内部的未转义双引号替换为中文引号。
+     */
+    private String fixUnescapedQuotesInJson(String json) {
+        StringBuilder result = new StringBuilder();
+        boolean inString = false;
+        boolean escape = false;
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (escape) {
+                result.append(c);
+                escape = false;
+                continue;
+            }
+            if (c == '\\') {
+                result.append(c);
+                escape = true;
+                continue;
+            }
+            if (c == '"') {
+                if (inString) {
+                    // 检查这个引号后面是否跟的是 JSON 结构分隔符
+                    int j = i + 1;
+                    while (j < json.length() && Character.isWhitespace(json.charAt(j))) j++;
+                    char next = j < json.length() ? json.charAt(j) : '\0';
+                    // 如果后面是结构分隔符，则是合法的字符串结束符
+                    if (next == ':' || next == ',' || next == '}' || next == ']' || next == '\0') {
+                        result.append(c);
+                        inString = false;
+                    } else {
+                        // 字符串值内部的未转义双引号，替换为中文右双引号
+                        result.append('\u201d');
+                    }
+                } else {
+                    result.append(c);
+                    inString = true;
+                }
+            } else {
+                result.append(c);
+            }
+        }
+        return result.toString();
     }
 
     private String getCellString(Row row, int col) {

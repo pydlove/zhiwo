@@ -12,7 +12,8 @@ import {
   batchApproveTitleReviews, batchRejectTitleReviews,
   cancelTitleReview, batchCancelTitleReviews,
   pushTitleReview, batchPushTitleReviews,
-  getTitleReviewStats, listPushLogs, listPushedTitleReviews,
+  rePushTitleReview, batchRePushTitleReviews,
+  getTitleReviewStats, listPushLogs, listPushedTitleReviews, listBySource,
   listServerConfigs, saveServerConfig, deleteServerConfig,
   testServerConfig, testServerConfigDirect
 } from '../api/process.js'
@@ -81,6 +82,11 @@ const serverConfigTestLoading = ref(false)
 const editModalOpen = ref(false)
 const editForm = ref({ id: '', title: '', description: '' })
 const editLoading = ref(false)
+
+// 改赛道
+const changeTrackModalOpen = ref(false)
+const changeTrackForm = ref({ id: '', trackId: '' })
+const changeTrackLoading = ref(false)
 
 // 自动化配置
 const autoConfig = ref({
@@ -165,7 +171,6 @@ const savedGenerateConfig = JSON.parse(localStorage.getItem(GENERATE_CONFIG_KEY)
 const generateModalOpen = ref(false)
 const generateCount = ref(savedGenerateConfig?.count || 3)
 const generateOutputPath = ref(savedGenerateConfig?.outputPath || '')
-const generatePlatforms = ref(savedGenerateConfig?.platforms || [])
 const generateTrackIds = ref(savedGenerateConfig?.trackIds || [])
 const generating = ref(false)
 const generateProgress = ref(0)
@@ -173,14 +178,21 @@ const generateTaskId = ref(null)
 const generateStatusMsg = ref('')
 let generatePollTimer = null
 
-const filteredTracksForGenerate = computed(() => {
-  if (!generatePlatforms.value || generatePlatforms.value.length === 0) {
-    return tracks.value
-  }
-  return tracks.value.filter(t => {
-    if (!t.platforms) return false
-    const trackPlatforms = t.platforms.split(',')
-    return generatePlatforms.value.some(p => trackPlatforms.includes(p))
+// 生成弹窗中赛道选项：按平台排序，显示为"平台-赛道"
+const sortedTrackOptions = computed(() => {
+  const platformOrder = platformOptions.map(p => p.value)
+  const list = [...tracks.value].filter(t => t.name)
+  list.sort((a, b) => {
+    const pa = a.platforms ? a.platforms.split(/[,，\s]+/).filter(Boolean)[0] : ''
+    const pb = b.platforms ? b.platforms.split(/[,，\s]+/).filter(Boolean)[0] : ''
+    const ia = platformOrder.indexOf(pa)
+    const ib = platformOrder.indexOf(pb)
+    if (ia !== ib) return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib)
+    return a.name.localeCompare(b.name)
+  })
+  return list.map(t => {
+    const firstPlatform = t.platforms ? t.platforms.split(/[,，\s]+/).filter(Boolean)[0] : ''
+    return { ...t, displayLabel: firstPlatform ? `${firstPlatform} - ${t.name}` : t.name }
   })
 })
 
@@ -220,7 +232,6 @@ function saveGenerateConfig() {
   localStorage.setItem(GENERATE_CONFIG_KEY, JSON.stringify({
     count: generateCount.value,
     outputPath: generateOutputPath.value,
-    platforms: generatePlatforms.value,
     trackIds: generateTrackIds.value,
   }))
 }
@@ -229,16 +240,16 @@ function openGenerateModal() {
   generateModalOpen.value = true
 }
 
-function onPlatformChange() {
-  if (!generatePlatforms.value || generatePlatforms.value.length === 0) {
-    return
-  }
-  generateTrackIds.value = generateTrackIds.value.filter(trackId => {
+function derivePlatformsFromTracks(trackIds) {
+  const platforms = new Set()
+  for (const trackId of trackIds) {
     const track = tracks.value.find(t => t.id === trackId)
-    if (!track || !track.platforms) return false
-    const trackPlatforms = track.platforms.split(',')
-    return generatePlatforms.value.some(p => trackPlatforms.includes(p))
-  })
+    if (track && track.platforms) {
+      const ps = track.platforms.split(/[,，\s]+/).filter(Boolean)
+      ps.forEach(p => platforms.add(p))
+    }
+  }
+  return Array.from(platforms)
 }
 
 function stopGeneratePoll() {
@@ -283,7 +294,7 @@ async function handleGenerate() {
     const result = await generateTitles({
       countPerCombo: generateCount.value,
       outputPath: generateOutputPath.value.trim(),
-      platforms: generatePlatforms.value,
+      platforms: derivePlatformsFromTracks(generateTrackIds.value),
       trackIds: generateTrackIds.value,
     })
     generateTaskId.value = result.taskId
@@ -332,6 +343,26 @@ async function loadData() {
     loading.value = true
     try {
       const res = await listPushedTitleReviews({
+        platform: searchPlatform.value,
+        trackId: searchTrack.value,
+        keyword: searchKeyword.value,
+        page: page.value,
+        pageSize: pageSize.value
+      })
+      tableData.value = res.list || []
+      total.value = res.total || 0
+    } catch (e) {
+      message.error('加载数据失败')
+    } finally {
+      loading.value = false
+    }
+    return
+  }
+  if (reviewStatus.value === 'pushed-up') {
+    loading.value = true
+    try {
+      const res = await listBySource({
+        source: 'pushed_up',
         platform: searchPlatform.value,
         trackId: searchTrack.value,
         keyword: searchKeyword.value,
@@ -487,7 +518,9 @@ function handleEdit(record) {
   editForm.value = {
     id: record.titleLibraryId,
     title: record.title || '',
-    description: record.description || ''
+    description: record.description || '',
+    platform: record.platform || '',
+    trackId: record.trackId || ''
   }
   editModalOpen.value = true
 }
@@ -502,7 +535,9 @@ async function handleEditConfirm() {
     await saveTitle({
       id: editForm.value.id,
       title: editForm.value.title.trim(),
-      description: editForm.value.description.trim()
+      description: editForm.value.description.trim(),
+      platform: editForm.value.platform,
+      trackId: editForm.value.trackId
     })
     message.success('保存成功')
     editModalOpen.value = false
@@ -511,6 +546,35 @@ async function handleEditConfirm() {
     message.error('保存失败')
   } finally {
     editLoading.value = false
+  }
+}
+
+function handleChangeTrack(record) {
+  changeTrackForm.value = {
+    id: record.titleLibraryId,
+    trackId: record.trackId || ''
+  }
+  changeTrackModalOpen.value = true
+}
+
+async function handleChangeTrackConfirm() {
+  if (!changeTrackForm.value.trackId) {
+    message.warning('请选择赛道')
+    return
+  }
+  changeTrackLoading.value = true
+  try {
+    await saveTitle({
+      id: changeTrackForm.value.id,
+      trackId: changeTrackForm.value.trackId
+    })
+    message.success('赛道修改成功')
+    changeTrackModalOpen.value = false
+    loadData()
+  } catch (e) {
+    message.error('赛道修改失败')
+  } finally {
+    changeTrackLoading.value = false
   }
 }
 
@@ -595,6 +659,36 @@ async function doPush(ids) {
   }
 }
 
+function handleRePush(record) {
+  doRePush([record.id])
+}
+
+function handleBatchRePush() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择要重新推送的标题')
+    return
+  }
+  doRePush(selectedRowKeys.value)
+}
+
+async function doRePush(ids) {
+  try {
+    const res = await batchRePushTitleReviews({ ids })
+    const result = res
+    if (result.failed > 0) {
+      message.warning(`重新推送完成：成功 ${result.success} 条，失败 ${result.failed} 条`)
+    } else {
+      message.success(`成功重新推送 ${result.success} 条标题`)
+    }
+    selectedRowKeys.value = []
+    selectedRows.value = []
+    loadData()
+    loadStats()
+  } catch (e) {
+    message.error('重新推送失败：' + (e?.response?.data?.msg || e.message))
+  }
+}
+
 // 服务器配置管理
 function openServerConfigDrawer() {
   serverConfigDrawerOpen.value = true
@@ -672,34 +766,60 @@ const columns = [
   { title: '赛道', dataIndex: 'trackName', key: 'trackName', width: 120 },
   { title: '来源', dataIndex: 'source', key: 'source', width: 100,
     customRender: ({ text }) => {
-      const map = { ai_generated: 'AI生成', manual: '手动录入', imported: '导入' }
-      return h(Tag, { size: 'small' }, () => map[text] || text)
+      const map = { ai_generated: 'AI生成', manual: '手动录入', imported: '导入', pushed_up: '推送上来' }
+      return h(Tag, { size: 'small', color: text === 'pushed_up' ? 'blue' : 'default' }, () => map[text] || text)
     }
   },
   { title: '生成时间', dataIndex: 'createdAt', key: 'createdAt', width: 160 },
   {
     title: '操作',
     key: 'action',
-    width: 180,
+    width: 240,
     fixed: 'right',
     customRender: ({ record }) => {
       const buttons = []
       if (reviewStatus.value === 'pending') {
         buttons.push(
           h(Button, { type: 'link', size: 'small', onClick: () => handleEdit(record) }, () => '编辑'),
+          h(Button, { type: 'link', size: 'small', onClick: () => handleChangeTrack(record) }, () => '改赛道'),
           h(Button, { type: 'link', size: 'small', onClick: () => handleApprove(record) }, () => '通过'),
           h(Button, { type: 'link', size: 'small', danger: true, onClick: () => handleReject(record) }, () => '拒绝')
         )
       } else if (reviewStatus.value === 'approved') {
         buttons.push(
           h(Button, { type: 'primary', size: 'small', onClick: () => handlePush(record) }, () => '推送'),
+          h(Button, { type: 'link', size: 'small', onClick: () => handleChangeTrack(record) }, () => '改赛道'),
           h(Button, { type: 'link', size: 'small', onClick: () => handleCancel(record) }, () => '取消审核'),
           h(Button, { type: 'link', size: 'small', danger: true, onClick: () => handleReject(record) }, () => '拒绝')
         )
       } else if (reviewStatus.value === 'pushed') {
         buttons.push(
-          h(Tag, { color: 'green', size: 'small' }, () => '已推送')
+          h(Button, { type: 'primary', size: 'small', ghost: true, onClick: () => handleRePush(record) }, () => '重新推送'),
+          h(Button, { type: 'link', size: 'small', onClick: () => handleChangeTrack(record) }, () => '改赛道')
         )
+      } else if (reviewStatus.value === 'pushed-up') {
+        // 推送上来的标题根据实际审核状态显示操作
+        const rs = record.reviewStatus
+        if (rs === 'pending') {
+          buttons.push(
+            h(Button, { type: 'link', size: 'small', onClick: () => handleEdit(record) }, () => '编辑'),
+            h(Button, { type: 'link', size: 'small', onClick: () => handleApprove(record) }, () => '通过'),
+            h(Button, { type: 'link', size: 'small', danger: true, onClick: () => handleReject(record) }, () => '拒绝')
+          )
+        } else if (rs === 'approved') {
+          const ps = record.pushStatus
+          if (ps === 'pushed') {
+            buttons.push(h(Tag, { color: 'green', size: 'small' }, () => '已推送'))
+          } else {
+            buttons.push(
+              h(Button, { type: 'primary', size: 'small', onClick: () => handlePush(record) }, () => '推送'),
+              h(Button, { type: 'link', size: 'small', onClick: () => handleCancel(record) }, () => '取消审核'),
+              h(Button, { type: 'link', size: 'small', danger: true, onClick: () => handleReject(record) }, () => '拒绝')
+            )
+          }
+        } else if (rs === 'rejected') {
+          buttons.push(h(Tag, { color: 'red', size: 'small' }, () => '已拒绝'))
+        }
       }
       return h(Space, { size: 'small' }, () => buttons)
     }
@@ -984,6 +1104,7 @@ onMounted(() => {
           </span>
         </template>
       </Tabs.TabPane>
+      <Tabs.TabPane key="pushed-up" tab="推送上来" />
       <Tabs.TabPane key="push-logs" tab="推送日志" />
     </Tabs>
 
@@ -1033,6 +1154,11 @@ onMounted(() => {
             批量拒绝
           </Button>
         </template>
+        <template v-if="reviewStatus === 'pushed'">
+          <Button type="primary" :disabled="selectedRowKeys.length === 0" @click="handleBatchRePush">
+            批量重新推送
+          </Button>
+        </template>
         <template v-if="reviewStatus === 'approved'">
           <Button type="primary" :disabled="selectedRowKeys.length === 0" @click="handleBatchPush">
             批量推送
@@ -1044,26 +1170,24 @@ onMounted(() => {
             批量拒绝
           </Button>
         </template>
+        <template v-if="reviewStatus === 'pushed-up'">
+          <Button type="primary" :disabled="selectedRowKeys.length === 0" @click="handleBatchApprove">
+            批量通过
+          </Button>
+          <Button danger :disabled="selectedRowKeys.length === 0" @click="handleBatchReject">
+            批量拒绝
+          </Button>
+        </template>
       </Space>
     </div>
 
     <!-- 数据表格 -->
     <Table
-      v-if="reviewStatus !== 'push-logs' && reviewStatus !== 'pushed'"
+      v-if="reviewStatus !== 'push-logs'"
       :columns="columns"
       :data-source="tableData"
       :loading="loading"
       :row-selection="rowSelection"
-      :pagination="false"
-      row-key="id"
-      size="middle"
-      :scroll="{ x: 1100 }"
-    />
-    <Table
-      v-if="reviewStatus === 'pushed'"
-      :columns="columns"
-      :data-source="tableData"
-      :loading="loading"
       :pagination="false"
       row-key="id"
       size="middle"
@@ -1182,14 +1306,9 @@ onMounted(() => {
             4. 生成的标题会自动进入「待审核」列表
           </div>
         </div>
-        <Form.Item label="选择平台">
-          <Select v-model:value="generatePlatforms" mode="multiple" placeholder="不选则生成全部平台" style="width: 100%;" @change="onPlatformChange">
-            <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value">{{ p.label }}</Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item label="选择赛道">
+        <Form.Item label="选择平台-赛道">
           <Select v-model:value="generateTrackIds" mode="multiple" placeholder="不选则生成全部赛道" style="width: 100%;">
-            <Select.Option v-for="t in filteredTracksForGenerate" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+            <Select.Option v-for="t in sortedTrackOptions" :key="t.id" :value="t.id">{{ t.displayLabel }}</Select.Option>
           </Select>
         </Form.Item>
         <Form.Item label="每个组合生成数量" required>
@@ -1215,6 +1334,22 @@ onMounted(() => {
         </Form.Item>
         <Form.Item label="描述">
           <Input.TextArea v-model:value="editForm.description" placeholder="请输入描述" :rows="3" />
+        </Form.Item>
+      </Form>
+    </Modal>
+
+    <!-- 改赛道弹窗 -->
+    <Modal
+      v-model:open="changeTrackModalOpen"
+      title="修改赛道"
+      :confirm-loading="changeTrackLoading"
+      @ok="handleChangeTrackConfirm"
+    >
+      <Form layout="vertical">
+        <Form.Item label="选择赛道" required>
+          <Select v-model:value="changeTrackForm.trackId" placeholder="请选择赛道" style="width: 100%;">
+            <Select.Option v-for="t in sortedTrackOptions" :key="t.id" :value="t.id">{{ t.displayLabel }}</Select.Option>
+          </Select>
         </Form.Item>
       </Form>
     </Modal>

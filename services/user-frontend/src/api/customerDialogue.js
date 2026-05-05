@@ -8,3 +8,7 @@ export function listCustomerDialogues(category) {
 export function listCategories() {
   return request.get('/customer-dialogues/categories')
 }
+
+export function saveCustomerDialogue(data) {
+  return request.post('/customer-dialogues', data)
+}

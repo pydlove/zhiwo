@@ -58,9 +58,31 @@ public class CustomerDialogueController {
         return Result.ok(null);
     }
 
+    @PostMapping("/batch-delete")
+    public Result<Void> batchDelete(@RequestBody List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Result.error("请选择要删除的记录");
+        }
+        for (String id : ids) {
+            customerDialogueService.delete(id);
+        }
+        return Result.ok(null);
+    }
+
     @GetMapping("/export")
     public ResponseEntity<byte[]> export() {
-        List<CustomerDialogue> list = customerDialogueService.list();
+        return exportToExcel(customerDialogueService.list());
+    }
+
+    @PostMapping("/export-selected")
+    public ResponseEntity<byte[]> exportSelected(@RequestBody List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        return exportToExcel(customerDialogueService.listByIds(ids));
+    }
+
+    private ResponseEntity<byte[]> exportToExcel(List<CustomerDialogue> list) {
         try (XSSFWorkbook wb = new XSSFWorkbook()) {
             Sheet sheet = wb.createSheet("客服对话");
             String[] headers = {"分类", "提问/场景", "回复内容", "图片URL", "排序"};
@@ -135,7 +157,6 @@ public class CustomerDialogueController {
                     }
 
                     CustomerDialogue cd = new CustomerDialogue();
-                    cd.setId(UUID.randomUUID().toString().replace("-", ""));
                     cd.setCategory(category);
                     cd.setQuestion(question);
                     cd.setReply(reply);

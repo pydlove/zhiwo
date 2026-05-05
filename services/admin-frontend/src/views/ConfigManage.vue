@@ -71,6 +71,9 @@ function clearParseHistory() {
   }
 }
 
+const notifyEmailEnabled = ref(false)
+const notifyEmailAddress = ref('')
+
 const backupLoading = ref(false)
 
 async function handleBackupDb() {
@@ -106,6 +109,8 @@ async function loadConfig() {
       qrCodeUrl.value = data.qrCodeUrl || ''
       if (data.apiKey) apiKey.value = data.apiKey
       if (data.model) model.value = data.model
+      notifyEmailEnabled.value = data.notifyEmailEnabled === '1'
+      if (data.notifyEmailAddress) notifyEmailAddress.value = data.notifyEmailAddress
     }
   } catch (e) {
     // ignore
@@ -121,6 +126,8 @@ async function handleSave() {
       systemName: systemName.value,
       logoUrl: logoUrl.value,
       qrCodeUrl: qrCodeUrl.value,
+      notifyEmailEnabled: notifyEmailEnabled.value ? '1' : '0',
+      notifyEmailAddress: notifyEmailAddress.value,
     })
     message.success('配置已保存')
   } catch (e) {
@@ -455,6 +462,35 @@ onMounted(() => {
           </div>
           <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">该链接包含平台限制和赛道数量限制，请勿泄露给非目标用户</div>
         </Form.Item>
+      </Form>
+    </Card>
+
+    <Card style="border-radius: 2px; margin-bottom: 24px;">
+      <template #title>
+        <span style="font-size: 16px; font-weight: 500; color: #262626;">开户邮件通知</span>
+      </template>
+      <Form layout="vertical">
+        <Form.Item>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <input
+              :checked="notifyEmailEnabled"
+              type="checkbox"
+              style="width: 16px; height: 16px; cursor: pointer;"
+              @change="notifyEmailEnabled = $event.target.checked"
+            />
+            <span style="font-size: 14px; color: #262626;">启用邮件通知</span>
+            <span style="font-size: 12px; color: #8c8c8c;">用户成功开户后，发送邮件通知管理员</span>
+          </div>
+        </Form.Item>
+        <Form.Item label="通知邮箱">
+          <Input v-model:value="notifyEmailAddress" placeholder="请输入接收通知的管理员邮箱" style="max-width: 480px;" />
+          <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">开户成功后将发送邮件到该邮箱，邮件内容由系统自动生成</div>
+        </Form.Item>
+        <div style="padding: 12px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; font-size: 13px; color: #595959; max-width: 480px;">
+          <strong>邮件内容示例：</strong><br/>
+          主题：【开户通知】有新的用户提交了开户申请<br/>
+          内容包含：微信名称、公众号名称、邮箱、申请时间
+        </div>
       </Form>
     </Card>
 

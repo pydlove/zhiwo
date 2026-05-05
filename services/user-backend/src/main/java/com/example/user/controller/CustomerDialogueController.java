@@ -6,6 +6,7 @@ import com.example.user.mapper.CustomerDialogueMapper;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/customer-dialogues")
@@ -29,5 +30,17 @@ public class CustomerDialogueController {
     @GetMapping("/categories")
     public Result<List<String>> categories() {
         return Result.ok(customerDialogueMapper.findAllCategories());
+    }
+
+    @PostMapping
+    public Result<Void> save(@RequestBody CustomerDialogue customerDialogue) {
+        if (customerDialogue.getId() == null || customerDialogue.getId().isEmpty()) {
+            customerDialogue.setId(UUID.randomUUID().toString().replace("-", ""));
+        }
+        if (customerDialogue.getSortOrder() == null) {
+            customerDialogue.setSortOrder(0);
+        }
+        customerDialogueMapper.insert(customerDialogue);
+        return Result.ok(null);
     }
 }

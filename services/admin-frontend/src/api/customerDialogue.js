@@ -21,3 +21,13 @@ export function saveCustomerDialogue(data) {
 export function deleteCustomerDialogue(id) {
   return request.delete('/customer-dialogues/' + id)
 }
+
+export function exportSelected(ids) {
+  return request.post('/customer-dialogues/export-selected', ids, {
+    responseType: 'blob',
+  })
+}
+
+export function batchDeleteCustomerDialogues(ids) {
+  return request.post('/customer-dialogues/batch-delete', ids)
+}

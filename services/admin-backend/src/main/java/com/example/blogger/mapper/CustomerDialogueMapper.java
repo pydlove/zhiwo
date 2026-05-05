@@ -17,6 +17,11 @@ public interface CustomerDialogueMapper {
     @Select("SELECT DISTINCT category FROM tu_customer_dialogue ORDER BY category")
     List<String> findAllCategories();
 
+    @Select("<script>SELECT * FROM tu_customer_dialogue WHERE id IN " +
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> " +
+            "ORDER BY sort_order ASC, created_at DESC</script>")
+    List<CustomerDialogue> findByIds(@Param("ids") List<String> ids);
+
     @Select("SELECT * FROM tu_customer_dialogue WHERE id = #{id}")
     CustomerDialogue findById(String id);
 

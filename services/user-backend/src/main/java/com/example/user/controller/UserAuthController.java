@@ -29,14 +29,16 @@ public class UserAuthController {
     private final UserService userService;
     private final UserTrackMapper userTrackMapper;
     private final StyleMapper styleMapper;
+    private final com.example.user.service.MailNotifyService mailNotifyService;
 
-    public UserAuthController(UserMapper userMapper, PasswordEncoder passwordEncoder, MembershipPlanMapper membershipPlanMapper, UserService userService, UserTrackMapper userTrackMapper, StyleMapper styleMapper) {
+    public UserAuthController(UserMapper userMapper, PasswordEncoder passwordEncoder, MembershipPlanMapper membershipPlanMapper, UserService userService, UserTrackMapper userTrackMapper, StyleMapper styleMapper, com.example.user.service.MailNotifyService mailNotifyService) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.membershipPlanMapper = membershipPlanMapper;
         this.userService = userService;
         this.userTrackMapper = userTrackMapper;
         this.styleMapper = styleMapper;
+        this.mailNotifyService = mailNotifyService;
     }
 
     @PostMapping("/login")
@@ -215,6 +217,15 @@ public class UserAuthController {
         data.put("userId", user.getId());
         data.put("username", user.getUsername());
         data.put("password", defaultPassword);
+
+        // 发送邮件通知管理员
+        try {
+            mailNotifyService.sendOpenAccountNotice(nickName, wxName, email);
+        } catch (Exception e) {
+            // 通知失败不影响开户结果
+            System.err.println("[openAccount] 发送邮件通知失败: " + e.getMessage());
+        }
+
         return Result.ok(data);
     }
 

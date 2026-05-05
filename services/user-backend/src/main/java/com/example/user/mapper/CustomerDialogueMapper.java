@@ -16,4 +16,8 @@ public interface CustomerDialogueMapper {
 
     @Select("SELECT DISTINCT category FROM tu_customer_dialogue ORDER BY category")
     List<String> findAllCategories();
+
+    @Insert("INSERT INTO tu_customer_dialogue(id, category, question, reply, image_url, sort_order, created_at, updated_at) " +
+            "VALUES(#{id}, #{category}, #{question}, #{reply}, #{imageUrl}, #{sortOrder}, NOW(), NOW())")
+    int insert(CustomerDialogue customerDialogue);
 }

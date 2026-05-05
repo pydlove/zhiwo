@@ -7,6 +7,8 @@ import {
   listCategories,
   saveCustomerDialogue,
   deleteCustomerDialogue,
+  exportSelected,
+  batchDeleteCustomerDialogues,
 } from '../api/customerDialogue.js'
 import request from '../api/request.js'
 
@@ -27,8 +29,31 @@ const form = ref({
   sortOrder: 0,
 })
 const uploadLoading = ref(false)
+const importInput = ref(null)
 const imagePreviewVisible = ref(false)
 const previewImageUrl = ref('')
+const searchKeyword = ref('')
+const selectedRowKeys = ref([])
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys) => {
+    selectedRowKeys.value = keys
+  },
+}))
+
+const filteredTableData = computed(() => {
+  let list = tableData.value
+  if (searchKeyword.value.trim()) {
+    const kw = searchKeyword.value.trim().toLowerCase()
+    list = list.filter(item =>
+      (item.question && item.question.toLowerCase().includes(kw)) ||
+      (item.reply && item.reply.toLowerCase().includes(kw)) ||
+      (item.category && item.category.toLowerCase().includes(kw))
+    )
+  }
+  return list
+})
 
 const tableData = computed(() => {
   if (activeCategory.value === '全部') return allData.value
@@ -44,6 +69,7 @@ async function loadData() {
     ])
     allData.value = dialogues || []
     categories.value = cats || []
+    selectedRowKeys.value = []
     // 确保当前 activeCategory 在分类列表中
     if (activeCategory.value !== '全部' && !categories.value.includes(activeCategory.value)) {
       activeCategory.value = '全部'
@@ -137,6 +163,26 @@ function handleDelete(record) {
   })
 }
 
+function handleBatchDelete() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先勾选要删除的记录')
+    return
+  }
+  Modal.confirm({
+    title: '确认批量删除',
+    content: `确定删除选中的 ${selectedRowKeys.value.length} 条客服对话吗？`,
+    onOk: async () => {
+      try {
+        await batchDeleteCustomerDialogues(selectedRowKeys.value)
+        message.success('批量删除成功')
+        loadData()
+      } catch (e) {
+        message.error('批量删除失败')
+      }
+    },
+  })
+}
+
 async function handleCopy(text, label = '内容') {
   try {
     await navigator.clipboard.writeText(text)
@@ -205,28 +251,59 @@ async function handleExport() {
   }
 }
 
+async function handleExportSelected() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先勾选要导出的记录')
+    return
+  }
+  try {
+    const blob = await exportSelected(selectedRowKeys.value)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'customer_dialogues_selected_' + new Date().toISOString().slice(0, 10) + '.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    message.success('导出选中成功')
+  } catch (e) {
+    message.error('导出选中失败')
+  }
+}
+
+function handleImportClick() {
+  importInput.value?.click()
+}
+
 async function handleImport(e) {
   const file = e.target.files[0]
-  if (!file) return
+  if (!file) {
+    console.log('[import] no file selected')
+    return
+  }
+  console.log('[import] file:', file.name, file.size)
   try {
     const formData = new FormData()
     formData.append('file', file)
     const res = await request.post('/customer-dialogues/import', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
+    console.log('[import] response:', res)
     const { success = 0, failed = 0, errors = [] } = res
     if (failed === 0) {
       message.success(`导入成功，共 ${success} 条`)
     } else {
       Modal.warning({
         title: `导入完成：成功 ${success} 条，失败 ${failed} 条`,
-        content: h('div', { style: 'max-height: 300px; overflow-y: auto;' },
-          errors.map(err => h('div', { style: 'margin-bottom: 4px; font-size: 13px;' }, err))
+        content: h('div', { style: { maxHeight: '300px', overflowY: 'auto' } },
+          errors.map(err => h('div', { style: { marginBottom: '4px', fontSize: '13px' } }, err))
         ),
       })
     }
     loadData()
   } catch (e) {
+    console.error('[import] error:', e)
     message.error(e.message || '导入失败')
   } finally {
     e.target.value = ''
@@ -254,17 +331,17 @@ const columns = [
     ellipsis: true,
     customRender: ({ text, record }) => {
       return h('div', {
-        style: 'display: flex; align-items: center; gap: 8px;',
+        style: { display: 'flex', alignItems: 'center', gap: '8px' },
       }, [
         h('span', {
-          style: 'flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;',
+          style: { flex: '1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
           title: text,
         }, text),
         h(Tooltip, { title: '复制回复' }, () =>
           h(Button, {
             type: 'link',
             size: 'small',
-            style: 'padding: 0;',
+            style: { padding: '0' },
             onClick: (e) => {
               e.stopPropagation()
               handleCopy(text, '回复')
@@ -281,17 +358,17 @@ const columns = [
     align: 'center',
     customRender: ({ text }) => {
       if (!text) {
-        return h('span', { style: 'color: #999;' }, '-')
+        return h('span', { style: { color: '#999' } }, '-')
       }
       const fullUrl = text.startsWith('http') ? text : window.location.origin + text
       return h('div', {
-        style: 'display: flex; align-items: center; justify-content: center; gap: 8px;',
+        style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' },
       }, [
         h(Image, {
           src: fullUrl,
           width: 50,
           height: 50,
-          style: 'object-fit: cover; border-radius: 4px; cursor: pointer;',
+          style: { objectFit: 'cover', borderRadius: '4px', cursor: 'pointer' },
           preview: false,
           onClick: () => handlePreviewImage(fullUrl),
         }),
@@ -299,7 +376,7 @@ const columns = [
           h(Button, {
             type: 'link',
             size: 'small',
-            style: 'padding: 0;',
+            style: { padding: '0' },
             onClick: (e) => {
               e.stopPropagation()
               handleCopyImageUrl(text)
@@ -341,39 +418,54 @@ onMounted(loadData)
       <Button type="primary" @click="() => openModal(null)">
         <PlusOutlined /> 新增对话
       </Button>
+      <Button danger @click="handleBatchDelete">
+        <DeleteOutlined /> 批量删除
+      </Button>
       <Button @click="handleExport">
-        <DownloadOutlined /> 导出
+        <DownloadOutlined /> 导出全部
       </Button>
-      <Button>
+      <Button @click="handleExportSelected">
+        <DownloadOutlined /> 导出选中
+      </Button>
+      <Button @click="handleImportClick">
         <UploadOutlined /> 导入
-        <input
-          type="file"
-          accept=".xlsx,.xls"
-          style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;"
-          @change="handleImport"
-        />
       </Button>
+      <input
+        ref="importInput"
+        type="file"
+        accept=".xlsx,.xls"
+        style="display: none;"
+        @change="handleImport"
+      />
+      <Input
+        v-model:value="searchKeyword"
+        placeholder="搜索问题、回复或分类..."
+        style="width: 240px;"
+        allow-clear
+      />
     </div>
 
     <Tabs v-model:activeKey="activeCategory" type="card">
       <TabPane key="全部" tab="全部">
         <Table
           :columns="columns"
-          :data-source="tableData"
+          :data-source="filteredTableData"
           row-key="id"
           :loading="loading"
           :pagination="false"
           size="small"
+          :row-selection="rowSelection"
         />
       </TabPane>
       <TabPane v-for="cat in categories" :key="cat" :tab="cat">
         <Table
           :columns="columns"
-          :data-source="tableData"
+          :data-source="filteredTableData"
           row-key="id"
           :loading="loading"
           :pagination="false"
           size="small"
+          :row-selection="rowSelection"
         />
       </TabPane>
     </Tabs>

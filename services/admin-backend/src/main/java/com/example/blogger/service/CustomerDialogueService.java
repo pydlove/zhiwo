@@ -28,6 +28,10 @@ public class CustomerDialogueService {
         return customerDialogueMapper.findAllCategories();
     }
 
+    public List<CustomerDialogue> listByIds(List<String> ids) {
+        return customerDialogueMapper.findByIds(ids);
+    }
+
     public CustomerDialogue getById(String id) {
         return customerDialogueMapper.findById(id);
     }

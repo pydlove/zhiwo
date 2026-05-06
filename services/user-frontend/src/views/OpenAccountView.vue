@@ -17,7 +17,7 @@ const loading = ref(false)
 const tracks = ref([])
 const configLoading = ref(true)
 const configError = ref('')
-const config = ref({ platform: '', count: 3, membershipPlanId: '' })
+const config = ref({ platform: '', count: 3, membershipPlanId: '', adminId: '' })
 const successInfo = ref(null)
 
 const shortCode = computed(() => route.query.c || '')
@@ -85,6 +85,7 @@ async function loadConfig() {
       config.value.platform = data.platform || ''
       config.value.count = data.count || 3
       config.value.membershipPlanId = data.membershipPlanId || ''
+      config.value.adminId = data.adminId || ''
     } else {
       // No short code, allow all platforms with default count
       config.value.platform = route.query.platform || ''
@@ -131,13 +132,17 @@ async function handleSubmit() {
 
   loading.value = true
   try {
-    const data = await request.post('/auth/open-account', {
+    const payload = {
       nickName: form.value.nickName.trim(),
       wxName: form.value.wxName.trim(),
       email: form.value.email.trim(),
       trackIds: form.value.trackIds,
       membershipPlanId: config.value.membershipPlanId || undefined,
-    })
+    }
+    if (config.value.adminId) {
+      payload.adminId = config.value.adminId
+    }
+    const data = await request.post('/auth/open-account', payload)
     successInfo.value = data
     if (shortCode.value) {
       saveSuccessToCache(shortCode.value, data)

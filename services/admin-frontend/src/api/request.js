@@ -9,6 +9,15 @@ instance.interceptors.request.use((config) => {
   if (config.data instanceof FormData) {
     delete config.headers['Content-Type']
   }
+  // 自动添加 X-Admin-Id 请求头
+  try {
+    const user = JSON.parse(localStorage.getItem('admin-user') || '{}')
+    if (user.id) {
+      config.headers['X-Admin-Id'] = user.id
+    }
+  } catch (e) {
+    // ignore
+  }
   return config
 })
 

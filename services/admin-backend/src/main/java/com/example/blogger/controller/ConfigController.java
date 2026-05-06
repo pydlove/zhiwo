@@ -82,6 +82,7 @@ public class ConfigController {
         }
         String baseUrl = req.get("baseUrl") != null ? req.get("baseUrl").toString() : "http://www.mmshuo.tech";
         String membershipPlanId = req.get("membershipPlanId") != null ? req.get("membershipPlanId").toString() : "";
+        String adminId = req.get("adminId") != null ? req.get("adminId").toString() : "";
 
         if (count == null || count < 1) count = 3;
         if (count > 20) count = 20;
@@ -92,6 +93,9 @@ public class ConfigController {
         data.put("count", count);
         if (membershipPlanId != null && !membershipPlanId.isEmpty()) {
             data.put("membershipPlanId", membershipPlanId);
+        }
+        if (adminId != null && !adminId.isEmpty()) {
+            data.put("adminId", adminId);
         }
         data.put("createdAt", LocalDateTime.now().toString());
 
@@ -111,6 +115,70 @@ public class ConfigController {
         result.put("url", url);
         result.put("code", code);
         return Result.ok(result);
+    }
+
+    @PostMapping("/operator-promo-link")
+    public Result<Map<String, String>> generateOperatorPromoLink(@RequestBody Map<String, Object> req) {
+        String adminId = req.get("adminId") != null ? req.get("adminId").toString() : "";
+        String username = req.get("username") != null ? req.get("username").toString() : "";
+        String baseUrl = req.get("baseUrl") != null ? req.get("baseUrl").toString() : "http://www.mmshuo.tech";
+        String targetPath = req.get("targetPath") != null ? req.get("targetPath").toString() : "/login";
+
+        if (adminId.isEmpty() || username.isEmpty()) {
+            return Result.error("运营者信息不能为空");
+        }
+
+        // 检查是否已有该运营者的短链（按 adminId 查），有则复用
+        String existingCode = findExistingOperatorPromoCode(adminId);
+        if (existingCode != null) {
+            String url = baseUrl + "/s/" + existingCode;
+            Map<String, String> result = new HashMap<>();
+            result.put("url", url);
+            result.put("code", existingCode);
+            return Result.ok(result);
+        }
+
+        String code = generateShortCode(6);
+        Map<String, Object> data = new HashMap<>();
+        data.put("adminId", adminId);
+        data.put("username", username);
+        data.put("baseUrl", baseUrl);
+        data.put("targetPath", targetPath);
+        data.put("createdAt", LocalDateTime.now().toString());
+
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            String json = mapper.writeValueAsString(data);
+            Config c = new Config();
+            c.setConfigKey("op_link_" + code);
+            c.setConfigValue(json);
+            configMapper.save(c);
+        } catch (Exception e) {
+            return Result.error("生成短链失败: " + e.getMessage());
+        }
+
+        String url = baseUrl + "/s/" + code;
+        Map<String, String> result = new HashMap<>();
+        result.put("url", url);
+        result.put("code", code);
+        return Result.ok(result);
+    }
+
+    private String findExistingOperatorPromoCode(String adminId) {
+        List<Config> all = configMapper.findAll();
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (Config cfg : all) {
+            if (cfg.getConfigKey() == null || !cfg.getConfigKey().startsWith("op_link_")) continue;
+            try {
+                Map<String, Object> data = mapper.readValue(cfg.getConfigValue(), Map.class);
+                if (adminId.equals(data.get("adminId"))) {
+                    return cfg.getConfigKey().substring("op_link_".length());
+                }
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+        return null;
     }
 
     private String generateShortCode(int length) {

@@ -90,7 +90,8 @@ public class UserController {
             @RequestParam(value = "keyword", required = false) String keyword,
             @RequestParam(value = "platform", required = false) String platform,
             @RequestParam(value = "trackId", required = false) String trackId,
-            @RequestParam(value = "userType", required = false) Integer userType) {
+            @RequestParam(value = "userType", required = false) Integer userType,
+            @RequestParam(value = "adminId", required = false) String adminId) {
         List<User> users = userService.list();
 
         // 批量查询所有用户赛道，避免 N+1
@@ -141,6 +142,9 @@ public class UserController {
         }
         if (userType != null) {
             users = users.stream().filter(u -> userType.equals(u.getUserType())).collect(Collectors.toList());
+        }
+        if (adminId != null && !adminId.isEmpty()) {
+            users = users.stream().filter(u -> adminId.equals(u.getAdminId())).collect(Collectors.toList());
         }
 
         return Result.ok(users);
@@ -193,6 +197,7 @@ public class UserController {
         if (user.getMembershipPlanId() != null) existing.setMembershipPlanId(user.getMembershipPlanId());
         if (user.getInviteCode() != null) existing.setInviteCode(user.getInviteCode());
         if (user.getInvitedBy() != null) existing.setInvitedBy(user.getInvitedBy());
+        if (user.getAdminId() != null) existing.setAdminId(user.getAdminId());
         // Detect account opening: userType changed to 1 (开户)
         boolean wasOpened = existing.getUserType() != null && existing.getUserType() == 1;
         if (user.getUserType() != null) existing.setUserType(user.getUserType());
@@ -211,6 +216,18 @@ public class UserController {
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable String id) {
         userService.delete(id);
+        return Result.ok(null);
+    }
+
+    @PostMapping("/batch-update-admin")
+    public Result<Void> batchUpdateAdmin(@RequestBody Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
+        List<String> userIds = (List<String>) body.get("userIds");
+        String adminId = (String) body.get("adminId");
+        if (userIds == null || userIds.isEmpty()) {
+            return Result.error("请选择用户");
+        }
+        userService.batchUpdateAdminId(userIds, adminId);
         return Result.ok(null);
     }
 

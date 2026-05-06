@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, h, watch } from 'vue'
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Checkbox, Upload, Switch, Tabs, DatePicker } from 'ant-design-vue'
-import { listUsers, getUserTracks, addUserTrack, removeUserTrack, exportUsers, importUsers } from '../api/user.js'
+import { listUsers, getUserTracks, addUserTrack, removeUserTrack, exportUsers, importUsers, batchUpdateAdmin } from '../api/user.js'
 import { createOrder } from '../api/order.js'
 import { listSubscriptionPosts, saveSubscriptionPost } from '../api/subscriptionPost.js'
 import { listTracks } from '../api/track.js'
@@ -24,7 +24,7 @@ try {
 const savedSearchMap = JSON.parse(localStorage.getItem('userManage_searchMap') || '{}')
 
 // 每个 Tab 独立的搜索条件
-const defaultSearch = () => ({ username: '', email: '', wxName: '', trackId: undefined, platform: undefined })
+const defaultSearch = () => ({ username: '', email: '', wxName: '', trackId: undefined, platform: undefined, adminId: undefined })
 const searchMap = ref({
   accountOpened: savedSearchMap.accountOpened || defaultSearch(),
   distributor: savedSearchMap.distributor || defaultSearch(),
@@ -43,6 +43,16 @@ const allSubscriptionPosts = ref([])
 const allTracks = ref([])
 const allStyles = ref([])
 const allPlans = ref([])
+const allOperators = ref([])
+
+const currentAdmin = ref({})
+try {
+  currentAdmin.value = JSON.parse(localStorage.getItem('admin-user') || '{}')
+} catch (e) {
+  currentAdmin.value = {}
+}
+const isSuperAdmin = computed(() => currentAdmin.value.role === '超级管理员')
+const isOperatorAdmin = computed(() => currentAdmin.value.role === '运营管理员')
 
 const columns = [
   {
@@ -60,6 +70,7 @@ const columns = [
   },
   { title: '邮箱', dataIndex: 'email', key: 'email', width: 150 },
   { title: '公众号名称', dataIndex: 'wxName', key: 'wxName', width: 130, ellipsis: true },
+  { title: '归属运营者', dataIndex: 'adminId', key: 'adminId', width: 120 },
   { title: '赛道信息', key: 'trackInfo', width: 140 },
   { title: '可选赛道', dataIndex: 'trackLimitText', key: 'trackLimitText', width: 90 },
   {
@@ -184,6 +195,11 @@ const importLoading = ref(false)
 const orderModalOpen = ref(false)
 const orderForm = ref({ userId: '', type: 'renew', planId: '', amount: '', remark: '' })
 const orderLoading = ref(false)
+
+// Batch update admin modal state
+const batchAdminModalOpen = ref(false)
+const batchAdminId = ref(undefined)
+const batchAdminLoading = ref(false)
 
 function openOrderModal(userId, type) {
   orderForm.value = { userId, type, planId: '', amount: '', remark: '' }
@@ -364,6 +380,15 @@ async function saveRecommend() {
   }
 }
 
+async function loadOperators() {
+  try {
+    const list = await request.get('/admins')
+    allOperators.value = (list || []).filter(a => a.role === '运营管理员')
+  } catch (e) {
+    // ignore
+  }
+}
+
 async function loadData() {
   try {
     const s = searchMap.value[activeTab.value]
@@ -392,6 +417,12 @@ async function loadData() {
     if (keyword) params.keyword = keyword
     if (s.platform) params.platform = s.platform
     if (s.trackId) params.trackId = s.trackId
+    // 运营管理员自动只查看自己的用户
+    if (isOperatorAdmin.value && currentAdmin.value.id) {
+      params.adminId = currentAdmin.value.id
+    } else if (s.adminId) {
+      params.adminId = s.adminId
+    }
 
     // 1. 先加载核心数据（用户列表），拿到立刻渲染表格
     console.log('[UserManage] loadData params:', params)
@@ -491,6 +522,11 @@ async function handleExport() {
     }
     if (s.platform) params.platform = s.platform
     if (s.trackId) params.trackId = s.trackId
+    if (isOperatorAdmin.value && currentAdmin.value.id) {
+      params.adminId = currentAdmin.value.id
+    } else if (s.adminId) {
+      params.adminId = s.adminId
+    }
     if (selectedRowKeys.value.length > 0) {
       params.userIds = selectedRowKeys.value
     }
@@ -593,7 +629,7 @@ function handleAdd() {
 function handleEdit(record) {
   editModalOpen.value = true
   const rawPlatforms = record.platformLimit || ''
-  editForm.value = { id: record.id, username: record.username || '', trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : ['公众号'], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0, membershipPlanId: record.membershipPlanId || undefined, template: record.template || '', inviteCode: record.inviteCode || '', invitedBy: record.invitedBy || '', userType: record.userType || 1, wxName: record.wxName || '', nickName: record.nickName || '', email: record.email || '' }
+  editForm.value = { id: record.id, username: record.username || '', trackLimit: record.trackLimit || 0, platformLimit: rawPlatforms ? rawPlatforms.split(/[,，]/).map(s => s.trim()).filter(Boolean) : ['公众号'], expireDate: record.expireDate || '2026-12-31', status: record.status === 1 ? 1 : 0, remark: record.remark || '', canSetEmail: record.canSetEmail === 1 ? 1 : 0, membershipPlanId: record.membershipPlanId || undefined, template: record.template || '', inviteCode: record.inviteCode || '', invitedBy: record.invitedBy || '', userType: record.userType || 1, wxName: record.wxName || '', nickName: record.nickName || '', email: record.email || '', adminId: record.adminId || undefined }
 }
 
 async function saveAdd() {
@@ -660,6 +696,7 @@ async function saveEdit() {
     wxName: editForm.value.wxName || undefined,
     nickName: editForm.value.nickName || undefined,
     email: editForm.value.email || undefined,
+    adminId: editForm.value.adminId || undefined,
   }
   console.log('saveEdit payload:', payload, 'id:', editForm.value.id)
   try {
@@ -859,6 +896,34 @@ async function saveNextTitle() {
   }
 }
 
+function openBatchAdminModal() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先勾选要修改的用户')
+    return
+  }
+  batchAdminId.value = undefined
+  batchAdminModalOpen.value = true
+}
+
+async function handleBatchUpdateAdmin() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请选择用户')
+    return
+  }
+  batchAdminLoading.value = true
+  try {
+    await batchUpdateAdmin(selectedRowKeys.value, batchAdminId.value || null)
+    message.success('批量修改成功')
+    batchAdminModalOpen.value = false
+    selectedRowKeys.value = []
+    loadData()
+  } catch (e) {
+    message.error(e?.message || '批量修改失败')
+  } finally {
+    batchAdminLoading.value = false
+  }
+}
+
 async function openTrackInfoModal(record) {
   trackInfoUser.value = record
   trackInfoModalOpen.value = true
@@ -925,7 +990,10 @@ watch(activeTab, () => {
   loadData()
 })
 
-onMounted(loadData)
+onMounted(() => {
+  loadOperators()
+  loadData()
+})
 </script>
 
 <template>
@@ -944,9 +1012,13 @@ onMounted(loadData)
           <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
             <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
           </Select>
+          <Select v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
+            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id">{{ op.name || op.username }}</Select.Option>
+          </Select>
           <Button type="primary" @click="handleSearch">查询</Button>
           <Button @click="handleReset">重置</Button>
           <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
+          <Button style="margin-left: 12px;" @click="openBatchAdminModal">批量修改运营者</Button>
           <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
           <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
         </div>
@@ -954,6 +1026,9 @@ onMounted(loadData)
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'status'">
               <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>
+            </template>
+            <template v-if="column.key === 'adminId'">
+              <span style="font-size: 12px; color: #666;">{{ record.adminId ? (allOperators.find(op => op.id === record.adminId)?.name || record.adminId) : '-' }}</span>
             </template>
             <template v-if="column.key === 'trackInfo'">
               <pre style="font-size: 12px; color: #666; margin: 0; font-family: inherit; white-space: pre-wrap; word-break: break-word;">{{ record.trackInfo || '-' }}</pre>
@@ -986,9 +1061,13 @@ onMounted(loadData)
           <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
             <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
           </Select>
+          <Select v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
+            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id">{{ op.name || op.username }}</Select.Option>
+          </Select>
           <Button type="primary" @click="handleSearch">查询</Button>
           <Button @click="handleReset">重置</Button>
           <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
+          <Button style="margin-left: 12px;" @click="openBatchAdminModal">批量修改运营者</Button>
           <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
           <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
         </div>
@@ -996,6 +1075,9 @@ onMounted(loadData)
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'status'">
               <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>
+            </template>
+            <template v-if="column.key === 'adminId'">
+              <span style="font-size: 12px; color: #666;">{{ record.adminId ? (allOperators.find(op => op.id === record.adminId)?.name || record.adminId) : '-' }}</span>
             </template>
             <template v-if="column.key === 'trackInfo'">
               <pre style="font-size: 12px; color: #666; margin: 0; font-family: inherit; white-space: pre-wrap; word-break: break-word;">{{ record.trackInfo || '-' }}</pre>
@@ -1028,9 +1110,13 @@ onMounted(loadData)
           <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
             <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
           </Select>
+          <Select v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
+            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id">{{ op.name || op.username }}</Select.Option>
+          </Select>
           <Button type="primary" @click="handleSearch">查询</Button>
           <Button @click="handleReset">重置</Button>
           <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
+          <Button style="margin-left: 12px;" @click="openBatchAdminModal">批量修改运营者</Button>
           <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
           <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
         </div>
@@ -1038,6 +1124,9 @@ onMounted(loadData)
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'status'">
               <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>
+            </template>
+            <template v-if="column.key === 'adminId'">
+              <span style="font-size: 12px; color: #666;">{{ record.adminId ? (allOperators.find(op => op.id === record.adminId)?.name || record.adminId) : '-' }}</span>
             </template>
             <template v-if="column.key === 'trackInfo'">
               <pre style="font-size: 12px; color: #666; margin: 0; font-family: inherit; white-space: pre-wrap; word-break: break-word;">{{ record.trackInfo || '-' }}</pre>
@@ -1070,9 +1159,13 @@ onMounted(loadData)
           <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
             <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
           </Select>
+          <Select v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
+            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id">{{ op.name || op.username }}</Select.Option>
+          </Select>
           <Button type="primary" @click="handleSearch">查询</Button>
           <Button @click="handleReset">重置</Button>
           <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
+          <Button style="margin-left: 12px;" @click="openBatchAdminModal">批量修改运营者</Button>
           <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
           <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
         </div>
@@ -1080,6 +1173,9 @@ onMounted(loadData)
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'status'">
               <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>
+            </template>
+            <template v-if="column.key === 'adminId'">
+              <span style="font-size: 12px; color: #666;">{{ record.adminId ? (allOperators.find(op => op.id === record.adminId)?.name || record.adminId) : '-' }}</span>
             </template>
             <template v-if="column.key === 'trackInfo'">
               <span style="font-size: 12px; color: #666;">{{ record.trackInfo || '-' }}</span>
@@ -1112,9 +1208,13 @@ onMounted(loadData)
           <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
             <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
           </Select>
+          <Select v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
+            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id">{{ op.name || op.username }}</Select.Option>
+          </Select>
           <Button type="primary" @click="handleSearch">查询</Button>
           <Button @click="handleReset">重置</Button>
           <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
+          <Button style="margin-left: 12px;" @click="openBatchAdminModal">批量修改运营者</Button>
           <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
           <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
         </div>
@@ -1122,6 +1222,9 @@ onMounted(loadData)
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'status'">
               <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>
+            </template>
+            <template v-if="column.key === 'adminId'">
+              <span style="font-size: 12px; color: #666;">{{ record.adminId ? (allOperators.find(op => op.id === record.adminId)?.name || record.adminId) : '-' }}</span>
             </template>
             <template v-if="column.key === 'trackInfo'">
               <pre style="font-size: 12px; color: #666; margin: 0; font-family: inherit; white-space: pre-wrap; word-break: break-word;">{{ record.trackInfo || '-' }}</pre>
@@ -1216,6 +1319,11 @@ onMounted(loadData)
       </Form.Item>
       <Form.Item label="微信名称">
         <Input v-model:value="editForm.nickName" placeholder="请输入微信名称" />
+      </Form.Item>
+      <Form.Item v-if="isSuperAdmin" label="归属运营者">
+        <Select v-model:value="editForm.adminId" placeholder="请选择归属运营者" allow-clear style="width: 100%;">
+          <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id">{{ op.name || op.username }}</Select.Option>
+        </Select>
       </Form.Item>
       <div v-if="editForm.userType === 1" style="margin-bottom: 16px; padding: 12px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px;">
         <div style="font-size: 13px; color: #52c41a; font-weight: 500; margin-bottom: 8px;">订单操作</div>
@@ -1543,6 +1651,27 @@ onMounted(loadData)
           style="display: block; margin-top: 8px;"
           @change="handleImportFileChange"
         />
+      </Form.Item>
+    </Form>
+  </Modal>
+
+  <!-- Batch Update Admin Modal -->
+  <Modal
+    v-model:open="batchAdminModalOpen"
+    title="批量修改运营者"
+    :mask-closable="false"
+    :confirm-loading="batchAdminLoading"
+    @ok="handleBatchUpdateAdmin"
+    :width="480"
+  >
+    <Form layout="vertical" style="margin-top: 12px;">
+      <div style="margin-bottom: 16px; color: #666; font-size: 13px;">
+        已选择 <strong style="color: #1890ff;">{{ selectedRowKeys.length }}</strong> 位用户
+      </div>
+      <Form.Item label="归属运营者">
+        <Select v-model:value="batchAdminId" placeholder="请选择归属运营者（留空表示取消归属）" allow-clear style="width: 100%;">
+          <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id">{{ op.name || op.username }}</Select.Option>
+        </Select>
       </Form.Item>
     </Form>
   </Modal>

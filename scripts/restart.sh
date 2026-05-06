@@ -92,8 +92,8 @@ log_info "步骤 3/4: 启动后端服务..."
 mkdir -p "$BASE_DIR/logs"
 
 cd "$BASE_DIR/services/admin-backend"
-nohup mvn spring-boot:run -q > "$BASE_DIR/logs/admin-backend.log" 2>&1 &
-log_ok "admin-backend 已启动 (端口 8080, PID $!)"
+nohup mvn spring-boot:run -q -Dspring-boot.run.jvmArguments="-Dspring.profiles.active=local" > "$BASE_DIR/logs/admin-backend.log" 2>&1 &
+log_ok "admin-backend 已启动 (端口 8080, PID $!, profile=local)"
 
 cd "$BASE_DIR/services/user-backend"
 nohup mvn spring-boot:run -q > "$BASE_DIR/logs/user-backend.log" 2>&1 &

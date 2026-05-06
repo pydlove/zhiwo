@@ -40,6 +40,31 @@ public class OpenAccountController {
         }
     }
 
+    @GetMapping("/short-links/{code}")
+    public Result<Map<String, String>> resolveShortLink(@PathVariable String code) {
+        if (code == null || code.trim().isEmpty()) {
+            return Result.error("短链码不能为空");
+        }
+        Config config = configMapper.findByKey("op_link_" + code.trim());
+        if (config == null || config.getConfigValue() == null || config.getConfigValue().isEmpty()) {
+            return Result.error("短链已失效或不存在");
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            Map<String, Object> data = mapper.readValue(config.getConfigValue(), Map.class);
+            String baseUrl = data.get("baseUrl") != null ? data.get("baseUrl").toString() : "http://www.mmshuo.tech";
+            String targetPath = data.get("targetPath") != null ? data.get("targetPath").toString() : "/login";
+            String username = data.get("username") != null ? data.get("username").toString() : "";
+            String targetUrl = baseUrl + targetPath + "?op=" + java.net.URLEncoder.encode(username, java.nio.charset.StandardCharsets.UTF_8);
+            Map<String, String> result = new HashMap<>();
+            result.put("targetUrl", targetUrl);
+            result.put("username", username);
+            return Result.ok(result);
+        } catch (Exception e) {
+            return Result.error("短链数据解析失败");
+        }
+    }
+
     @GetMapping("/tracks")
     public Result<List<Track>> listTracks(@RequestParam(value = "platform", required = false) String platform) {
         List<Track> all = trackService.list();

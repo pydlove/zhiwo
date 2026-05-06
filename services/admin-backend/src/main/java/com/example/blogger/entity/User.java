@@ -26,6 +26,7 @@ public class User {
     private String inviteCode;
     private String invitedBy;
     private Integer userType;
+    private String adminId;
     private Integer isDeleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -77,6 +78,8 @@ public class User {
     public void setInvitedBy(String invitedBy) { this.invitedBy = invitedBy; }
     public Integer getUserType() { return userType; }
     public void setUserType(Integer userType) { this.userType = userType; }
+    public String getAdminId() { return adminId; }
+    public void setAdminId(String adminId) { this.adminId = adminId; }
     public Integer getIsDeleted() { return isDeleted; }
     public void setIsDeleted(Integer isDeleted) { this.isDeleted = isDeleted; }
     public LocalDateTime getCreatedAt() { return createdAt; }

@@ -20,7 +20,14 @@ public class CustomerDialogueController {
     }
 
     @GetMapping
-    public Result<List<CustomerDialogue>> list(@RequestParam(value = "category", required = false) String category) {
+    public Result<List<CustomerDialogue>> list(@RequestParam(value = "category", required = false) String category,
+                                                @RequestParam(value = "adminId", required = false) String adminId) {
+        if (adminId != null && !adminId.isEmpty()) {
+            if (category != null && !category.isEmpty()) {
+                return Result.ok(customerDialogueMapper.findByCategoryAndAdminId(category, adminId));
+            }
+            return Result.ok(customerDialogueMapper.findByAdminId(adminId));
+        }
         if (category != null && !category.isEmpty()) {
             return Result.ok(customerDialogueMapper.findByCategory(category));
         }
@@ -41,6 +48,7 @@ public class CustomerDialogueController {
             int nextSort = getNextSortOrder(customerDialogue.getCategory());
             customerDialogue.setSortOrder(nextSort);
         }
+        // 如果请求中没有 adminId，则不设置（系统默认话术）
         customerDialogueMapper.insert(customerDialogue);
         return Result.ok(null);
     }

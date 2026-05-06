@@ -24,8 +24,20 @@ public class CustomerDialogueService {
         return customerDialogueMapper.findByCategory(category);
     }
 
+    public List<CustomerDialogue> listByAdminId(String adminId) {
+        return customerDialogueMapper.findByAdminId(adminId);
+    }
+
+    public List<CustomerDialogue> listByCategoryAndAdminId(String category, String adminId) {
+        return customerDialogueMapper.findByCategoryAndAdminId(category, adminId);
+    }
+
     public List<String> listCategories() {
         return customerDialogueMapper.findAllCategories();
+    }
+
+    public List<String> listCategoriesByAdminId(String adminId) {
+        return customerDialogueMapper.findCategoriesByAdminId(adminId);
     }
 
     public List<CustomerDialogue> listByIds(List<String> ids) {

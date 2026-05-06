@@ -29,7 +29,16 @@ public class CustomerDialogueController {
     }
 
     @GetMapping
-    public Result<List<CustomerDialogue>> list(@RequestParam(value = "category", required = false) String category) {
+    public Result<List<CustomerDialogue>> list(@RequestParam(value = "category", required = false) String category,
+                                                @RequestParam(value = "adminId", required = false) String adminId) {
+        if (adminId != null && !adminId.isEmpty()) {
+            // 运营管理员：只返回自己的话术
+            if (category != null && !category.isEmpty()) {
+                return Result.ok(customerDialogueService.listByCategoryAndAdminId(category, adminId));
+            }
+            return Result.ok(customerDialogueService.listByAdminId(adminId));
+        }
+        // 超级管理员或默认：返回全部
         if (category != null && !category.isEmpty()) {
             return Result.ok(customerDialogueService.listByCategory(category));
         }
@@ -37,7 +46,10 @@ public class CustomerDialogueController {
     }
 
     @GetMapping("/categories")
-    public Result<List<String>> categories() {
+    public Result<List<String>> categories(@RequestParam(value = "adminId", required = false) String adminId) {
+        if (adminId != null && !adminId.isEmpty()) {
+            return Result.ok(customerDialogueService.listCategoriesByAdminId(adminId));
+        }
         return Result.ok(customerDialogueService.listCategories());
     }
 

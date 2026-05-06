@@ -19,6 +19,15 @@ const allData = ref([])
 const categories = ref([])
 const activeCategory = ref('全部')
 const loading = ref(false)
+
+const currentAdmin = ref({})
+try {
+  currentAdmin.value = JSON.parse(localStorage.getItem('admin-user') || '{}')
+} catch (e) {
+  currentAdmin.value = {}
+}
+const isSuperAdmin = computed(() => currentAdmin.value.role === '超级管理员')
+const isOperatorAdmin = computed(() => currentAdmin.value.role === '运营管理员')
 const modalOpen = ref(false)
 const editingId = ref(null)
 const form = ref({
@@ -63,9 +72,10 @@ const tableData = computed(() => {
 async function loadData() {
   loading.value = true
   try {
+    const adminId = isOperatorAdmin.value ? currentAdmin.value.id : undefined
     const [dialogues, cats] = await Promise.all([
-      listCustomerDialogues(),
-      listCategories(),
+      listCustomerDialogues(undefined, adminId),
+      listCategories(adminId),
     ])
     allData.value = dialogues || []
     categories.value = cats || []
@@ -137,6 +147,9 @@ async function handleSave() {
     }
     if (editingId.value) {
       payload.id = editingId.value
+    }
+    if (isOperatorAdmin.value && currentAdmin.value.id) {
+      payload.adminId = currentAdmin.value.id
     }
     await saveCustomerDialogue(payload)
     message.success(editingId.value ? '修改成功' : '添加成功')
@@ -317,6 +330,15 @@ const columns = [
     width: 80,
     align: 'center',
     sorter: (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
+  },
+  {
+    title: '归属',
+    dataIndex: 'adminId',
+    width: 100,
+    align: 'center',
+    customRender: ({ text }) => {
+      return h('span', { style: { color: text ? '#1890ff' : '#999', fontSize: '12px' } }, text ? '运营专属' : '系统默认')
+    },
   },
   {
     title: '提问/场景',

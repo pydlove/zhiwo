@@ -2,6 +2,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination } from 'ant-design-vue'
 import { listAdmins, saveAdmin, deleteAdmin } from '../api/admin.js'
+import { listMembershipPlans } from '../api/membershipPlan.js'
+import request from '../api/request.js'
 
 const search = ref('')
 const roleFilter = ref(undefined)
@@ -21,16 +23,29 @@ const columns = [
   { title: '管理员账号', dataIndex: 'username', key: 'username' },
   { title: '姓名', dataIndex: 'name', key: 'name' },
   { title: '角色', key: 'role', width: 120 },
+  { title: '二维码', key: 'qrCodeUrl', width: 120 },
   { title: '状态', key: 'status', width: 100 },
   { title: '最近登录', dataIndex: 'lastLogin', key: 'lastLogin', width: 150 },
   { title: '创建时间', dataIndex: 'createTime', key: 'createTime', width: 120 },
-  { title: '操作', key: 'action', width: 180 },
+  { title: '操作', key: 'action', width: 260 },
 ]
 
 const modalOpen = ref(false)
 const modalTitle = ref('新增管理员')
-const form = ref({ username: '', name: '', role: undefined, password: 'Abc123456', status: 1 })
+const form = ref({ username: '', name: '', role: undefined, password: 'Abc123456', status: 1, qrCodeUrl: '' })
 const editingId = ref(null)
+
+// 开户链接配置
+const oaModalOpen = ref(false)
+const oaRecord = ref(null)
+const oaPlatform = ref('公众号')
+const oaCount = ref(3)
+const oaMembershipPlanId = ref('')
+const oaBaseUrl = ref(window.location.hostname === 'localhost' ? 'http://localhost:5174' : 'http://www.mmshuo.tech')
+const oaLink = ref('')
+const oaGenerating = ref(false)
+const membershipPlanOptions = ref([])
+const promoLinkLoading = ref('')
 
 async function loadData() {
   try {
@@ -81,7 +96,7 @@ function handleReset() {
 function handleAdd() {
   modalTitle.value = '新增管理员'
   editingId.value = null
-  form.value = { username: '', name: '', role: undefined, password: 'Abc123456', status: 1 }
+  form.value = { username: '', name: '', role: undefined, password: 'Abc123456', status: 1, qrCodeUrl: '' }
   modalOpen.value = true
 }
 
@@ -94,6 +109,7 @@ function handleEdit(record) {
     role: record.role || undefined,
     password: '',
     status: record.status === 1 ? 1 : 0,
+    qrCodeUrl: record.qrCodeUrl || '',
   }
   modalOpen.value = true
 }
@@ -113,6 +129,9 @@ async function handleSave() {
     }
     if (!editingId.value && form.value.password) {
       payload.password = form.value.password
+    }
+    if (form.value.qrCodeUrl) {
+      payload.qrCodeUrl = form.value.qrCodeUrl
     }
     await saveAdmin(payload)
     message.success((editingId.value ? '编辑' : '新增') + '成功')
@@ -167,7 +186,134 @@ async function toggleStatus(record) {
   }
 }
 
-onMounted(loadData)
+async function loadMembershipPlanOptions() {
+  try {
+    const data = await listMembershipPlans()
+    membershipPlanOptions.value = data || []
+  } catch (e) {
+    // ignore
+  }
+}
+
+function openOaModal(record) {
+  oaRecord.value = record
+  oaPlatform.value = '公众号'
+  oaCount.value = 3
+  oaMembershipPlanId.value = ''
+  oaLink.value = ''
+  oaModalOpen.value = true
+}
+
+async function generateOaLink() {
+  oaGenerating.value = true
+  try {
+    const payload = {
+      platform: oaPlatform.value,
+      count: oaCount.value,
+      membershipPlanId: oaMembershipPlanId.value || undefined,
+      baseUrl: oaBaseUrl.value,
+      adminId: oaRecord.value.id,
+    }
+    const data = await request.post('/configs/open-account-link', payload)
+    oaLink.value = data.url
+    message.success('链接生成成功')
+  } catch (e) {
+    message.error(e.message || '链接生成失败')
+  } finally {
+    oaGenerating.value = false
+  }
+}
+
+function copyOaLink() {
+  if (!oaLink.value) return
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(oaLink.value).then(() => {
+      message.success('链接已复制到剪贴板')
+    }).catch(() => {
+      fallbackCopyOaLink()
+    })
+  } else {
+    fallbackCopyOaLink()
+  }
+}
+
+async function generatePromoLink(record) {
+  const key = 'promo-' + record.id
+  promoLinkLoading.value = key
+  try {
+    const payload = {
+      adminId: record.id,
+      username: record.username,
+      baseUrl: oaBaseUrl.value,
+      targetPath: '/login',
+    }
+    const data = await request.post('/configs/operator-promo-link', payload)
+    if (data && data.url) {
+      copyText(data.url)
+      message.success('推广短链已复制: ' + data.url)
+    } else {
+      message.error('生成短链失败')
+    }
+  } catch (e) {
+    message.error(e.message || '生成短链失败')
+  } finally {
+    promoLinkLoading.value = ''
+  }
+}
+
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).catch(() => {
+      fallbackCopyText(text)
+    })
+  } else {
+    fallbackCopyText(text)
+  }
+}
+
+function fallbackCopyText(text) {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  try {
+    document.execCommand('copy')
+  } catch (e) {}
+  document.body.removeChild(textarea)
+}
+
+function copyDialogueLink(record) {
+  const url = oaBaseUrl.value + '/customer-dialogue?op=' + encodeURIComponent(record.username)
+  copyText(url)
+  message.success('客服话术链接已复制')
+}
+
+function fallbackCopyOaLink() {
+  const textarea = document.createElement('textarea')
+  textarea.value = oaLink.value
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  try {
+    document.execCommand('copy')
+    message.success('链接已复制到剪贴板')
+  } catch (e) {
+    message.error('复制失败，请手动复制')
+  }
+  document.body.removeChild(textarea)
+}
+
+onMounted(() => {
+  loadData()
+  loadMembershipPlanOptions()
+})
 </script>
 
 <template>
@@ -193,11 +339,20 @@ onMounted(loadData)
         <template v-if="column.key === 'role'">
           <Tag :color="roleColorMap[record.role] || 'default'">{{ record.role }}</Tag>
         </template>
+        <template v-if="column.key === 'qrCodeUrl'">
+          <img v-if="record.qrCodeUrl" :src="record.qrCodeUrl" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px; cursor: pointer;" @click="() => { window.open(record.qrCodeUrl, '_blank') }" />
+          <span v-else style="color: #999;">-</span>
+        </template>
         <template v-if="column.key === 'status'">
           <Tag :color="record.status === 1 ? 'green' : 'red'">{{ record.statusText }}</Tag>
         </template>
         <template v-if="column.key === 'action'">
           <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
+          <a v-if="record.role === '运营管理员'" style="margin-right: 12px; color: #1890ff;" @click="openOaModal(record)">开户链接配置</a>
+          <a v-if="record.role === '运营管理员'" style="margin-right: 12px; color: #52c41a;" :style="{ opacity: promoLinkLoading === 'promo-' + record.id ? 0.6 : 1 }" @click="generatePromoLink(record)">
+            {{ promoLinkLoading === 'promo-' + record.id ? '生成中...' : '复制推广短链' }}
+          </a>
+          <a v-if="record.role === '运营管理员'" style="margin-right: 12px; color: #fa8c16;" @click="copyDialogueLink(record)">复制客服话术链接</a>
           <a v-if="record.role !== '超级管理员'" style="margin-right: 12px;" @click="resetPassword(record)">重置密码</a>
           <a v-if="record.role !== '超级管理员'" style="margin-right: 12px;" :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
             {{ record.status === 1 ? '禁用' : '启用' }}
@@ -233,11 +388,54 @@ onMounted(loadData)
         <Input v-model:value="form.password" />
         <div style="font-size: 12px; color: #999; margin-top: 4px;">首次登录后需强制修改</div>
       </Form.Item>
+      <Form.Item label="客服二维码URL">
+        <Input v-model:value="form.qrCodeUrl" placeholder="请输入二维码图片URL" />
+        <div style="font-size: 12px; color: #999; margin-top: 4px;">运营管理员专属，用户端登录页将展示此二维码</div>
+      </Form.Item>
       <Form.Item v-if="editingId" label="账号状态">
         <Select v-model:value="form.status">
           <Select.Option :value="1">正常</Select.Option>
           <Select.Option :value="0">已禁用</Select.Option>
         </Select>
+      </Form.Item>
+    </Form>
+  </Modal>
+
+  <Modal v-model:open="oaModalOpen" :title="'开户链接配置 — ' + (oaRecord?.name || oaRecord?.username || '')" :mask-closable="false" :footer="null" :width="600">
+    <Form layout="vertical" style="margin-top: 12px;">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+        <Form.Item label="平台" required>
+          <Select v-model:value="oaPlatform" style="width: 100%;">
+            <Select.Option value="公众号">公众号</Select.Option>
+            <Select.Option value="今日头条">今日头条</Select.Option>
+            <Select.Option value="百家号">百家号</Select.Option>
+          </Select>
+        </Form.Item>
+        <Form.Item label="可选赛道数量" required>
+          <Input v-model:value="oaCount" type="number" min="1" max="20" placeholder="最多可选几个赛道" />
+        </Form.Item>
+      </div>
+      <Form.Item label="会员套餐">
+        <Select v-model:value="oaMembershipPlanId" placeholder="请选择会员套餐" style="width: 100%;" allow-clear>
+          <Select.Option v-for="p in membershipPlanOptions" :key="p.id" :value="p.id">{{ p.name }}</Select.Option>
+        </Select>
+        <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">选择后，通过该链接开户的用户将自动关联此会员套餐</div>
+      </Form.Item>
+      <Form.Item label="基础域名">
+        <Input v-model:value="oaBaseUrl" placeholder="http://www.mmshuo.tech" />
+        <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">本地开发用 localhost:5174，线上用 www.mmshuo.tech</div>
+      </Form.Item>
+      <Form.Item>
+        <div style="display: flex; gap: 12px;">
+          <Button type="primary" :loading="oaGenerating" @click="generateOaLink">生成开户链接</Button>
+        </div>
+      </Form.Item>
+      <Form.Item v-if="oaLink" label="开户链接">
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <Input v-model:value="oaLink" readonly />
+          <Button @click="copyOaLink">复制</Button>
+        </div>
+        <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">该链接包含平台限制和赛道数量限制，归属运营者：{{ oaRecord?.name || oaRecord?.username }}</div>
       </Form.Item>
     </Form>
   </Modal>

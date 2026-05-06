@@ -138,6 +138,7 @@ public class UserAuthController {
         String wxName = req.get("wxName") != null ? req.get("wxName").toString().trim() : "";
         String email = req.get("email") != null ? req.get("email").toString().trim() : "";
         String membershipPlanId = req.get("membershipPlanId") != null ? req.get("membershipPlanId").toString().trim() : "";
+        String adminId = req.get("adminId") != null ? req.get("adminId").toString().trim() : "";
         @SuppressWarnings("unchecked")
         List<String> trackIds = req.get("trackIds") != null ? (List<String>) req.get("trackIds") : null;
 
@@ -198,6 +199,9 @@ public class UserAuthController {
             user.setExpireDate(LocalDate.now().plusYears(1));
         }
 
+        if (adminId != null && !adminId.isEmpty()) {
+            user.setAdminId(adminId);
+        }
         user.setCreatedAt(LocalDateTime.now());
         user.setUpdatedAt(LocalDateTime.now());
 

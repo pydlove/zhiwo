@@ -1,7 +1,9 @@
 import request from './request.js'
 
-export function listCustomerDialogues(category) {
-  const params = category ? { category } : {}
+export function listCustomerDialogues(category, adminId) {
+  const params = {}
+  if (category) params.category = category
+  if (adminId) params.adminId = adminId
   return request.get('/customer-dialogues', { params })
 }
 

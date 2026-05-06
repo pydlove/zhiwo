@@ -14,10 +14,16 @@ public interface CustomerDialogueMapper {
     @Select("SELECT * FROM tu_customer_dialogue WHERE category = #{category} ORDER BY sort_order ASC, created_at DESC")
     List<CustomerDialogue> findByCategory(@Param("category") String category);
 
+    @Select("SELECT * FROM tu_customer_dialogue WHERE admin_id = #{adminId} OR admin_id IS NULL ORDER BY sort_order ASC, created_at DESC")
+    List<CustomerDialogue> findByAdminId(@Param("adminId") String adminId);
+
+    @Select("SELECT * FROM tu_customer_dialogue WHERE category = #{category} AND (admin_id = #{adminId} OR admin_id IS NULL) ORDER BY sort_order ASC, created_at DESC")
+    List<CustomerDialogue> findByCategoryAndAdminId(@Param("category") String category, @Param("adminId") String adminId);
+
     @Select("SELECT DISTINCT category FROM tu_customer_dialogue ORDER BY category")
     List<String> findAllCategories();
 
-    @Insert("INSERT INTO tu_customer_dialogue(id, category, question, reply, image_url, sort_order, created_at, updated_at) " +
-            "VALUES(#{id}, #{category}, #{question}, #{reply}, #{imageUrl}, #{sortOrder}, NOW(), NOW())")
+    @Insert("INSERT INTO tu_customer_dialogue(id, admin_id, category, question, reply, image_url, sort_order, created_at, updated_at) " +
+            "VALUES(#{id}, #{adminId}, #{category}, #{question}, #{reply}, #{imageUrl}, #{sortOrder}, NOW(), NOW())")
     int insert(CustomerDialogue customerDialogue);
 }

@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 
 public class CustomerDialogue {
     private String id;
+    private String adminId;
     private String category;
     private String question;
     private String reply;
@@ -14,6 +15,9 @@ public class CustomerDialogue {
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
+
+    public String getAdminId() { return adminId; }
+    public void setAdminId(String adminId) { this.adminId = adminId; }
 
     public String getCategory() { return category; }
     public void setCategory(String category) { this.category = category; }

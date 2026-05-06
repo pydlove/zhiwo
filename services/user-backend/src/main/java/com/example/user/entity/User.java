@@ -27,6 +27,7 @@ public class User {
     private String membershipPlanId;
     private String inviteCode;
     private String invitedBy;
+    private String adminId;
     private Integer isDeleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -77,6 +78,8 @@ public class User {
     public void setInviteCode(String inviteCode) { this.inviteCode = inviteCode; }
     public String getInvitedBy() { return invitedBy; }
     public void setInvitedBy(String invitedBy) { this.invitedBy = invitedBy; }
+    public String getAdminId() { return adminId; }
+    public void setAdminId(String adminId) { this.adminId = adminId; }
     public Integer getIsDeleted() { return isDeleted; }
     public void setIsDeleted(Integer isDeleted) { this.isDeleted = isDeleted; }
     public LocalDateTime getCreatedAt() { return createdAt; }

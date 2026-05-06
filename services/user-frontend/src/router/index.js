@@ -15,6 +15,7 @@ import AffiliateView from '../views/AffiliateView.vue'
 import OpenAccountView from '../views/OpenAccountView.vue'
 import MpRegisterGuideView from '../views/MpRegisterGuideView.vue'
 import CustomerDialogueView from '../views/CustomerDialogueView.vue'
+import ShortLinkView from '../views/ShortLinkView.vue'
 
 const routes = [
   { path: '/', name: 'Landing', component: LandingView, meta: { title: '知我公众号创作助手' } },
@@ -25,6 +26,7 @@ const routes = [
   { path: '/income', name: 'IncomeOverview', component: () => import('../views/IncomeOverview.vue'), meta: { title: '收益概览' } },
   { path: '/register', name: 'Register', component: LoginView, meta: { title: '注册 - 知我公众号创作助手' } },
   { path: '/login', name: 'Login', component: LoginView, meta: { title: '登录' } },
+  { path: '/s/:code', name: 'ShortLink', component: ShortLinkView, meta: { title: '正在跳转...' } },
   {
     path: '/app',
     component: AppLayout,

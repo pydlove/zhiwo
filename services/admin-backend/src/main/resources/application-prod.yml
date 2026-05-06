@@ -35,6 +35,11 @@ mybatis:
   configuration:
     map-underscore-to-camel-case: true
 
+# 生产环境只显示"推送上来"Tab
+app:
+  visible-tabs:
+    process-manage: pushed-up
+
 jasypt:
   encryptor:
     password: ${JASYPT_ENCRYPTOR_PASSWORD}

@@ -257,6 +257,38 @@ public class TitleLibraryController {
     }
 
     /**
+     * 多运营者体系：添加必要的字段
+     */
+    @PostConstruct
+    public void migrateOperatorColumns() {
+        try (Connection conn = dataSource.getConnection()) {
+            // 1. ta_user 增加 qr_code_url
+            try (ResultSet rs = conn.getMetaData().getColumns(null, null, "ta_user", "qr_code_url")) {
+                if (!rs.next()) {
+                    conn.createStatement().execute("ALTER TABLE ta_user ADD COLUMN qr_code_url VARCHAR(500) COMMENT '客服二维码图片URL'");
+                    System.out.println("Migration applied: added qr_code_url to ta_user");
+                }
+            }
+            // 2. tu_user 增加 admin_id
+            try (ResultSet rs = conn.getMetaData().getColumns(null, null, "tu_user", "admin_id")) {
+                if (!rs.next()) {
+                    conn.createStatement().execute("ALTER TABLE tu_user ADD COLUMN admin_id VARCHAR(64) COMMENT '归属运营者(admin_id)'");
+                    System.out.println("Migration applied: added admin_id to tu_user");
+                }
+            }
+            // 3. tu_customer_dialogue 增加 admin_id
+            try (ResultSet rs = conn.getMetaData().getColumns(null, null, "tu_customer_dialogue", "admin_id")) {
+                if (!rs.next()) {
+                    conn.createStatement().execute("ALTER TABLE tu_customer_dialogue ADD COLUMN admin_id VARCHAR(64) COMMENT '归属运营者ID, null=系统默认'");
+                    System.out.println("Migration applied: added admin_id to tu_customer_dialogue");
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Migration check failed for operator columns: " + e.getMessage());
+        }
+    }
+
+    /**
      * 获取用户当前激活的赛道ID集合（按订阅时间先后，只保留前 trackLimit 个）
      * trackLimit <= 0 视为无限制，使用所有订阅赛道
      */

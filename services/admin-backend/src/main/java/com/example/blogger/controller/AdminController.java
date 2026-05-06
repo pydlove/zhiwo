@@ -57,6 +57,7 @@ public class AdminController {
         if (admin.getRemark() != null) existing.setRemark(admin.getRemark());
         if (admin.getName() != null) existing.setName(admin.getName());
         if (admin.getRole() != null) existing.setRole(admin.getRole());
+        if (admin.getQrCodeUrl() != null) existing.setQrCodeUrl(admin.getQrCodeUrl());
         adminService.save(existing);
         return Result.ok(null);
     }

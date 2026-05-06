@@ -7,6 +7,7 @@ export function listUsers(params = {}) {
   if (params.keyword) query.append('keyword', params.keyword)
   if (params.platform) query.append('platform', params.platform)
   if (params.trackId) query.append('trackId', params.trackId)
+  if (params.adminId) query.append('adminId', params.adminId)
   const qs = query.toString()
   return request.get('/users' + (qs ? '?' + qs : ''))
 }
@@ -42,4 +43,8 @@ export function importUsers(excelFile) {
   return request.post('/users/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
+}
+
+export function batchUpdateAdmin(userIds, adminId) {
+  return request.post('/users/batch-update-admin', { userIds, adminId })
 }

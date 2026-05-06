@@ -1,7 +1,12 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { Tag, message, Modal, Input, Button, Form } from 'ant-design-vue'
 import { listCustomerDialogues, listCategories, saveCustomerDialogue } from '../api/customerDialogue.js'
+import { getOperatorDialogues, getOperatorInfo } from '../api/operator.js'
+import { getConfigs } from '../api/config.js'
+
+const route = useRoute()
 
 const dialogues = ref([])
 const categories = ref([])
@@ -16,6 +21,15 @@ const form = ref({
   imageUrl: '',
 })
 const saving = ref(false)
+
+const currentUser = ref(null)
+try {
+  currentUser.value = JSON.parse(localStorage.getItem('user') || '{}')
+} catch (e) {
+  currentUser.value = null
+}
+
+const operatorName = ref('')
 
 const filteredDialogues = computed(() => {
   let list = dialogues.value
@@ -61,10 +75,41 @@ function restoreState() {
 async function loadData() {
   loading.value = true
   try {
-    const [data, cats] = await Promise.all([
-      listCustomerDialogues(),
-      listCategories(),
-    ])
+    let data, cats
+    const op = route.query.op
+    operatorName.value = ''
+    if (op) {
+      const [dialogueData, catData, opInfo] = await Promise.all([
+        getOperatorDialogues(op),
+        listCategories(),
+        getOperatorInfo(op).catch(() => null),
+      ])
+      data = dialogueData
+      cats = catData
+      if (opInfo) {
+        operatorName.value = opInfo.name || op
+      }
+    } else if (currentUser.value?.adminId) {
+      [data, cats] = await Promise.all([
+        listCustomerDialogues(undefined, currentUser.value.adminId),
+        listCategories(),
+      ])
+    } else {
+      // 未登录且无 op 参数时，读取主运营人员配置
+      const configs = await getConfigs()
+      const mainOp = configs?.mainOperator
+      if (mainOp) {
+        [data, cats] = await Promise.all([
+          listCustomerDialogues(undefined, mainOp),
+          listCategories(),
+        ])
+      } else {
+        [data, cats] = await Promise.all([
+          listCustomerDialogues(),
+          listCategories(),
+        ])
+      }
+    }
     dialogues.value = data || []
     categories.value = ['全部', ...(cats || [])]
     // 恢复上次状态，如果分类不存在则重置为"全部"
@@ -111,13 +156,23 @@ async function handleSave() {
   }
   saving.value = true
   try {
-    await saveCustomerDialogue({
+    const payload = {
       category: form.value.category.trim(),
       question: form.value.question.trim(),
       reply: form.value.reply.trim(),
       imageUrl: form.value.imageUrl || null,
       sortOrder: 0,
-    })
+    }
+    if (currentUser.value?.adminId) {
+      payload.adminId = currentUser.value.adminId
+    } else if (route.query.op) {
+      // 未登录但有 op 参数时，关联到对应运营者
+      const opInfo = await getOperatorInfo(route.query.op).catch(() => null)
+      if (opInfo?.id) {
+        payload.adminId = opInfo.id
+      }
+    }
+    await saveCustomerDialogue(payload)
     message.success('添加成功')
     closeModal()
     loadData()
@@ -185,6 +240,7 @@ onMounted(loadData)
         <div class="cd-brand">
           <div class="cd-brand-logo">客</div>
           <span class="cd-brand-name">客服话术助手</span>
+          <span v-if="operatorName" class="cd-operator-name">{{ operatorName }}</span>
         </div>
       </div>
     </div>
@@ -272,7 +328,7 @@ onMounted(loadData)
     </div>
 
     <!-- 悬浮添加按钮 -->
-    <button class="cd-fab" @click="openModal" title="新增话术">
+    <button v-if="currentUser" class="cd-fab" @click="openModal" title="新增话术">
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <line x1="12" y1="5" x2="12" y2="19"></line>
         <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -350,6 +406,16 @@ onMounted(loadData)
   font-size: 14px;
   font-weight: 500;
   color: #262626;
+}
+
+.cd-operator-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #52c41a;
+  background: #f6ffed;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 4px;
 }
 
 .cd-content {

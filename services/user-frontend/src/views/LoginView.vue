@@ -6,6 +6,7 @@ import { useViewport } from '../composables/useViewport.js'
 import { usePermissions } from '../composables/usePermissions.js'
 import { login, register } from '../api/auth.js'
 import { getConfigs } from '../api/config.js'
+import { getOperatorInfo } from '../api/operator.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -23,17 +24,40 @@ const qrCodeUrl = ref('')
 const qrPreviewOpen = ref(false)
 const registerSuccessOpen = ref(false)
 const registeredUser = ref(null)
+const operatorName = ref('')
 
 async function loadConfigs() {
   try {
-    const data = await getConfigs()
-    if (data) {
-      systemName.value = data.systemName || '知我公众号创作助手'
-      logoUrl.value = data.logoUrl || ''
-      qrCodeUrl.value = data.qrCodeUrl || ''
+    const op = route.query.op
+    let configsData = null
+
+    if (op) {
+      const info = await getOperatorInfo(op)
+      if (info) {
+        qrCodeUrl.value = info.qrCodeUrl || ''
+        operatorName.value = info.name || op
+      }
+      configsData = await getConfigs()
+    } else {
+      configsData = await getConfigs()
+      if (configsData) {
+        qrCodeUrl.value = configsData.qrCodeUrl || ''
+        if (configsData.mainOperator) {
+          const mainInfo = await getOperatorInfo(configsData.mainOperator)
+          if (mainInfo) {
+            qrCodeUrl.value = mainInfo.qrCodeUrl || qrCodeUrl.value
+            operatorName.value = mainInfo.name || configsData.mainOperator
+          }
+        }
+      }
+    }
+
+    if (configsData) {
+      systemName.value = configsData.systemName || '知我公众号创作助手'
+      logoUrl.value = configsData.logoUrl || ''
       const title = mode.value === 'login' ? '登录' : '注册'
-      if (data.systemName) {
-        document.title = `${data.systemName} - ${title}`
+      if (configsData.systemName) {
+        document.title = `${configsData.systemName} - ${title}`
       }
     }
   } catch (e) {
@@ -168,7 +192,7 @@ onMounted(() => {
       </div>
       <div style="font-size: 14px; color: #6b7280; margin-bottom: 32px; display: flex; justify-content: space-between; align-items: center;">
         <span>{{ mode === 'login' ? '登录您的账号开始使用' : '创建新账号开始创作' }}</span>
-        <a @click="router.push('/')" style="color: #07C160; text-decoration: none; font-weight: 500; cursor: pointer; font-size: 13px;">← 返回首页</a>
+        <a @click="router.push(route.query.op ? { path: '/', query: { op: route.query.op } } : '/')" style="color: #07C160; text-decoration: none; font-weight: 500; cursor: pointer; font-size: 13px;">← 返回首页</a>
       </div>
 
       <!-- Tabs -->
@@ -247,9 +271,10 @@ onMounted(() => {
       </template>
 
       <div style="margin-top: 48px; padding: 16px; background: #f8fafc; border-radius: 10px; text-align: center; font-size: 13px; color: #6b7280; border: 1px solid #f1f5f9;">
+        <div v-if="operatorName" style="font-size: 14px; font-weight: 600; color: #07C160; margin-bottom: 8px;">{{ operatorName }}</div>
         <img v-if="qrCodeUrl" :src="qrCodeUrl" @click="qrPreviewOpen = true" style="max-width: 140px; max-height: 140px; border-radius: 8px; margin: 0 auto 12px; object-fit: contain; cursor: pointer;">
         <div v-else style="width: 140px; height: 140px; background: #f3f4f6; border-radius: 8px; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #9ca3af;">客服二维码</div>
-        <div style="font-size: 13px; color: #374151; margin-bottom: 4px;">扫码联系客服</div>
+        <div style="font-size: 13px; color: #374151; margin-bottom: 4px;">{{ operatorName ? '扫码联系 ' + operatorName : '扫码联系客服' }}</div>
         <div style="font-size: 12px; color: #9ca3af;">工作时间：9:00-21:00</div>
       </div>
     </div>

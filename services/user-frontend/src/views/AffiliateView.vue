@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useViewport } from '../composables/useViewport.js'
 import { listMembershipPlans } from '../api/membershipPlan.js'
 import { getConfigs } from '../api/config.js'
@@ -22,6 +22,7 @@ function doCopy(text) {
 }
 
 const router = useRouter()
+const route = useRoute()
 const { isMobile } = useViewport()
 
 const currentUser = ref(null)
@@ -41,11 +42,21 @@ function checkLogin() {
 }
 
 function goLogin() {
-  router.push('/login')
+  const op = route.query.op
+  if (op) {
+    router.push({ path: '/login', query: { op } })
+  } else {
+    router.push('/login')
+  }
 }
 
 function goHome() {
-  router.push('/')
+  const op = route.query.op
+  if (op) {
+    router.push({ path: '/', query: { op } })
+  } else {
+    router.push('/')
+  }
 }
 
 function getRegisterUrl() {

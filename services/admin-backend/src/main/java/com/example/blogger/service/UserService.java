@@ -114,4 +114,8 @@ public class UserService {
     public void delete(String id) {
         userMapper.delete(id);
     }
+
+    public void batchUpdateAdminId(List<String> userIds, String adminId) {
+        userMapper.batchUpdateAdminId(userIds, adminId);
+    }
 }

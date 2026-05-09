@@ -1,9 +1,11 @@
 package com.example.blogger.service;
 
+import com.example.blogger.entity.EmailPushLog;
 import com.example.blogger.entity.SubscriptionPost;
 import com.example.blogger.entity.TitleLibrary;
 import com.example.blogger.entity.TitleRecommendation;
 import com.example.blogger.entity.Track;
+import com.example.blogger.entity.User;
 import com.example.blogger.entity.UserTrack;
 import com.example.blogger.mapper.EmailPushLogMapper;
 import com.example.blogger.mapper.SubscriptionPostMapper;
@@ -14,6 +16,7 @@ import com.example.blogger.mapper.UserMapper;
 import com.example.blogger.mapper.UserTrackMapper;
 import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
+import java.io.File;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,12 +37,13 @@ public class TitleLibraryService {
     private final EmailPushLogMapper emailPushLogMapper;
     private final UserTrackMapper userTrackMapper;
     private final TrackMapper trackMapper;
+    private final EmailService emailService;
     private final SubscriptionPostMapper subscriptionPostMapper;
 
     public TitleLibraryService(TitleLibraryMapper titleLibraryMapper, TitleRecommendationMapper titleRecommendationMapper,
                                UserMapper userMapper, EmailPushLogMapper emailPushLogMapper,
                                UserTrackMapper userTrackMapper, TrackMapper trackMapper,
-                               SubscriptionPostMapper subscriptionPostMapper) {
+                               SubscriptionPostMapper subscriptionPostMapper, EmailService emailService) {
         this.titleLibraryMapper = titleLibraryMapper;
         this.titleRecommendationMapper = titleRecommendationMapper;
         this.userMapper = userMapper;
@@ -47,6 +51,7 @@ public class TitleLibraryService {
         this.userTrackMapper = userTrackMapper;
         this.trackMapper = trackMapper;
         this.subscriptionPostMapper = subscriptionPostMapper;
+        this.emailService = emailService;
     }
 
     /* TODO: 临时逻辑 —— 启动时把已有关联推荐的标题标记为已使用，下次发布前请注释掉下面整个方法 */
@@ -131,6 +136,10 @@ public class TitleLibraryService {
         return titleLibraryMapper.findById(id);
     }
 
+    public List<TitleLibrary> getAllUnmatchedTitles() {
+        return titleLibraryMapper.findAllUnmatched();
+    }
+
     public void save(TitleLibrary titleLibrary) {
         if (titleLibrary.getId() == null || titleLibrary.getId().isEmpty()) {
             if (titleLibrary.getIsUsed() == null) {
@@ -176,6 +185,10 @@ public class TitleLibraryService {
 
     public void updatePushDate(String id, java.time.LocalDate pushDate) {
         titleLibraryMapper.updatePushDate(id, pushDate);
+    }
+
+    public void updateTitle(TitleLibrary title) {
+        titleLibraryMapper.update(title);
     }
 
     public int batchMarkUsedForMatched() {
@@ -449,6 +462,55 @@ public class TitleLibraryService {
                 result.add(user);
             }
         }
-        return result;
+return result;
+    }
+
+    public void batchPushEmailForScheduled(String dateStr, List<String> userIds) {
+        LocalDate pushDate = LocalDate.parse(dateStr);
+        for (String userId : userIds) {
+            try {
+                User user = userMapper.findById(userId);
+                if (user == null) continue;
+                if (user.getStatus() == null || user.getStatus() != 1) continue;
+                if (user.getEmail() == null || user.getEmail().isEmpty()) continue;
+                List<Map<String, Object>> recMaps = titleRecommendationMapper.findByUserAndDate(userId, pushDate);
+                if (recMaps == null || recMaps.isEmpty()) continue;
+                List<String> pushedTitleIds = emailPushLogMapper.findPushedTitleIdsByUserAndDate(userId, pushDate);
+                Set<String> pushedSet = new HashSet<>(pushedTitleIds != null ? pushedTitleIds : new ArrayList<>());
+                boolean anyPushed = false;
+                for (Map<String, Object> recMap : recMaps) {
+                    String subPostId = recMap.get("subscription_post_id") != null ? recMap.get("subscription_post_id").toString() : null;
+                    String trackId = recMap.get("track_id") != null ? recMap.get("track_id").toString() : null;
+                    String titleLibId = recMap.get("title_library_id") != null ? recMap.get("title_library_id").toString() : null;
+                    if (titleLibId != null && !titleLibId.isEmpty() && pushedSet.contains(titleLibId)) continue;
+                    if (subPostId == null || subPostId.isEmpty()) continue;
+                    SubscriptionPost post = subscriptionPostMapper.findById(subPostId);
+                    if (post == null || post.getFileUrl() == null || post.getFileUrl().isEmpty()) continue;
+                    File articleFile = new File(post.getFileUrl().startsWith("/")
+                            ? System.getProperty("user.dir") + post.getFileUrl()
+                            : post.getFileUrl());
+                    if (!articleFile.exists()) {
+                        articleFile = new File(System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles" + File.separator + post.getFileName());
+                    }
+                    if (!articleFile.exists()) continue;
+                    Track userTrack = trackMapper.findById(trackId);
+                    String trackName = userTrack != null ? userTrack.getName() : "";
+                    TitleLibrary titleLib = this.getById(titleLibId);
+                    String articleTitle = titleLib != null ? titleLib.getTitle() : post.getTitle();
+                    String platform = titleLib != null && titleLib.getPlatform() != null ? titleLib.getPlatform() : "";
+                    emailService.sendDailyRecommendEmail(user.getEmail(), user.getUsername(), trackName, articleTitle, platform, articleFile, post.getFileName());
+                    EmailPushLog log = new EmailPushLog();
+                    log.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
+                    log.setUserId(userId);
+                    log.setPushDate(pushDate);
+                    log.setType("daily_recommend");
+                    log.setTitleLibraryId(titleLibId);
+                    emailPushLogMapper.insert(log);
+                    anyPushed = true;
+                }
+            } catch (Exception e) {
+                // 单用户失败不影响其他用户
+            }
+        }
     }
 }

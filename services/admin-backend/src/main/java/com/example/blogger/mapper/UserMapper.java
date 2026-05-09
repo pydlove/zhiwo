@@ -45,4 +45,12 @@ public interface UserMapper {
 
     @Update("<script>UPDATE tu_user SET admin_id = #{adminId} WHERE id IN <foreach collection='userIds' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
     int batchUpdateAdminId(@Param("userIds") List<String> userIds, @Param("adminId") String adminId);
+
+    @Select("SELECT u.id, u.username, u.email, u.phone, u.expire_date as expireDate, u.membership_plan_id as membershipPlanId, " +
+            "u.admin_id as adminId, p.name as planName, p.price as planPrice " +
+            "FROM tu_user u LEFT JOIN tu_membership_plan p ON u.membership_plan_id = p.id " +
+            "WHERE u.is_deleted = 0 AND u.status = 1 AND u.expire_date IS NOT NULL " +
+            "AND u.expire_date >= CURRENT_DATE AND u.expire_date <= DATE_ADD(CURRENT_DATE, INTERVAL #{days} DAY) " +
+            "ORDER BY u.expire_date ASC")
+    List<Map<String, Object>> findExpiringUsers(@Param("days") int days);
 }

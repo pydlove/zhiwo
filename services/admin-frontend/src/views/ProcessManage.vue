@@ -5,7 +5,7 @@ import {
   Card, Input, Select, Button, Table, Tag, Modal, Form,
   message, Pagination, Tabs, Badge, Empty, Row, Col,
   Divider, Descriptions, Drawer, Radio, Alert, Space,
-  DatePicker
+  DatePicker, Spin
 } from 'ant-design-vue'
 import {
   listTitleReviews, approveTitleReview, rejectTitleReview,
@@ -15,7 +15,7 @@ import {
   rePushTitleReview, batchRePushTitleReviews,
   getTitleReviewStats, listPushLogs, listPushedTitleReviews, listBySource,
   listServerConfigs, saveServerConfig, deleteServerConfig,
-  testServerConfig, testServerConfigDirect
+  testServerConfig, testServerConfigDirect, optimizeTitle
 } from '../api/process.js'
 import {
   getProcessAutoStatus, getProcessAutoConfig, saveProcessAutoConfig,
@@ -176,6 +176,7 @@ const generateModalOpen = ref(false)
 const generateCount = ref(savedGenerateConfig?.count || 3)
 const generateOutputPath = ref(savedGenerateConfig?.outputPath || '')
 const generateTrackIds = ref(savedGenerateConfig?.trackIds || [])
+const generateInstruction = ref(savedGenerateConfig?.instruction || '')
 const generating = ref(false)
 const generateProgress = ref(0)
 const generateTaskId = ref(null)
@@ -237,6 +238,7 @@ function saveGenerateConfig() {
     count: generateCount.value,
     outputPath: generateOutputPath.value,
     trackIds: generateTrackIds.value,
+    instruction: generateInstruction.value,
   }))
 }
 
@@ -300,6 +302,7 @@ async function handleGenerate() {
       outputPath: generateOutputPath.value.trim(),
       platforms: derivePlatformsFromTracks(generateTrackIds.value),
       trackIds: generateTrackIds.value,
+      instruction: generateInstruction.value.trim(),
     })
     generateTaskId.value = result.taskId
     generateModalOpen.value = false
@@ -481,6 +484,79 @@ async function handleApprove(record) {
     loadStats()
   } catch (e) {
     message.error('操作失败：' + (e?.response?.data?.msg || e.message))
+  }
+}
+
+async function handleAiOptimize(record) {
+  const original = record.title
+  if (!original) {
+    message.warning('标题内容为空')
+    return
+  }
+
+  // 如果已经有优化结果，弹窗让用户确认或继续优化
+  if (record._optimized) {
+    Modal.confirm({
+      title: '已优化标题',
+      content: h('div', { style: 'max-width: 400px;' }, [
+        h('div', { style: 'color: #999; margin-bottom: 8px; font-size: 12px;' }, '原始标题：'),
+        h('div', { style: 'margin-bottom: 12px; word-break: break-all;' }, original),
+        h('div', { style: 'color: #52c41a; margin-bottom: 8px; font-size: 12px;' }, '优化标题：'),
+        h('div', { style: 'word-break: break-all; font-weight: 500;' }, record._optimized),
+      ]),
+      okText: '应用此优化',
+      cancelText: '重新优化',
+      onOk: async () => {
+        try {
+          await saveTitle({ id: record.titleLibraryId, title: record._optimized })
+          record.title = record._optimized
+          message.success('已应用优化标题')
+        } catch (e) {
+          message.error('保存失败: ' + (e?.response?.data?.msg || e?.message))
+        }
+      },
+      onCancel: () => {
+        openOptimizePromptModal(record)
+      }
+    })
+    return
+  }
+
+  openOptimizePromptModal(record)
+}
+
+// AI 优化输入弹窗
+const optimizeModalOpen = ref(false)
+const optimizeForm = ref({ record: null, instruction: '' })
+
+function openOptimizePromptModal(record) {
+  optimizeForm.value = { record, instruction: '' }
+  optimizeModalOpen.value = true
+}
+
+async function handleOptimizeConfirm() {
+  const record = optimizeForm.value.record
+  const instruction = optimizeForm.value.instruction?.trim() || ''
+  optimizeModalOpen.value = false
+  doOptimize(record, instruction)
+}
+
+async function doOptimize(record, instruction = '') {
+  record._optimizing = true
+  record._optimized = null
+  record._optimizeMsg = '正在调用 Claude 优化标题...'
+  const msgKey = 'ai-optimize-' + record.id
+  message.loading({ content: 'AI 优化中，预计需要 10-30 秒...', key: msgKey, duration: 0 })
+  try {
+    const res = await optimizeTitle(record.id, record.title, instruction)
+    record._optimized = res.optimizedTitle
+    record._optimizeMsg = '优化完成'
+    message.success({ content: '优化完成', key: msgKey })
+  } catch (e) {
+    record._optimizeMsg = '优化失败'
+    message.error({ content: 'AI 优化失败: ' + (e?.response?.data?.msg || e?.message), key: msgKey })
+  } finally {
+    record._optimizing = false
   }
 }
 
@@ -764,7 +840,37 @@ async function handleTestConnection(config, isDirect) {
 
 // 表格列定义
 const columns = [
-  { title: '标题', dataIndex: 'title', key: 'title', ellipsis: true, width: 300 },
+  {
+    title: '标题',
+    dataIndex: 'title',
+    key: 'title',
+    ellipsis: true,
+    width: 320,
+    customRender: ({ record }) => {
+      const displayTitle = record._optimized || record.title || ''
+      const loading = record._optimizing
+      const isPending = reviewStatus.value === 'pending' || (reviewStatus.value === 'pushed-up' && record.reviewStatus === 'pending')
+      if (loading) {
+        return h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
+          h(Spin, { size: 'small' }),
+          h('span', { style: 'color: #1890ff; font-size: 12px;' }, record._optimizeMsg || 'AI 优化中...'),
+        ])
+      }
+      const titleNode = !record._optimized
+        ? h('span', { style: 'word-break: break-all; flex: 1;' }, displayTitle)
+        : h('div', { style: 'display: flex; flex-direction: column; gap: 2px; flex: 1;' }, [
+            h('span', { style: 'color: #52c41a; font-weight: 500; word-break: break-all; font-size: 13px;' }, '✨ ' + displayTitle),
+            h('span', { style: 'color: #999; font-size: 11px; text-decoration: line-through; word-break: break-all;' }, '原: ' + record.title),
+          ])
+      if (isPending) {
+        return h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
+          titleNode,
+          h(Button, { type: 'primary', size: 'small', style: 'flex-shrink: 0; padding: 0 6px; font-size: 12px;', onClick: () => handleApprove(record) }, () => '通过'),
+        ])
+      }
+      return titleNode
+    }
+  },
   { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true, width: 200 },
   { title: '平台', dataIndex: 'platform', key: 'platform', width: 100 },
   { title: '赛道', dataIndex: 'trackName', key: 'trackName', width: 120 },
@@ -786,6 +892,7 @@ const columns = [
         buttons.push(
           h(Button, { type: 'link', size: 'small', onClick: () => handleEdit(record) }, () => '编辑'),
           h(Button, { type: 'link', size: 'small', onClick: () => handleChangeTrack(record) }, () => '改赛道'),
+          h(Button, { type: 'link', size: 'small', loading: record._optimizing, onClick: () => handleAiOptimize(record) }, () => 'AI优化'),
           h(Button, { type: 'link', size: 'small', onClick: () => handleApprove(record) }, () => '通过'),
           h(Button, { type: 'link', size: 'small', danger: true, onClick: () => handleReject(record) }, () => '拒绝')
         )
@@ -1140,7 +1247,7 @@ async function loadVisibleTabs() {
           </Select>
         </Col>
         <Col :span="4">
-          <Select v-model:value="searchTrack" placeholder="赛道" allow-clear style="width: 100%;"
+          <Select v-model:value="searchTrack" placeholder="赛道" allow-clear show-search style="width: 100%;"
                   @change="onSearchTrackChange">
             <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
           </Select>
@@ -1329,7 +1436,7 @@ async function loadVisibleTabs() {
           </div>
         </div>
         <Form.Item label="选择平台-赛道">
-          <Select v-model:value="generateTrackIds" mode="multiple" placeholder="不选则生成全部赛道" style="width: 100%;">
+          <Select v-model:value="generateTrackIds" mode="multiple" placeholder="不选则生成全部赛道" show-search style="width: 100%;">
             <Select.Option v-for="t in sortedTrackOptions" :key="t.id" :value="t.id">{{ t.displayLabel }}</Select.Option>
           </Select>
         </Form.Item>
@@ -1339,6 +1446,16 @@ async function loadVisibleTabs() {
         <Form.Item label="输出文件路径">
           <Input v-model:value="generateOutputPath" placeholder="不填则默认保存到项目 export 目录" />
           <div style="font-size: 12px; color: #999; margin-top: 4px;">留空默认保存到项目根目录/export/下，带时间戳文件名</div>
+        </Form.Item>
+        <Form.Item label="生成方向（可选）">
+          <Input.TextArea
+            v-model:value="generateInstruction"
+            placeholder="例如：更口语化、更具悬念、突出数字效果、适合抖音风格、偏新闻报道类..."
+            :rows="2"
+            :maxlength="200"
+            show-count
+          />
+          <div style="font-size: 12px; color: #999; margin-top: 4px;">不填则使用默认策略生成</div>
         </Form.Item>
       </Form>
     </Modal>
@@ -1369,11 +1486,38 @@ async function loadVisibleTabs() {
     >
       <Form layout="vertical">
         <Form.Item label="选择赛道" required>
-          <Select v-model:value="changeTrackForm.trackId" placeholder="请选择赛道" style="width: 100%;">
+          <Select v-model:value="changeTrackForm.trackId" placeholder="请选择赛道" show-search style="width: 100%;">
             <Select.Option v-for="t in sortedTrackOptions" :key="t.id" :value="t.id">{{ t.displayLabel }}</Select.Option>
           </Select>
         </Form.Item>
       </Form>
+    </Modal>
+
+    <!-- AI优化方向输入弹窗 -->
+    <Modal
+      v-model:open="optimizeModalOpen"
+      title="AI 优化标题"
+      :footer="null"
+      width="560px"
+    >
+      <div style="margin-bottom: 16px;">
+        <div style="color: #888; font-size: 12px; margin-bottom: 6px;">当前标题</div>
+        <div style="background: #f5f5f5; padding: 10px 12px; border-radius: 4px; word-break: break-all;">{{ optimizeForm.record?.title }}</div>
+      </div>
+      <div style="margin-bottom: 16px;">
+        <div style="color: #888; font-size: 12px; margin-bottom: 6px;">优化方向（可选）</div>
+        <Input.TextArea
+          v-model:value="optimizeForm.instruction"
+          placeholder="例如：更加口语化、更具悬念、突出数字效果、适合抖音风格"
+          :rows="3"
+          :maxlength="200"
+          show-count
+        />
+      </div>
+      <div style="text-align: right;">
+        <Button @click="optimizeModalOpen = false" style="margin-right: 8px;">取消</Button>
+        <Button type="primary" @click="handleOptimizeConfirm">开始优化</Button>
+      </div>
     </Modal>
     </div>
   </div>

@@ -81,3 +81,7 @@ export function testServerConfig(id) {
 export function testServerConfigDirect(data) {
   return request.post('/server-configs/test-direct', data)
 }
+
+export function optimizeTitle(id, currentTitle, instruction = '') {
+  return request.post('/title-review/' + id + '/optimize', { currentTitle, instruction })
+}

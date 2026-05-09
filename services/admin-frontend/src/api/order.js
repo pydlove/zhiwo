@@ -16,9 +16,17 @@ export function refundOrder(data) {
   return request.post('/orders/refund', data)
 }
 
+export function updateOrderAmount(data) {
+  return request.put('/orders/amount', data)
+}
+
 export function exportOrders(params) {
   return request.get('/orders/export', {
     params,
     responseType: 'blob',
   })
+}
+
+export function deleteOrder(id) {
+  return request.delete('/orders/' + id)
 }

@@ -105,7 +105,7 @@ const columns = [
     },
   },
   { title: '最近登录', dataIndex: 'lastLogin', key: 'lastLogin', width: 145 },
-  { title: '操作', key: 'action', width: 440 },
+  { title: '操作', key: 'action', width: 440, fixed: 'right' },
 ]
 
 const addModalOpen = ref(false)
@@ -711,8 +711,48 @@ async function saveEdit() {
 }
 
 async function toggleStatus(record) {
+  const newStatus = record.status === 1 ? 0 : 1
+
+  // 启用用户时，检查是否需要创建订单
+  if (newStatus === 1 && record.membershipPlanId) {
+    const plan = allPlans.value.find(p => p.id === record.membershipPlanId)
+    if (plan && plan.price > 0) {
+      const planName = plan.name
+      const planPrice = plan.price
+      Modal.confirm({
+        title: '启用用户并创建订单',
+        content: h('div', [
+          h('p', { style: { marginBottom: '8px' } }, `该用户关联的会员套餐为「${planName}」，是否同时创建订单？`),
+          h('p', { style: { margin: 0, color: '#52c41a', fontWeight: '500' } }, `订单金额：¥${planPrice.toFixed(2)}`),
+        ]),
+        async onOk() {
+          try {
+            await createOrder({
+              userId: record.id,
+              planId: record.membershipPlanId,
+              type: 'open_account',
+              remark: '管理员启用时创建',
+            })
+            message.success('订单创建成功')
+          } catch (e) {
+            // 订单创建失败不阻止启用用户
+            message.warning('订单创建失败，但用户将正常启用')
+          }
+          try {
+            await request.put('/users/' + record.id, { status: 1 })
+            message.success('已启用')
+            loadData()
+          } catch (e) {
+            message.error('启用失败')
+          }
+        },
+      })
+      return
+    }
+  }
+
+  // 普通启用/禁用
   try {
-    const newStatus = record.status === 1 ? 0 : 1
     await request.put('/users/' + record.id, { status: newStatus })
     message.success(newStatus === 1 ? '已启用' : '已禁用')
     loadData()

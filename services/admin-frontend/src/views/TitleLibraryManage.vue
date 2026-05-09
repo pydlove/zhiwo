@@ -1,8 +1,8 @@
 <script setup>
 import { ref, onMounted, computed, h, nextTick, watch } from 'vue'
 import dayjs from 'dayjs'
-import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Descriptions, DatePicker, Tabs, Spin } from 'ant-design-vue'
-import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, matchCheck, unbindRecommendation, batchUnbindRecommendations, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed, batchChangeTrack, clearRecommendationsByDate } from '../api/titleLibrary.js'
+import { Card, Input, Select, Button, Table, Tag, Modal, Form, Popconfirm, message, Pagination, Descriptions, DatePicker, Tabs, Spin } from 'ant-design-vue'
+import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, matchCheck, matchPreview, matchConfirm, matchOne, unbindRecommendation, batchUnbindRecommendations, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed, batchChangeTrack, clearRecommendationsByDate, getUserHistory, saveArticleFeedback, listArticleFeedback, deleteArticleFeedback, generatePostSingle, getPostContent, removeAiFlavor } from '../api/titleLibrary.js'
 import { listTracks } from '../api/track.js'
 import { listUsers } from '../api/user.js'
 import { renderAsync } from 'docx-preview'
@@ -60,6 +60,12 @@ const simpleColumns = [
             })
           }
         }, () => '复制'),
+        h(Button, {
+          type: 'link',
+          size: 'small',
+          style: 'padding: 0; flex-shrink: 0; font-size: 12px;',
+          onClick: () => copyRowPrompt(record)
+        }, () => '复制提示词'),
         h(Button, {
           type: isUsed ? 'default' : 'primary',
           ghost: !isUsed,
@@ -281,11 +287,12 @@ const columns = [
     title: '标题内容',
     key: 'title',
     ellipsis: true,
-    width: 220,
+    width: 260,
     customRender: ({ record }) => {
-      const btnStyle = 'padding: 0; max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block;'
+      const btnStyle = 'padding: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block;'
+      const nodes = []
       if (record.subscriptionPostFileUrl) {
-        return h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
+        nodes.push(
           h(Button, {
             type: 'link',
             size: 'small',
@@ -297,10 +304,20 @@ const columns = [
             size: 'small',
             style: 'padding: 0; flex-shrink: 0; font-size: 12px;',
             onClick: () => handleDownloadPost(record),
-          }, () => '下载'),
-        ])
+          }, () => '下载')
+        )
+      } else {
+        nodes.push(h('span', { style: btnStyle }, record.title))
       }
-      return h('span', { style: btnStyle }, record.title)
+      nodes.push(
+        h(Button, {
+          type: 'link',
+          size: 'small',
+          style: 'padding: 0; flex-shrink: 0; font-size: 12px;',
+          onClick: () => copyRowPrompt(record)
+        }, () => '复制提示词')
+      )
+      return h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, nodes)
     },
   },
   { title: '推荐日期', dataIndex: 'pushDate', width: 90 },
@@ -336,7 +353,7 @@ const columns = [
   {
     title: '操作',
     key: 'action',
-    width: 180,
+    width: 220,
     align: 'center',
     customRender: ({ record }) => {
       const btns = [
@@ -349,7 +366,13 @@ const columns = [
               loading: sendEmailLoadingId.value === record.id,
               onClick: () => handleSendEmail(record),
             }, () => '发邮件')
-          : null,
+          : h(Button, {
+              type: 'link',
+              size: 'small',
+              style: 'padding: 0 4px;',
+              loading: generatingPostId.value === record.id,
+              onClick: () => handleGeneratePost(record),
+            }, () => '生成文章'),
         h(Button, { type: 'link', danger: true, size: 'small', onClick: () => handleDelete(record) }, () => '删除'),
       ].filter(Boolean)
       return h('div', { style: 'display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 4px;' }, btns)
@@ -523,6 +546,15 @@ async function handleUnbind() {
 
 const sendEmailLoadingId = ref(null)
 
+// 文章反馈相关
+const feedbackList = ref([])
+const feedbackInput = ref('')
+const feedbackLoading = ref(false)
+const feedbackSaving = ref(false)
+
+// 单标题生成文章
+const generatingPostId = ref(null)
+
 async function handleSendEmail(record) {
   sendEmailLoadingId.value = record.id
   try {
@@ -532,6 +564,67 @@ async function handleSendEmail(record) {
     message.error(e?.response?.data?.msg || e?.message || '发送失败')
   } finally {
     sendEmailLoadingId.value = null
+  }
+}
+
+// 生成单篇文章
+async function handleGeneratePost(record) {
+  generatingPostId.value = record.id
+  try {
+    const result = await generatePostSingle(record.id)
+    message.success('文章生成成功')
+    // Refresh the row to update subscriptionPostId
+    loadData()
+    // Open preview
+    handlePreviewPost({ ...record, subscriptionPostId: result.postId, subscriptionPostTitle: record.title, subscriptionPostFileUrl: result.fileUrl })
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e?.message || '生成失败')
+  } finally {
+    generatingPostId.value = null
+  }
+}
+
+// 加载文章反馈
+async function loadFeedback(trackId, platform) {
+  feedbackLoading.value = true
+  try {
+    const res = await listArticleFeedback({ trackId, platform })
+    feedbackList.value = res || []
+  } catch (e) {
+    console.error('loadFeedback error:', e)
+  } finally {
+    feedbackLoading.value = false
+  }
+}
+
+// 保存文章反馈
+async function handleSaveFeedback(trackId, platform) {
+  const content = feedbackInput.value?.trim()
+  if (!content) {
+    message.warning('请输入反馈内容')
+    return
+  }
+  feedbackSaving.value = true
+  try {
+    await saveArticleFeedback({ id: '', trackId, platform, content })
+    message.success('反馈已保存')
+    feedbackInput.value = ''
+    await loadFeedback(trackId, platform)
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e?.message || '保存失败')
+  } finally {
+    feedbackSaving.value = false
+  }
+}
+
+// 删除反馈
+async function handleDeleteFeedback(id, trackId, platform) {
+  try {
+    await deleteArticleFeedback(id)
+    message.success('已删除')
+    await loadFeedback(trackId, platform)
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e?.message || '删除失败')
   }
 }
 
@@ -651,75 +744,237 @@ function handleDelete(record) {
   })
 }
 
-// Match today
+// Match today（审核制）
 const matching = ref(false)
 const matchModalOpen = ref(false)
 const matchForm = ref({ date: dayjs() })
-const matchCheckData = ref(null)
-const matchCheckLoading = ref(false)
-const clearing = ref(false)
+const matchPreviewData = ref([])      // 待审核匹配列表
+const matchPreviewLoading = ref(false)
+const matchOneLoadingId = ref(null)   // 正在重配的行
+const matchClearing = ref(false)
+const matchSelectedKeys = ref([])
 
-async function runMatchCheck() {
-  matchCheckData.value = null
-  matchCheckLoading.value = true
+// 用户历史弹窗
+const historyModalOpen = ref(false)
+const historyLoading = ref(false)
+const historyTitle = ref('')
+const historyList = ref([])
+const historyUserId = ref('')
+const historyUserName = ref('')
+
+async function openHistoryModal(userId, username, title) {
+  historyUserId.value = userId
+  historyUserName.value = username
+  historyTitle.value = title
+  historyList.value = []
+  historyModalOpen.value = true
+  historyLoading.value = true
+  try {
+    const data = await getUserHistory(userId)
+    if (Array.isArray(data)) {
+      if (title) {
+        data.forEach(item => {
+          const hTitle = item.titleName || ''
+          item.similarity = Math.round(similarity(title, hTitle) * 100)
+        })
+        data.sort((a, b) => b.similarity - a.similarity)
+      }
+      historyList.value = data
+    } else {
+      historyList.value = []
+    }
+  } catch (e) {
+    console.error('[history]', e)
+    message.error('加载历史记录失败: ' + (e.message || '未知错误'))
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+// 字符 bigram 余弦相似度
+function similarity(s1, s2) {
+  if (!s1 || !s2) return 0
+  s1 = s1.replace(/[\s\pP\pM\pZ\pC]/g, '').toLowerCase()
+  s2 = s2.replace(/[\s\pP\pM\pZ\pC]/g, '').toLowerCase()
+  if (!s1 || !s2) return 0
+  const f1 = bigramFreq(s1)
+  const f2 = bigramFreq(s2)
+  const keys = new Set([...f1.keys(), ...f2.keys()])
+  let dot = 0, n1 = 0, n2 = 0
+  keys.forEach(k => {
+    const a = f1.get(k) || 0, b = f2.get(k) || 0
+    dot += a * b
+    n1 += a * a
+    n2 += b * b
+  })
+  if (!n1 || !n2) return 0
+  return dot / (Math.sqrt(n1) * Math.sqrt(n2))
+}
+
+function bigramFreq(s) {
+  const m = new Map()
+  for (let i = 0; i < s.length - 1; i++) {
+    const k = s.slice(i, i + 2)
+    m.set(k, (m.get(k) || 0) + 1)
+  }
+  return m
+}
+
+const matchPreviewColumns = [
+  { title: '标题', dataIndex: 'title', key: 'title', width: 200 },
+  { title: '最高相似度', key: 'maxSimilarity', width: 100 },
+  { title: '平台', dataIndex: 'platform', key: 'platform', width: 90 },
+  { title: '赛道', dataIndex: 'trackName', key: 'trackName', width: 100 },
+  { title: '匹配用户', key: 'username', width: 130 },
+]
+
+async function runMatchPreview() {
+  matchPreviewData.value = []
+  matchPreviewLoading.value = true
+  matchSelectedKeys.value = []
   try {
     const dateStr = matchForm.value.date ? matchForm.value.date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD')
-    const result = await matchCheck(dateStr)
-    matchCheckData.value = result
+    const result = await matchPreview(dateStr)
+    matchPreviewData.value = result || []
+
+    // 加载完后，获取每个匹配用户的最高相似度
+    await loadMatchSimilarities()
   } catch (e) {
-    message.error('匹配检测失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
+    message.error('加载匹配预览失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
   } finally {
-    matchCheckLoading.value = false
+    matchPreviewLoading.value = false
+  }
+}
+
+// 为匹配预览的每条记录计算当前标题与用户历史绑定的最高相似度
+async function loadMatchSimilarities() {
+  if (matchPreviewData.value.length === 0) return
+
+  // 按用户分组，只取每个用户的第一条记录去查历史（减少API调用）
+  const userMap = new Map()
+  for (const item of matchPreviewData.value) {
+    if (item.userId && !userMap.has(item.userId)) {
+      userMap.set(item.userId, item)
+    }
+  }
+
+  // 并行查询所有用户的历史
+  const userHistories = await Promise.all(
+    Array.from(userMap.keys()).map(userId => getUserHistory(userId).catch(() => []))
+  )
+
+  // 建立 userId -> 历史列表的映射
+  const historyMap = new Map()
+  Array.from(userMap.keys()).forEach((userId, idx) => {
+    historyMap.set(userId, userHistories[idx] || [])
+  })
+
+  // 为每条记录计算最高相似度
+  for (const item of matchPreviewData.value) {
+    const history = historyMap.get(item.userId) || []
+    const currentTitle = item.editedTitle || item.title || ''
+    let maxSim = 0
+    for (const h of history) {
+      const hTitle = h.titleName || ''
+      if (hTitle && currentTitle) {
+        const sim = Math.round(similarity(currentTitle, hTitle) * 100)
+        if (sim > maxSim) maxSim = sim
+      }
+    }
+    item.maxSimilarity = maxSim
   }
 }
 
 async function openMatchModal() {
   matchForm.value.date = dayjs()
   matchModalOpen.value = true
-  await runMatchCheck()
+  await runMatchPreview()
+}
+
+async function handleRematchOne(record) {
+  if (!record.userId) {
+    message.error('用户ID为空，请刷新预览后再试')
+    return
+  }
+  matchOneLoadingId.value = record.titleId
+  try {
+    const dateStr = matchForm.value.date ? matchForm.value.date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD')
+    const result = await matchOne(dateStr, record.userId, record.titleId)
+    record.titleId = result.titleId
+    record.title = result.title
+    record.editedTitle = result.title
+    record.trackId = result.trackId
+    record.platform = result.platform
+    record.trackName = result.trackName
+    // 重配成功后重新计算相似度
+    const hist = await getUserHistory(record.userId).catch(() => [])
+    const currentTitle = result.title || ''
+    let maxSim = 0
+    for (const h of hist) {
+      const hTitle = h.titleName || ''
+      if (hTitle && currentTitle) {
+        const sim = Math.round(similarity(currentTitle, hTitle) * 100)
+        if (sim > maxSim) maxSim = sim
+      }
+    }
+    record.maxSimilarity = maxSim
+    message.success('已重新匹配标题')
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e?.message || '重配失败')
+  } finally {
+    matchOneLoadingId.value = null
+  }
+}
+
+function handleRemoveMatch(record) {
+  matchPreviewData.value = matchPreviewData.value.filter(m => m.titleId !== record.titleId)
+}
+
+function handleApproveOne(record) {
+  record.approved = true
+}
+
+function handleTitleEdit(record, newTitle) {
+  record.editedTitle = newTitle
 }
 
 async function handleMatchConfirm() {
+  if (matchPreviewData.value.length === 0) {
+    message.warning('没有待匹配的项')
+    return
+  }
   matching.value = true
   try {
     const dateStr = matchForm.value.date ? matchForm.value.date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD')
-    const result = await matchTodayTitles(dateStr)
-    const msg = `匹配完成：成功匹配 ${result.matched} 条，跳过 ${result.skipped} 条` +
-      (result.existingCombosCount ? `（当天已有 ${result.existingCombosCount} 个组合）` : '')
-    message.success(msg)
-    // 如果匹配数量明显少于预期，在控制台输出详细信息供诊断
-    if (result.matchedTitleIds && result.matchedTitleIds.length > 0) {
-      console.log('[matchToday] 匹配成功的标题ID:', result.matchedTitleIds)
-    }
-    if (result.skipDetails && result.skipDetails.length > 0) {
-      console.log('[matchToday] 跳过的标题详情:', result.skipDetails)
-    }
+    const matches = matchPreviewData.value.map(m => ({
+      titleId: m.titleId,
+      userId: m.userId,
+      editedTitle: m.editedTitle,
+    }))
+    const result = await matchConfirm(dateStr, matches)
+    const saved = result.saved || 0
+    message.success(`匹配成功：${saved} 条已入库`)
     matchModalOpen.value = false
-    matchCheckData.value = null
+    matchPreviewData.value = []
     loadData()
   } catch (e) {
-    message.error('匹配失败: ' + (e?.message || '未知错误'))
+    message.error(e?.response?.data?.msg || e?.message || '匹配失败')
   } finally {
     matching.value = false
   }
 }
 
 async function handleClearAndMatch() {
-  clearing.value = true
+  matchClearing.value = true
   try {
     const dateStr = matchForm.value.date ? matchForm.value.date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD')
     const clearResult = await clearRecommendationsByDate(dateStr)
     message.success(`已清理 ${clearResult.deletedRecommendations || 0} 条推荐记录，${clearResult.clearedTitles || 0} 个标题已重置`)
-    // 清理后重新检测
-    matchCheckLoading.value = true
-    matchCheckData.value = null
-    const result = await matchCheck(dateStr)
-    matchCheckData.value = result
+    await runMatchPreview()
   } catch (e) {
     message.error('清理失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
   } finally {
-    clearing.value = false
-    matchCheckLoading.value = false
+    matchClearing.value = false
   }
 }
 
@@ -982,6 +1237,299 @@ function handleGenerateFromPrompt() {
   doGeneratePosts()
 }
 
+// 复制提示词弹框
+const copyPromptModalOpen = ref(false)
+const copyPromptContent = ref('')
+const copyPromptDate = ref(dayjs().format('YYYY-MM-DD'))
+const copyPromptPno = ref('1')
+const copyPromptSno = ref('1')
+const copyPromptCurrentId = ref(null)
+const copyPromptRecords = ref([])
+
+function loadCopyPromptRecords() {
+  try {
+    const raw = localStorage.getItem('copyPrompt_records')
+    if (raw) {
+      copyPromptRecords.value = JSON.parse(raw)
+    } else {
+      // 兼容旧数据：如果存在旧的单条记录，自动迁移为第一条记录
+      const oldContent = localStorage.getItem('copyPrompt_content') || ''
+      const oldDate = localStorage.getItem('copyPrompt_date') || dayjs().format('YYYY-MM-DD')
+      const oldPno = localStorage.getItem('copyPrompt_pno') || '1'
+      const oldSno = localStorage.getItem('copyPrompt_sno') || '1'
+      if (oldContent) {
+        const record = {
+          id: Date.now().toString(),
+          name: '记录 1',
+          content: oldContent,
+          date: oldDate,
+          pno: oldPno,
+          sno: oldSno,
+          createdAt: new Date().toISOString()
+        }
+        copyPromptRecords.value = [record]
+        copyPromptCurrentId.value = record.id
+        persistCopyPromptRecords()
+      } else {
+        copyPromptRecords.value = []
+      }
+    }
+  } catch (e) {
+    copyPromptRecords.value = []
+  }
+}
+
+function persistCopyPromptRecords() {
+  localStorage.setItem('copyPrompt_records', JSON.stringify(copyPromptRecords.value))
+}
+
+function openCopyPromptModal() {
+  loadCopyPromptRecords()
+  // 如果有当前记录ID，加载它；否则加载最后一条记录；否则清空
+  if (copyPromptCurrentId.value) {
+    const rec = copyPromptRecords.value.find(r => r.id === copyPromptCurrentId.value)
+    if (rec) {
+      copyPromptContent.value = rec.content
+      copyPromptDate.value = rec.date
+      copyPromptPno.value = rec.pno
+      copyPromptSno.value = rec.sno
+    } else {
+      copyPromptCurrentId.value = null
+    }
+  }
+  if (!copyPromptCurrentId.value && copyPromptRecords.value.length > 0) {
+    const last = copyPromptRecords.value[copyPromptRecords.value.length - 1]
+    copyPromptCurrentId.value = last.id
+    copyPromptContent.value = last.content
+    copyPromptDate.value = last.date
+    copyPromptPno.value = last.pno
+    copyPromptSno.value = last.sno
+  }
+  if (!copyPromptCurrentId.value) {
+    copyPromptContent.value = ''
+    copyPromptDate.value = dayjs().format('YYYY-MM-DD')
+    copyPromptPno.value = '1'
+    copyPromptSno.value = '1'
+  }
+  copyPromptModalOpen.value = true
+}
+
+function saveCopyPrompt() {
+  if (!copyPromptContent.value.trim()) {
+    message.warning('提示词内容不能为空')
+    return
+  }
+  const payload = {
+    content: copyPromptContent.value,
+    date: copyPromptDate.value,
+    pno: copyPromptPno.value,
+    sno: copyPromptSno.value
+  }
+  if (copyPromptCurrentId.value) {
+    const idx = copyPromptRecords.value.findIndex(r => r.id === copyPromptCurrentId.value)
+    if (idx >= 0) {
+      copyPromptRecords.value[idx] = { ...copyPromptRecords.value[idx], ...payload }
+      persistCopyPromptRecords()
+      message.success('已保存')
+      return
+    }
+  }
+  // 没有当前记录则新增
+  const newRecord = {
+    id: Date.now().toString(),
+    name: '记录 ' + (copyPromptRecords.value.length + 1),
+    ...payload,
+    createdAt: new Date().toISOString()
+  }
+  copyPromptRecords.value.push(newRecord)
+  copyPromptCurrentId.value = newRecord.id
+  persistCopyPromptRecords()
+  message.success('已保存')
+}
+
+function saveCopyPromptAsNew() {
+  if (!copyPromptContent.value.trim()) {
+    message.warning('提示词内容不能为空')
+    return
+  }
+  const newRecord = {
+    id: Date.now().toString(),
+    name: '记录 ' + (copyPromptRecords.value.length + 1),
+    content: copyPromptContent.value,
+    date: copyPromptDate.value,
+    pno: copyPromptPno.value,
+    sno: copyPromptSno.value,
+    createdAt: new Date().toISOString()
+  }
+  copyPromptRecords.value.push(newRecord)
+  copyPromptCurrentId.value = newRecord.id
+  persistCopyPromptRecords()
+  message.success('另存成功')
+}
+
+function loadCopyPromptRecord(record) {
+  copyPromptCurrentId.value = record.id
+  copyPromptContent.value = record.content
+  copyPromptDate.value = record.date
+  copyPromptPno.value = record.pno
+  copyPromptSno.value = record.sno
+}
+
+function deleteCopyPromptRecord(record, event) {
+  event.stopPropagation()
+  copyPromptRecords.value = copyPromptRecords.value.filter(r => r.id !== record.id)
+  if (copyPromptCurrentId.value === record.id) {
+    copyPromptCurrentId.value = null
+  }
+  persistCopyPromptRecords()
+  message.success('已删除')
+}
+
+function incrementWithPadding(str) {
+  const trimmed = String(str || '').trim()
+  if (!trimmed) return '1'
+  const num = parseInt(trimmed, 10) || 0
+  const next = num + 1
+  // 如果原字符串有前导零且长度大于结果的字符串长度，则补齐前导零
+  if (trimmed.startsWith('0') && trimmed.length > String(next).length) {
+    return String(next).padStart(trimmed.length, '0')
+  }
+  return String(next)
+}
+
+function doCopyPrompt(incrementField) {
+  let pno = copyPromptPno.value || '1'
+  let sno = copyPromptSno.value || '1'
+
+  if (incrementField === 'pno') {
+    pno = incrementWithPadding(pno)
+    copyPromptPno.value = pno
+  } else if (incrementField === 'sno') {
+    sno = incrementWithPadding(sno)
+    copyPromptSno.value = sno
+  }
+
+  // 保存当前值
+  saveCopyPrompt()
+
+  // 替换变量
+  let result = copyPromptContent.value || ''
+  result = result.replace(/\$\{date\}/g, copyPromptDate.value || '')
+  result = result.replace(/\$\{pno\}/g, pno)
+  result = result.replace(/\$\{sno\}/g, sno)
+
+  navigator.clipboard.writeText(result).then(() => {
+    message.success('已复制到剪贴板')
+  }).catch(() => {
+    message.error('复制失败')
+  })
+}
+
+// 行级复制提示词模板
+const ROW_PROMPT_TEMPLATE_KEY = 'rowPromptTemplate'
+const rowPromptTemplate = ref(localStorage.getItem(ROW_PROMPT_TEMPLATE_KEY) || '')
+const rowPromptModalOpen = ref(false)
+const rowPromptTextAreaRef = ref(null)
+
+const availableFields = [
+  { key: 'title', label: '标题' },
+  { key: 'description', label: '描述' },
+  { key: 'platform', label: '平台' },
+  { key: 'trackName', label: '赛道名称' },
+  { key: 'trackId', label: '赛道ID' },
+  { key: 'useCount', label: '使用次数' },
+  { key: 'isUsed', label: '是否使用' },
+  { key: 'pushDate', label: '推送日期' },
+  { key: 'recommendUserName', label: '关联用户' },
+  { key: 'recommendUserTemplate', label: '用户模板' },
+  { key: 'recommendDate', label: '推荐日期' },
+  { key: 'subscriptionPostTitle', label: '文章标题' },
+  { key: 'subscriptionPostFileUrl', label: '文章链接' },
+  { key: 'id', label: 'ID' },
+]
+
+function openRowPromptModal() {
+  rowPromptModalOpen.value = true
+}
+
+function saveRowPromptTemplate() {
+  localStorage.setItem(ROW_PROMPT_TEMPLATE_KEY, rowPromptTemplate.value)
+  message.success('模板已保存')
+}
+
+function insertFieldToTemplate(fieldKey) {
+  const textarea = rowPromptTextAreaRef.value?.$el?.querySelector('textarea')
+  const template = rowPromptTemplate.value || ''
+  const placeholder = '${' + fieldKey + '}'
+  if (textarea) {
+    const start = textarea.selectionStart || template.length
+    const end = textarea.selectionEnd || template.length
+    rowPromptTemplate.value = template.slice(0, start) + placeholder + template.slice(end)
+    nextTick(() => {
+      textarea.focus()
+      const newPos = start + placeholder.length
+      textarea.setSelectionRange(newPos, newPos)
+    })
+  } else {
+    rowPromptTemplate.value = template + placeholder
+  }
+}
+
+function copyRowPrompt(record) {
+  const template = rowPromptTemplate.value
+  if (!template.trim()) {
+    message.warning('请先设置提示词模板')
+    openRowPromptModal()
+    return
+  }
+  let result = template
+  for (const f of availableFields) {
+    const val = record[f.key]
+    const replacement = val !== undefined && val !== null ? String(val) : ''
+    result = result.replace(new RegExp('\\$\\{' + f.key + '\\}', 'g'), replacement)
+  }
+  navigator.clipboard.writeText(result).then(() => {
+    message.success('已复制提示词')
+  }).catch(() => {
+    message.error('复制失败')
+  })
+}
+
+// 去除AI味弹框
+const REMOVE_AI_FLAVOR_PATH_KEY = 'removeAiFlavor_path'
+const removeAiFlavorModalOpen = ref(false)
+const removeAiFlavorPath = ref(localStorage.getItem(REMOVE_AI_FLAVOR_PATH_KEY) || '')
+const removeAiFlavorLoading = ref(false)
+
+function openRemoveAiFlavorModal() {
+  removeAiFlavorModalOpen.value = true
+}
+
+function saveRemoveAiFlavorPath() {
+  localStorage.setItem(REMOVE_AI_FLAVOR_PATH_KEY, removeAiFlavorPath.value)
+  message.success('路径已保存')
+}
+
+async function handleRemoveAiFlavor() {
+  if (!removeAiFlavorPath.value.trim()) {
+    message.warning('请先填写绝对路径')
+    return
+  }
+  removeAiFlavorLoading.value = true
+  try {
+    const res = await removeAiFlavor(removeAiFlavorPath.value.trim())
+    if (res && res.exitCode === 0) {
+      message.success('去除AI味成功')
+    } else {
+      message.warning('执行完成但可能有异常：' + (res?.stderr || '未知'))
+    }
+  } catch (e) {
+    message.error('调用失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
+  } finally {
+    removeAiFlavorLoading.value = false
+  }
+}
+
 // Generate posts for today
 const generatingPost = ref(false)
 const generatePostTaskId = ref(null)
@@ -1089,6 +1637,9 @@ async function handlePreviewPost(record) {
   previewHtmlContent.value = ''
   previewModalOpen.value = true
   previewLoading.value = true
+
+  // Load feedback for this track/platform
+  await loadFeedback(record.trackId, record.platform)
 
   const postId = record.subscriptionPostId
   if (!postId) {
@@ -1219,6 +1770,7 @@ const generateCount = ref(savedGenerateConfig?.count || 3)
 const generateOutputPath = ref(savedGenerateConfig?.outputPath || '')
 const generatePlatforms = ref(savedGenerateConfig?.platforms || [])
 const generateTrackIds = ref(savedGenerateConfig?.trackIds || [])
+const generateInstruction = ref(savedGenerateConfig?.instruction || '')
 const generating = ref(false)
 const generateProgress = ref(0)
 const generateTaskId = ref(null)
@@ -1231,6 +1783,7 @@ function saveGenerateConfig() {
     outputPath: generateOutputPath.value,
     platforms: generatePlatforms.value,
     trackIds: generateTrackIds.value,
+    instruction: generateInstruction.value,
   }))
 }
 
@@ -1314,6 +1867,7 @@ async function handleGenerate() {
       outputPath: generateOutputPath.value.trim(),
       platforms: generatePlatforms.value,
       trackIds: generateTrackIds.value,
+      instruction: generateInstruction.value.trim(),
     })
     generateTaskId.value = result.taskId
     generateModalOpen.value = false
@@ -1419,6 +1973,9 @@ onMounted(() => {
               <Button danger :disabled="selectedRowKeys.length === 0" @click="handleBatchUnbind">批量解绑</Button>
               <Button @click="openExportRuleModal">导出</Button>
               <Button @click="openImportArticleModal">导入文章</Button>
+              <Button @click="openCopyPromptModal">复制提示词</Button>
+              <Button @click="openRowPromptModal">提示词模板</Button>
+              <Button @click="openRemoveAiFlavorModal">去除AI味</Button>
               <Button type="primary" @click="handleAdd">+ 新增标题</Button>
             </div>
 
@@ -1587,78 +2144,91 @@ onMounted(() => {
     title="匹配推荐"
     :confirm-loading="matching"
     @ok="handleMatchConfirm"
+    :width="1100"
   >
-    <Form layout="vertical" style="margin-top: 12px;"
-    >
-      <Form.Item label="推荐日期" required
+    <div style="margin-bottom: 12px; display: flex; gap: 12px; align-items: center;">
+      <DatePicker v-model:value="matchForm.date" placeholder="推荐日期" @change="runMatchPreview" />
+      <Button @click="runMatchPreview" :loading="matchPreviewLoading">刷新预览</Button>
+      <Button danger :loading="matchClearing" @click="handleClearAndMatch" style="margin-left: auto;">清理后重新匹配</Button>
+    </div>
+    <div style="color: #999; font-size: 12px; margin-bottom: 12px;">
+      以下为系统预匹配结果，请审核后确认。所有变更前可编辑标题或重新匹配用户。
+    </div>
+
+    <!-- 加载中 -->
+    <div v-if="matchPreviewLoading" style="text-align: center; padding: 32px;">
+      <Spin /> 正在加载匹配预览...
+    </div>
+
+    <!-- 匹配预览表格 -->
+    <div v-else>
+      <Table
+        :data-source="matchPreviewData"
+        :pagination="{ pageSize: 10 }"
+        size="small"
+        :scroll="{ x: 900 }"
+        row-key="titleId"
+        style="border: 1px solid #f0f0f0; border-radius: 4px;"
       >
-        <DatePicker v-model:value="matchForm.date" placeholder="选择推荐日期" style="width: 100%;" @change="runMatchCheck"
-        />
-      </Form.Item
-      >
-      <div style="color: #999; font-size: 12px; margin-bottom: 12px;"
-      >
-        系统会将未匹配的标题按推荐日期进行用户匹配分配
-      </div
-      >
-      <!-- 匹配检测结果 -->
-      <div v-if="matchCheckLoading" style="text-align: center; padding: 16px;">
-        <Spin size="small" /> 正在检测标题供需情况...
+        <Table.Column title="标题" key="title" :width="420">
+          <template #default="{ record }">
+            <Input.TextArea
+              :value="record.editedTitle || record.title"
+              placeholder="可编辑标题"
+              :rows="2"
+              :auto-size="{ minRows: 1, maxRows: 3 }"
+              size="small"
+              @change="(e) => handleTitleEdit(record, e.target.value)"
+              style="font-size: 13px; width: 400px;"
+            />
+            <div v-if="record.editedTitle && record.editedTitle !== record.title" style="font-size: 11px; color: #52c41a;">已修改</div>
+          </template>
+        </Table.Column>
+        <Table.Column title="最高相似度" key="maxSimilarity" :width="100" align="center">
+          <template #default="{ record }">
+            <Tag v-if="record.maxSimilarity != null" :color="record.maxSimilarity >= 50 ? 'red' : record.maxSimilarity >= 25 ? 'orange' : 'green'" style="font-size: 12px;">
+              {{ record.maxSimilarity }}%
+            </Tag>
+            <span v-else style="color: #999;">-</span>
+          </template>
+        </Table.Column>
+        <Table.Column title="平台" dataIndex="platform" key="platform" :width="80" />
+        <Table.Column title="赛道" dataIndex="trackName" key="trackName" :width="100" />
+        <Table.Column title="匹配用户" key="user" :width="130">
+          <template #default="{ record }">
+            <a style="color: #1890ff;" @click="openHistoryModal(record.userId, record.username, record.editedTitle || record.title)">{{ record.username }}</a>
+            <div style="font-size: 11px; color: #999;">{{ record.userEmail }}</div>
+          </template>
+        </Table.Column>
+        <Table.Column title="操作" key="action" :width="200">
+          <template #default="{ record }">
+            <template v-if="record.approved">
+              <Tag color="green">已通过</Tag>
+            </template>
+            <template v-else>
+              <Button type="link" size="small" style="color: #52c41a;" @click="handleApproveOne(record)">通过</Button>
+              <Button
+                type="link" size="small"
+                :loading="matchOneLoadingId === record.titleId"
+                @click="handleRematchOne(record)"
+              >重配</Button>
+              <Popconfirm title="确定移除该项？" @confirm="handleRemoveMatch(record)">
+                <Button type="link" size="small" danger>移除</Button>
+              </Popconfirm>
+            </template>
+          </template>
+        </Table.Column>
+      </Table>
+
+      <div v-if="matchPreviewData.length === 0 && !matchPreviewLoading" style="text-align: center; padding: 24px; color: #999;">
+        暂无待匹配项
       </div>
-      <div v-else-if="matchCheckData" style="border: 1px solid #f0f0f0; border-radius: 4px; padding: 12px;">
-        <div style="font-size: 14px; font-weight: 500; margin-bottom: 8px;">匹配检测结果</div>
-        <div style="font-size: 13px; color: #595959; margin-bottom: 8px;">
-          目标日期：{{ matchCheckData.targetDate }}，
-          活跃用户：{{ matchCheckData.totalUsers }} 位，
-          需匹配组合：{{ matchCheckData.totalCombos }} 个
-          <span v-if="matchCheckData.existingCombosCount > 0" style="color: #fa8c16; margin-left: 8px;">
-            （当天已有 {{ matchCheckData.existingCombosCount }} 个组合被匹配）
-          </span>
-        </div>
-        <div v-if="matchCheckData.existingCombosCount > 0" style="background: #fffbe6; border: 1px solid #ffe58f; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px;">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 12px; color: #d48806;">该日期已有匹配记录，继续匹配只会处理剩余未匹配的组合</span>
-            <Button type="link" size="small" danger :loading="clearing" @click="handleClearAndMatch">先清理再重新匹配</Button>
-          </div>
-        </div>
-        <div v-if="matchCheckData.historyBoundUserCount > 0" style="background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px;">
-          <span style="font-size: 12px; color: #096dd9;">
-            历史绑定影响：{{ matchCheckData.historyBoundUserCount }} 位用户历史上共绑定过 {{ matchCheckData.historyBoundTitleCount }} 个标题，匹配时会自动跳过这些组合
-          </span>
-        </div>
-        <!-- 缺口警告 -->
-        <div v-if="matchCheckData.gaps && matchCheckData.gaps.length > 0" style="background: #fff2f0; border: 1px solid #ffccc7; border-radius: 4px; padding: 10px 12px; margin-bottom: 10px;">
-          <div style="color: #cf1322; font-weight: 500; font-size: 13px; margin-bottom: 6px;">
-            以下赛道标题不足，请先生成标题后再匹配
-          </div>
-          <div style="display: flex; flex-direction: column; gap: 4px;">
-            <div v-for="g in matchCheckData.gaps" :key="g.trackId" style="font-size: 13px; color: #cf1322;">
-              {{ g.trackName }}：需求 {{ g.demand }} 条 / 库存 {{ g.supply }} 条，缺口 {{ g.need }} 条
-            </div>
-          </div>
-        </div>
-        <div v-else style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 10px 12px; margin-bottom: 10px;">
-          <div style="color: #389e0d; font-weight: 500; font-size: 13px;">
-            标题库存充足，可以正常匹配
-          </div>
-        </div>
-        <!-- 各组合详细统计 -->
-        <div v-if="matchCheckData.comboStats && matchCheckData.comboStats.length > 0" style="margin-top: 8px;">
-          <div style="font-size: 12px; color: #999; margin-bottom: 4px;">各赛道供需明细：</div>
-          <div style="max-height: 200px; overflow-y: auto;">
-            <div v-for="s in matchCheckData.comboStats" :key="s.trackId" style="display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; border-bottom: 1px solid #f5f5f5;">
-              <span>{{ s.trackName }}</span>
-              <span :style="s.sufficient ? 'color: #52c41a;' : 'color: #f5222d;'">
-                {{ s.supply }} / {{ s.demand }} {{ s.sufficient ? '充足' : '缺' + s.gap + '条' }}
-              </span>
-            </div>
-          </div>
-        </div>
+
+      <div style="margin-top: 12px; font-size: 13px; color: #595959;">
+        共 <strong>{{ matchPreviewData.length }}</strong> 项待确认匹配
       </div>
-    </Form
-    >
-  </Modal
-  >
+    </div>
+  </Modal>
 
   <Modal v-model:open="modalOpen" :title="modalTitle" :mask-closable="false" :confirm-loading="saving" @ok="handleSave">
     <Form layout="vertical" style="margin-top: 12px;">
@@ -1762,6 +2332,16 @@ onMounted(() => {
         <Input v-model:value="generateOutputPath" placeholder="不填则默认保存到项目 export 目录" />
         <div style="font-size: 12px; color: #999; margin-top: 4px;">留空默认保存到项目根目录/export/下，带时间戳文件名</div>
       </Form.Item>
+      <Form.Item label="生成方向（可选）">
+        <Input.TextArea
+          v-model:value="generateInstruction"
+          placeholder="例如：更口语化、更具悬念、突出数字效果、适合抖音风格、偏新闻报道类..."
+          :rows="2"
+          :maxlength="200"
+          show-count
+        />
+        <div style="font-size: 12px; color: #999; margin-top: 4px;">不填则使用默认策略生成</div>
+      </Form.Item>
     </Form>
   </Modal>
 
@@ -1783,7 +2363,7 @@ onMounted(() => {
   <Modal v-model:open="previewModalOpen" title="文章预览" :footer="null" :mask-closable="true" width="900">
     <div v-if="previewRecord" style="margin-top: 12px;">
       <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">{{ previewRecord.subscriptionPostTitle }}</div>
-      <div style="border: 1px solid #f0f0f0; border-radius: 6px; background: #fafafa; min-height: 360px; max-height: 600px; overflow: auto;">
+      <div style="border: 1px solid #f0f0f0; border-radius: 6px; background: #fafafa; min-height: 360px; max-height: 500px; overflow: auto;">
         <div v-if="previewLoading" style="padding: 24px; text-align: center; color: #999;">正在加载预览...</div>
         <!-- Text -->
         <pre
@@ -1800,9 +2380,53 @@ onMounted(() => {
         <iframe
           v-else-if="previewRecord.subscriptionPostFileUrl"
           :src="getPostFileUrl(previewRecord.subscriptionPostId)"
-          style="width: 100%; height: 560px; border: 0;"
+          style="width: 100%; height: 500px; border: 0;"
         />
         <div v-else style="padding: 24px; color: #999; text-align: center;">暂无文件</div>
+      </div>
+
+      <!-- 文章反馈区域 -->
+      <div style="margin-top: 16px; border-top: 1px solid #f0f0f0; padding-top: 16px;">
+        <div style="font-size: 13px; font-weight: 600; margin-bottom: 10px; color: #333;">
+          段落反馈
+          <span style="font-weight: normal; color: #999; margin-left: 8px; font-size: 12px;">
+            （对这篇文章提出修改意见，下次生成同赛道文章时会自动避免）
+          </span>
+        </div>
+
+        <!-- 反馈历史列表 -->
+        <div v-if="feedbackLoading" style="color: #999; font-size: 12px; padding: 8px 0;">加载中...</div>
+        <div v-else-if="feedbackList.length > 0" style="margin-bottom: 12px;">
+          <div
+            v-for="fb in feedbackList"
+            :key="fb.id"
+            style="display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; background: #fff7e6; border-radius: 4px; margin-bottom: 6px; font-size: 12px;"
+          >
+            <span style="color: #fa8c16; flex-shrink: 0;">●</span>
+            <span style="flex: 1; word-break: break-all; color: #333; line-height: 1.5;">{{ fb.content }}</span>
+            <span style="color: #999; flex-shrink: 0; font-size: 11px; white-space: nowrap;">{{ fb.createdAt ? fb.createdAt.slice(0, 16) : '' }}</span>
+            <Button type="link" danger size="small" style="padding: 0; flex-shrink: 0;" @click="handleDeleteFeedback(fb.id, previewRecord.trackId, previewRecord.platform)">删除</Button>
+          </div>
+        </div>
+        <div v-else style="color: #999; font-size: 12px; margin-bottom: 10px;">暂无反馈</div>
+
+        <!-- 新增反馈输入 -->
+        <div style="display: flex; gap: 8px; align-items: flex-start;">
+          <Input.TextArea
+            v-model:value="feedbackInput"
+            placeholder="输入对这篇文章的修改意见，例如：第二段太啰嗦，需要精简..."
+            :rows="2"
+            :maxlength="500"
+            style="flex: 1;"
+          />
+          <Button
+            type="primary"
+            size="small"
+            style="flex-shrink: 0; height: 52px;"
+            :loading="feedbackSaving"
+            @click="handleSaveFeedback(previewRecord.trackId, previewRecord.platform)"
+          >提交反馈</Button>
+        </div>
       </div>
     </div>
   </Modal>
@@ -1906,6 +2530,190 @@ onMounted(() => {
         <Button type="primary" :loading="importArticleLoading" @click="handleImportArticles">开始导入</Button>
       </div>
     </Form>
+  </Modal>
+
+  <!-- 用户历史绑定弹窗 -->
+  <Modal
+    v-model:open="historyModalOpen"
+    :title="'历史绑定记录 — ' + historyUserName"
+    width="700"
+    :footer="null"
+  >
+    <div style="margin-bottom: 12px;">
+      <div style="font-size: 13px; color: #595959; margin-bottom: 4px;">当前匹配标题：<strong>{{ historyTitle }}</strong></div>
+      <div style="font-size: 12px; color: #999;">下方为该用户历史上绑定过的标题，百分比为与当前标题的相似度（基于字符语义）</div>
+    </div>
+    <div v-if="historyLoading" style="text-align: center; padding: 24px;">
+      <Spin /> 加载中...
+    </div>
+    <Table
+      v-else
+      :data-source="historyList"
+      :pagination="{ pageSize: 10 }"
+      size="small"
+      row-key="recommendDate"
+      style="border: 1px solid #f0f0f0; border-radius: 4px;"
+    >
+      <Table.Column title="历史绑定标题" dataIndex="titleName" key="titleName" :width="300">
+        <template #default="{ record }">
+          <div style="font-size: 13px;">{{ record.titleName }}</div>
+          <div style="font-size: 12px; color: #999;">{{ record.recommendDate }}</div>
+        </template>
+      </Table.Column>
+      <Table.Column title="相似度" key="similarity" :width="100" align="center">
+        <template #default="{ record }">
+          <div v-if="record.similarity != null">
+            <Tag :color="record.similarity >= 50 ? 'red' : record.similarity >= 25 ? 'orange' : 'green'">
+              {{ record.similarity }}%
+            </Tag>
+          </div>
+          <div v-else style="color: #999;">-</div>
+        </template>
+      </Table.Column>
+      <Table.Column title="风险" key="risk" :width="80" align="center">
+        <template #default="{ record }">
+          <span v-if="record.similarity == null" style="color: #999;">-</span>
+          <span v-else-if="record.similarity >= 50" style="color: #f5222d; font-weight: 600;">高</span>
+          <span v-else-if="record.similarity >= 25" style="color: #fa8c16; font-weight: 600;">中</span>
+          <span v-else style="color: #52c41a;">低</span>
+        </template>
+      </Table.Column>
+    </Table>
+    <div v-if="!historyLoading && historyList.length === 0" style="text-align: center; padding: 24px; color: #999;">
+      暂无历史绑定记录
+    </div>
+  </Modal>
+
+  <!-- 复制提示词弹窗 -->
+  <Modal
+    v-model:open="copyPromptModalOpen"
+    title="复制提示词"
+    :mask-closable="false"
+    width="640"
+    :footer="null"
+  >
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div>
+        <div style="margin-bottom: 4px; font-size: 13px; color: #666;">提示词模板（支持 ${date}、${pno}、${sno} 变量）</div>
+        <Input.TextArea v-model:value="copyPromptContent" placeholder="请输入提示词模板..." :rows="8" />
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <div style="flex: 1;">
+          <div style="margin-bottom: 4px; font-size: 13px; color: #666;">${date}</div>
+          <Input v-model:value="copyPromptDate" placeholder="日期" />
+        </div>
+        <div style="flex: 1;">
+          <div style="margin-bottom: 4px; font-size: 13px; color: #666;">${pno}</div>
+          <Input v-model:value="copyPromptPno" placeholder="pno" />
+        </div>
+        <div style="flex: 1;">
+          <div style="margin-bottom: 4px; font-size: 13px; color: #666;">${sno}</div>
+          <Input v-model:value="copyPromptSno" placeholder="sno" />
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <Button @click="saveCopyPrompt">保存</Button>
+        <Button @click="saveCopyPromptAsNew">另存记录</Button>
+        <Button type="primary" @click="doCopyPrompt('pno')">pno+1 复制</Button>
+        <Button type="primary" @click="doCopyPrompt('sno')">sno+1 复制</Button>
+      </div>
+
+      <!-- 保存的记录列表 -->
+      <div v-if="copyPromptRecords.length > 0" style="margin-top: 8px;">
+        <div style="font-size: 13px; color: #666; margin-bottom: 8px; font-weight: 500;">保存的记录（点击恢复）</div>
+        <div style="max-height: 200px; overflow-y: auto; border: 1px solid #f0f0f0; border-radius: 4px;">
+          <div
+            v-for="record in copyPromptRecords"
+            :key="record.id"
+            @click="loadCopyPromptRecord(record)"
+            :style="{
+              padding: '8px 12px',
+              cursor: 'pointer',
+              borderBottom: '1px solid #f0f0f0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: copyPromptCurrentId === record.id ? '#e6f7ff' : 'transparent'
+            }"
+          >
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 13px; font-weight: 500;">{{ record.name }}</div>
+              <div style="font-size: 12px; color: #999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                {{ record.content ? record.content.slice(0, 40) : '' }}...
+              </div>
+              <div style="font-size: 11px; color: #bbb; margin-top: 2px;">
+                date:{{ record.date }} / pno:{{ record.pno }} / sno:{{ record.sno }}
+              </div>
+            </div>
+            <Button
+              type="text"
+              danger
+              size="small"
+              style="margin-left: 8px; flex-shrink: 0;"
+              @click="deleteCopyPromptRecord(record, $event)"
+            >删除</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Modal>
+
+  <!-- 去除AI味弹窗 -->
+  <Modal
+    v-model:open="removeAiFlavorModalOpen"
+    title="去除AI味"
+    :mask-closable="false"
+    width="520"
+    :footer="null"
+  >
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+      <div>
+        <div style="margin-bottom: 4px; font-size: 13px; color: #666;">文件或目录绝对路径</div>
+        <Input v-model:value="removeAiFlavorPath" placeholder="请输入绝对路径，如 /Users/panyong/Documents/article.docx" />
+      </div>
+      <div style="font-size: 12px; color: #999; line-height: 1.6;">
+        点击"去除"后将调用本地脚本 <code>python replace_periods.py ${path}</code> 处理指定路径的文件。
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <Button @click="saveRemoveAiFlavorPath">保存路径</Button>
+        <Button type="primary" :loading="removeAiFlavorLoading" @click="handleRemoveAiFlavor">去除</Button>
+      </div>
+    </div>
+  </Modal>
+
+  <!-- 行级提示词模板弹窗 -->
+  <Modal
+    v-model:open="rowPromptModalOpen"
+    title="提示词模板设置"
+    :mask-closable="false"
+    width="640"
+    :footer="null"
+  >
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div>
+        <div style="margin-bottom: 4px; font-size: 13px; color: #666;">模板内容（点击下方字段插入变量，如 <code>${title}</code>）</div>
+        <Input.TextArea
+          ref="rowPromptTextAreaRef"
+          v-model:value="rowPromptTemplate"
+          placeholder="例如：请为平台 ${platform} 的赛道 ${trackName} 生成一篇关于 ${title} 的文章..."
+          :rows="8"
+        />
+      </div>
+      <div>
+        <div style="margin-bottom: 8px; font-size: 13px; color: #666; font-weight: 500;">可用字段（点击插入）</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          <Button
+            v-for="f in availableFields"
+            :key="f.key"
+            size="small"
+            @click="insertFieldToTemplate(f.key)"
+          >{{ f.label }} <code style="margin-left: 4px;">{{ '${' + f.key + '}' }}</code></Button>
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <Button @click="saveRowPromptTemplate">保存模板</Button>
+      </div>
+    </div>
   </Modal>
 </template>
 

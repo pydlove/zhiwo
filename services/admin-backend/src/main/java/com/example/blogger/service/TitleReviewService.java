@@ -31,19 +31,21 @@ public class TitleReviewService {
     private final ServerConfigMapper serverConfigMapper;
     private final TrackMapper trackMapper;
     private final RestTemplate restTemplate;
+    private final ClaudeCodeService claudeCodeService;
 
     // 轮询索引，用于多配置时的负载均衡
     private final java.util.concurrent.atomic.AtomicInteger roundRobinIndex = new java.util.concurrent.atomic.AtomicInteger(0);
 
     public TitleReviewService(TitleReviewMapper titleReviewMapper, TitleLibraryMapper titleLibraryMapper,
                               TitlePushLogMapper titlePushLogMapper, ServerConfigMapper serverConfigMapper,
-                              TrackMapper trackMapper) {
+                              TrackMapper trackMapper, ClaudeCodeService claudeCodeService) {
         this.titleReviewMapper = titleReviewMapper;
         this.titleLibraryMapper = titleLibraryMapper;
         this.titlePushLogMapper = titlePushLogMapper;
         this.serverConfigMapper = serverConfigMapper;
         this.trackMapper = trackMapper;
         this.restTemplate = new RestTemplate();
+        this.claudeCodeService = claudeCodeService;
     }
 
     /**
@@ -462,5 +464,26 @@ public class TitleReviewService {
         review.setSource(source != null ? source : "ai_generated");
         titleReviewMapper.insert(review);
         return review;
+    }
+
+    /**
+     * 根据 ID 获取审核记录
+     */
+    public TitleReview getById(String id) {
+        return titleReviewMapper.findById(id);
+    }
+
+    /**
+     * 调用 Claude 优化标题
+     */
+    public String optimizeTitleByClaude(String prompt) throws Exception {
+        String result = claudeCodeService.callClaude(prompt);
+        // 提取"优化标题：[...]"中的内容
+        if (result.contains("优化标题：")) {
+            result = result.substring(result.indexOf("优化标题：") + 5).trim();
+        }
+        // 清理可能的 markdown 或引号
+        result = result.replaceAll("^[`\"']+|[`\"']+$", "").trim();
+        return result;
     }
 }

@@ -115,4 +115,12 @@ public interface TitleRecommendationMapper {
             "WHERE r.user_id = #{userId} " +
             "ORDER BY r.recommend_date DESC, r.created_at DESC")
     List<Map<String, Object>> findHistoryByUserId(@Param("userId") String userId);
+
+    /** 查询指定用户指定日期已匹配的标题列表 */
+    @Select("SELECT title_library_id as titleId FROM tu_title_recommendation WHERE user_id = #{userId} AND recommend_date = #{date}")
+    List<Map<String, Object>> findMatchedTitlesByDateAndUser(@Param("date") LocalDate date, @Param("userId") String userId);
+
+    /** 查询所有已经被绑定过用户的标题ID（全局） */
+    @Select("SELECT DISTINCT title_library_id FROM tu_title_recommendation")
+    List<String> findAllMatchedTitleIds();
 }

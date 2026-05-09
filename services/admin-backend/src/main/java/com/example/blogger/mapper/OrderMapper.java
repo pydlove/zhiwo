@@ -48,6 +48,9 @@ public interface OrderMapper {
     @Update("UPDATE tu_order SET refund_amount = #{refundAmount}, remark = CONCAT(IFNULL(remark, ''), ' [退单]', ' 退单金额:', #{refundAmount}) WHERE id = #{id}")
     int refund(@Param("id") String id, @Param("refundAmount") BigDecimal refundAmount);
 
+    @Update("UPDATE tu_order SET amount = #{amount} WHERE id = #{id}")
+    int updateAmount(@Param("id") String id, @Param("amount") BigDecimal amount);
+
     // 收益统计：只统计未退单的（refund_amount = 0）
     @Select("SELECT COALESCE(SUM(amount), 0) FROM tu_order WHERE DATE(created_at) = CURDATE() AND (refund_amount IS NULL OR refund_amount = 0)")
     BigDecimal sumToday();
@@ -80,4 +83,7 @@ public interface OrderMapper {
 
     @Select("SELECT * FROM tu_order WHERE user_id = #{userId} AND type = #{type} ORDER BY created_at DESC LIMIT 1")
     Order findLatestByUserAndType(@Param("userId") String userId, @Param("type") String type);
+
+    @Delete("DELETE FROM tu_order WHERE id = #{id}")
+    int deleteById(String id);
 }

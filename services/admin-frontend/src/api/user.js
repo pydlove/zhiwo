@@ -48,3 +48,11 @@ export function importUsers(excelFile) {
 export function batchUpdateAdmin(userIds, adminId) {
   return request.post('/users/batch-update-admin', { userIds, adminId })
 }
+
+export function getExpiringUsers(days = 7) {
+  return request.get('/users/expiring', { params: { days } })
+}
+
+export function sendExpireReminderEmails(userIds) {
+  return request.post('/users/expiring/send-reminder', { userIds })
+}

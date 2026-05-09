@@ -16,6 +16,7 @@ import com.example.blogger.service.OrderService;
 import com.example.blogger.service.TitleLibraryService;
 import com.example.blogger.service.UserService;
 import com.example.blogger.service.UserTrackService;
+import com.example.blogger.service.EmailService;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.http.HttpHeaders;
@@ -23,6 +24,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.io.ByteArrayOutputStream;
 import java.time.LocalDate;
@@ -42,11 +44,12 @@ public class UserController {
     private final TitleRecommendationMapper titleRecommendationMapper;
     private final TrackMapper trackMapper;
     private final OrderService orderService;
+    private final EmailService emailService;
 
     public UserController(UserService userService, UserTrackService userTrackService, MembershipPlanService membershipPlanService,
                           UserTrackMapper userTrackMapper, TitleLibraryService titleLibraryService,
                           TitleLibraryMapper titleLibraryMapper, TitleRecommendationMapper titleRecommendationMapper,
-                          TrackMapper trackMapper, OrderService orderService) {
+                          TrackMapper trackMapper, OrderService orderService, EmailService emailService) {
         this.userService = userService;
         this.userTrackService = userTrackService;
         this.membershipPlanService = membershipPlanService;
@@ -56,6 +59,7 @@ public class UserController {
         this.titleRecommendationMapper = titleRecommendationMapper;
         this.trackMapper = trackMapper;
         this.orderService = orderService;
+        this.emailService = emailService;
     }
 
     private void syncPlanLimits(User user) {
@@ -229,6 +233,49 @@ public class UserController {
         }
         userService.batchUpdateAdminId(userIds, adminId);
         return Result.ok(null);
+    }
+
+    @GetMapping("/expiring")
+    public Result<List<Map<String, Object>>> getExpiringUsers(@RequestParam(value = "days", defaultValue = "7") int days) {
+        List<Map<String, Object>> users = userService.findExpiringUsers(days);
+        return Result.ok(users);
+    }
+
+    @PostMapping("/expiring/send-reminder")
+    public Result<Map<String, Object>> sendExpireReminder(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+        @SuppressWarnings("unchecked")
+        List<String> userIds = (List<String>) body.get("userIds");
+        if (userIds == null || userIds.isEmpty()) {
+            return Result.error("请选择用户");
+        }
+        List<Map<String, Object>> allExpiring = userService.findExpiringUsers(30);
+        Map<String, Map<String, Object>> userMap = new HashMap<>();
+        for (Map<String, Object> u : allExpiring) {
+            userMap.put(u.get("id").toString(), u);
+        }
+        int sent = 0, failed = 0;
+        for (String uid : userIds) {
+            Map<String, Object> u = userMap.get(uid);
+            if (u == null) { failed++; continue; }
+            String email = u.get("email") != null ? u.get("email").toString() : null;
+            if (email == null || email.isEmpty()) { failed++; continue; }
+            String username = u.get("username") != null ? u.get("username").toString() : "";
+            String planName = u.get("planName") != null ? u.get("planName").toString() : "您当前的会员套餐";
+            Object expireDate = u.get("expireDate");
+            String expireStr = expireDate != null ? expireDate.toString() : "即将到期";
+            Object planPrice = u.get("planPrice");
+            String priceStr = planPrice != null ? new java.math.BigDecimal(planPrice.toString()).toString() : "";
+            try {
+                emailService.sendExpireReminderEmail(email, username, planName, expireStr, priceStr);
+                sent++;
+            } catch (Exception e) {
+                failed++;
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("sent", sent);
+        result.put("failed", failed);
+        return Result.ok(result);
     }
 
     @GetMapping("/export")

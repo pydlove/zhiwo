@@ -14,4 +14,7 @@ public interface ConfigMapper {
 
     @Insert("INSERT INTO tu_config(config_key, config_value) VALUES(#{configKey}, #{configValue}) ON DUPLICATE KEY UPDATE config_value=#{configValue}")
     int save(Config config);
+
+    @Delete("DELETE FROM tu_config WHERE config_key = #{key}")
+    int deleteByKey(@Param("key") String key);
 }

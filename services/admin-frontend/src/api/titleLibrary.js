@@ -35,6 +35,20 @@ export function matchTodayTitles(date) {
   return request.post('/title-library/match-today', null, { params })
 }
 
+export function matchPreview(date) {
+  const params = {}
+  if (date) params.date = date
+  return request.get('/title-library/match-preview', { params })
+}
+
+export function matchConfirm(date, matches) {
+  return request.post('/title-library/match-confirm', matches, { params: { date } })
+}
+
+export function matchOne(date, userId, titleId) {
+  return request.get('/title-library/match-one', { params: { date, userId, titleId } })
+}
+
 export function unbindRecommendation(titleId) {
   return request.delete('/title-library/' + titleId + '/recommendation')
 }
@@ -182,4 +196,32 @@ export function clearRecommendationsByDate(date) {
 
 export function getUserHistory(userId) {
   return request.get('/title-library/user-history/' + userId)
+}
+
+// 文章反馈相关
+export function saveArticleFeedback(data) {
+  return request.post('/title-library/feedback', data)
+}
+
+export function listArticleFeedback(params) {
+  return request.get('/title-library/feedback', { params })
+}
+
+export function deleteArticleFeedback(id) {
+  return request.delete('/title-library/feedback/' + id)
+}
+
+// 单标题生成文章
+export function generatePostSingle(id) {
+  return request.post('/title-library/' + id + '/generate-post')
+}
+
+// 获取文章内容（用于预览反馈）
+export function getPostContent(id) {
+  return request.get('/title-library/' + id + '/post-content')
+}
+
+// 去除AI味：调用本地 python 脚本
+export function removeAiFlavor(path) {
+  return request.post('/title-library/remove-ai-flavor', { path })
 }

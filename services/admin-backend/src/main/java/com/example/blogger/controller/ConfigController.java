@@ -2,8 +2,10 @@ package com.example.blogger.controller;
 
 import com.example.blogger.config.AppProperties;
 import com.example.blogger.entity.Config;
+import com.example.blogger.entity.MembershipPlan;
 import com.example.blogger.entity.Result;
 import com.example.blogger.mapper.ConfigMapper;
+import com.example.blogger.mapper.MembershipPlanMapper;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -27,11 +29,13 @@ import java.util.Set;
 @CrossOrigin(origins = "*")
 public class ConfigController {
     private final ConfigMapper configMapper;
+    private final MembershipPlanMapper membershipPlanMapper;
     private final DataSource dataSource;
     private final AppProperties appProperties;
 
-    public ConfigController(ConfigMapper configMapper, DataSource dataSource, AppProperties appProperties) {
+    public ConfigController(ConfigMapper configMapper, MembershipPlanMapper membershipPlanMapper, DataSource dataSource, AppProperties appProperties) {
         this.configMapper = configMapper;
+        this.membershipPlanMapper = membershipPlanMapper;
         this.dataSource = dataSource;
         this.appProperties = appProperties;
     }
@@ -61,6 +65,57 @@ public class ConfigController {
             c.setConfigValue(entry.getValue());
             configMapper.save(c);
         }
+        return Result.ok(null);
+    }
+
+    @GetMapping("/open-account-link")
+    public Result<List<Map<String, Object>>> getOpenAccountLink(@RequestParam("adminId") String adminId) {
+        if (adminId == null || adminId.isEmpty()) {
+            return Result.error("运营者ID不能为空");
+        }
+        List<Config> all = configMapper.findAll();
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        // 预加载会员套餐
+        Map<String, MembershipPlan> planMap = new HashMap<>();
+        for (MembershipPlan p : membershipPlanMapper.findAll()) {
+            planMap.put(p.getId(), p);
+        }
+        List<Map<String, Object>> result = new java.util.ArrayList<>();
+        for (Config cfg : all) {
+            if (cfg.getConfigKey() == null || !cfg.getConfigKey().startsWith("oa_link_")) continue;
+            try {
+                Map<String, Object> data = mapper.readValue(cfg.getConfigValue(), Map.class);
+                if (adminId.equals(data.get("adminId"))) {
+                    Map<String, Object> item = new HashMap<>();
+                    String code = cfg.getConfigKey().substring("oa_link_".length());
+                    item.put("code", code);
+                    item.put("platform", data.get("platform"));
+                    item.put("count", data.get("count"));
+                    item.put("membershipPlanId", data.get("membershipPlanId"));
+                    item.put("adminId", data.get("adminId"));
+                    item.put("baseUrl", data.get("baseUrl"));
+                    item.put("createdAt", data.get("createdAt"));
+                    item.put("url", (data.get("baseUrl") != null ? data.get("baseUrl") : "http://www.mmshuo.tech") + "/open-account?c=" + code);
+                    // 套餐名称
+                    String planId = data.get("membershipPlanId") != null ? data.get("membershipPlanId").toString() : null;
+                    if (planId != null && planMap.containsKey(planId)) {
+                        item.put("membershipPlanName", planMap.get(planId).getName());
+                    }
+                    result.add(item);
+                }
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+        return Result.ok(result);
+    }
+
+    @DeleteMapping("/open-account-link/{code}")
+    public Result<Void> deleteOpenAccountLink(@PathVariable String code) {
+        if (code == null || code.trim().isEmpty()) {
+            return Result.error("链接code不能为空");
+        }
+        configMapper.deleteByKey("oa_link_" + code.trim());
         return Result.ok(null);
     }
 
@@ -96,6 +151,9 @@ public class ConfigController {
         }
         if (adminId != null && !adminId.isEmpty()) {
             data.put("adminId", adminId);
+        }
+        if (baseUrl != null && !baseUrl.isEmpty()) {
+            data.put("baseUrl", baseUrl);
         }
         data.put("createdAt", LocalDateTime.now().toString());
 

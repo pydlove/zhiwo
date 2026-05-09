@@ -15,6 +15,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.poi.hwpf.HWPFDocument;
+import org.apache.poi.hwpf.extractor.WordExtractor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -54,6 +58,7 @@ public class TitleLibraryController {
     private final SubscriptionPostMapper subscriptionPostMapper;
     private final BannedWordMapper bannedWordMapper;
     private final com.example.blogger.service.TitleReviewService titleReviewService;
+    private final ArticleFeedbackMapper articleFeedbackMapper;
 
     // Async generate task storage (for titles)
     private final ConcurrentHashMap<String, Map<String, Object>> generateTasks = new ConcurrentHashMap<>();
@@ -89,7 +94,8 @@ public class TitleLibraryController {
                                   EmailPushLogMapper emailPushLogMapper,
                                   SubscriptionPostMapper subscriptionPostMapper,
                                   BannedWordMapper bannedWordMapper,
-                                  com.example.blogger.service.TitleReviewService titleReviewService) {
+                                  com.example.blogger.service.TitleReviewService titleReviewService,
+                                  ArticleFeedbackMapper articleFeedbackMapper) {
         this.titleLibraryService = titleLibraryService;
         this.trackMapper = trackMapper;
         this.userMapper = userMapper;
@@ -104,6 +110,7 @@ public class TitleLibraryController {
         this.subscriptionPostMapper = subscriptionPostMapper;
         this.bannedWordMapper = bannedWordMapper;
         this.titleReviewService = titleReviewService;
+        this.articleFeedbackMapper = articleFeedbackMapper;
     }
 
     @PostConstruct
@@ -253,6 +260,28 @@ public class TitleLibraryController {
             }
         } catch (SQLException e) {
             System.err.println("Migration check failed for tu_email_push_log: " + e.getMessage());
+        }
+    }
+
+    @PostConstruct
+    public void migrateArticleFeedbackTable() {
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.getMetaData().getTables(null, null, "tu_article_feedback", null)) {
+            if (!rs.next()) {
+                conn.createStatement().execute(
+                    "CREATE TABLE IF NOT EXISTS tu_article_feedback (" +
+                    "  id VARCHAR(64) PRIMARY KEY," +
+                    "  track_id VARCHAR(64) COMMENT '赛道ID'," +
+                    "  platform VARCHAR(50) COMMENT '平台'," +
+                    "  content TEXT NOT NULL COMMENT '反馈内容'," +
+                    "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP," +
+                    "  INDEX idx_track_platform (track_id, platform)" +
+                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='文章反馈记忆表'"
+                );
+                System.out.println("Migration applied: created tu_article_feedback table");
+            }
+        } catch (SQLException e) {
+            System.err.println("Migration check failed for tu_article_feedback: " + e.getMessage());
         }
     }
 
@@ -1016,7 +1045,43 @@ public class TitleLibraryController {
                 String fileName = safeBase + "." + ext;
                 System.out.println("[ImportArticle] originalName=" + originalName + ", safeBase=" + safeBase + ", fileName=" + fileName);
                 String filePath = articlesDir + File.separator + fileName;
+
+                // 1. Save file first to avoid stream conflicts
                 file.transferTo(new File(filePath));
+
+                // 2. Extract text from the saved file
+                String extractedText = "";
+                try (InputStream is = new FileInputStream(filePath)) {
+                    if ("docx".equals(ext)) {
+                        XWPFDocument document = new XWPFDocument(is);
+                        StringBuilder sb = new StringBuilder();
+                        for (XWPFParagraph para : document.getParagraphs()) {
+                            sb.append(para.getText()).append("\n");
+                        }
+                        extractedText = sb.toString();
+                        document.close();
+                    } else if ("doc".equals(ext)) {
+                        HWPFDocument document = new HWPFDocument(is);
+                        WordExtractor extractor = new WordExtractor(document);
+                        extractedText = extractor.getText();
+                        extractor.close();
+                    }
+                    System.out.println("[ImportArticle] 文本提取成功, 长度=" + extractedText.length() + ", file=" + originalName);
+                } catch (Exception ex) {
+                    System.err.println("[ImportArticle] 文本提取失败: " + originalName);
+                    ex.printStackTrace();
+                }
+
+                // 3. Replace Chinese periods with commas, except when followed by newline
+                String processedText = extractedText;
+                if (!extractedText.isEmpty()) {
+                    processedText = extractedText.replaceAll("。(?![\\r\\n])", "，");
+                    int changed = 0;
+                    for (int i = 0; i < extractedText.length() && i < processedText.length(); i++) {
+                        if (extractedText.charAt(i) != processedText.charAt(i)) changed++;
+                    }
+                    System.out.println("[ImportArticle] 句号替换完成, 替换数量=" + changed + ", file=" + originalName);
+                }
 
                 // Create or update SubscriptionPost
                 String fileUrl = "/uploads/articles/" + fileName;
@@ -1032,7 +1097,7 @@ public class TitleLibraryController {
                 post.setUserId(rec.getUserId());
                 post.setTrackId(rec.getTrackId());
                 post.setTitle(matchedTitle.getTitle());
-                post.setDescription("");
+                post.setDescription(processedText);
                 post.setFileUrl(fileUrl);
                 post.setFileName(fileName);
                 post.setStatus("已上架");
@@ -1104,9 +1169,9 @@ public class TitleLibraryController {
 
             // ===== 1. 计算标题供给（按 trackId 分组） =====
             List<TitleLibrary> allTitles = titleLibraryService.list();
-            Set<String> matchedTodayTitleIds = new HashSet<>(titleRecommendationMapper.findMatchedTitleIdsByDate(targetDate));
+            Set<String> allMatchedTitleIds = new HashSet<>(titleRecommendationMapper.findAllMatchedTitleIds());
             Map<String, Long> supplyMap = allTitles.stream()
-                    .filter(t -> !matchedTodayTitleIds.contains(t.getId()))
+                    .filter(t -> !allMatchedTitleIds.contains(t.getId())) // 过滤掉已绑定用户的标题
                     .filter(t -> t.getPushDate() == null || !t.getPushDate().isAfter(targetDate))
                     .filter(t -> t.getTrackId() != null && !t.getTrackId().isEmpty())
                     .collect(Collectors.groupingBy(TitleLibrary::getTrackId, Collectors.counting()));
@@ -1230,10 +1295,12 @@ public class TitleLibraryController {
             }
             List<TitleLibrary> allTitles = titleLibraryService.list();
 
-            // ===== 过滤1：目标日期已经被匹配过的标题，当天不再参与匹配（不同日期可复用） =====
+            // ===== 过滤1：已绑定用户的标题，视为已使用，不再参与匹配 =====
+            Set<String> allMatchedTitleIds = new HashSet<>(titleRecommendationMapper.findAllMatchedTitleIds());
             Set<String> matchedTodayTitleIds = new HashSet<>(titleRecommendationMapper.findMatchedTitleIdsByDate(targetDate));
             List<TitleLibrary> unmatchedTitles = allTitles.stream()
-                    .filter(t -> !matchedTodayTitleIds.contains(t.getId()))
+                    .filter(t -> !allMatchedTitleIds.contains(t.getId())) // 过滤掉已绑定用户的标题
+                    .filter(t -> t.getIsUsed() == null || t.getIsUsed() != 1) // 过滤掉 is_used=1 的标题
                     .collect(Collectors.toList());
 
             // 在未匹配的标题中，优先匹配 pushDate 等于目标日期的；pushDate 为 null 的也允许匹配
@@ -1458,6 +1525,267 @@ public class TitleLibraryController {
         }
     }
 
+    /**
+     * 匹配预览：模拟匹配逻辑，返回待审核的匹配列表（不保存）
+     */
+    @GetMapping("/match-preview")
+    public Result<List<Map<String, Object>>> matchPreview(@RequestParam(value = "date", required = false) String dateStr) {
+        try {
+            LocalDate targetDate = (dateStr != null && !dateStr.isEmpty()) ? LocalDate.parse(dateStr) : LocalDate.now();
+            List<TitleLibrary> allTitles = titleLibraryService.list();
+
+            Set<String> allMatchedTitleIds = new HashSet<>(titleRecommendationMapper.findAllMatchedTitleIds());
+            List<TitleLibrary> titles = allTitles.stream()
+                    .filter(t -> !allMatchedTitleIds.contains(t.getId())) // 过滤掉已绑定用户的标题
+                    .filter(t -> t.getIsUsed() == null || t.getIsUsed() != 1) // 过滤掉 is_used=1 的标题
+                    .filter(t -> t.getPushDate() == null || !t.getPushDate().isAfter(targetDate))
+                    .filter(t -> t.getTrackId() != null && !t.getTrackId().isEmpty())
+                    .collect(Collectors.toList());
+
+            List<User> users = userMapper.findAll().stream()
+                    .filter(u -> u.getStatus() != null && u.getStatus() == 1)
+                    .filter(u -> u.getIsDeleted() == null || u.getIsDeleted() != 1)
+                    .filter(u -> u.getUserType() != null && u.getUserType() >= 1 && u.getUserType() <= 3)
+                    .collect(Collectors.toList());
+
+            Set<String> existingCombos = new HashSet<>();
+            for (Map<String, Object> row : titleRecommendationMapper.findUserTrackCombosByDate(targetDate)) {
+                String uid = (String) row.get("user_id");
+                String tid = (String) row.get("track_id");
+                if (uid != null && tid != null) existingCombos.add(uid + ":" + tid);
+            }
+
+            Map<String, Set<String>> userTrackMap = new HashMap<>();
+            for (User user : users) {
+                userTrackMap.put(user.getId(), getActiveTrackIdsForUser(user));
+            }
+
+            List<Track> allTracks = trackMapper.findAll();
+            Map<String, String> trackNameMap = new HashMap<>();
+            for (Track t : allTracks) {
+                if (t.getName() != null) trackNameMap.put(t.getId(), t.getName());
+            }
+
+            Map<String, Set<String>> userHistoryMap = new HashMap<>();
+            for (User user : users) {
+                List<String> historyIds = titleRecommendationMapper.findHistoricallyMatchedTitleIdsByUserId(user.getId());
+                userHistoryMap.put(user.getId(), new HashSet<>(historyIds));
+            }
+
+            Set<String> matchedCombosThisRun = new HashSet<>();
+            Set<String> matchedTitleIdsThisRun = new HashSet<>(); // 防止同一标题被重复匹配
+            Random random = new Random();
+            List<Map<String, Object>> proposedMatches = new ArrayList<>();
+
+            for (TitleLibrary title : titles) {
+                // 跳过本次运行中已匹配过的标题
+                if (matchedTitleIdsThisRun.contains(title.getId())) continue;
+
+                List<User> eligible = new ArrayList<>();
+                for (User user : users) {
+                    String comboKey = user.getId() + ":" + title.getTrackId();
+                    if (existingCombos.contains(comboKey) || matchedCombosThisRun.contains(comboKey)) continue;
+                    Set<String> historyIds = userHistoryMap.getOrDefault(user.getId(), Collections.emptySet());
+                    if (historyIds.contains(title.getId())) continue;
+                    Set<String> userTracks = userTrackMap.getOrDefault(user.getId(), Collections.emptySet());
+                    boolean trackMatched = userTracks.contains(title.getTrackId());
+                    if (!trackMatched && title.getTitle() != null) {
+                        for (String utid : userTracks) {
+                            String trackName = trackNameMap.get(utid);
+                            if (trackName != null && title.getTitle().contains(trackName)) {
+                                trackMatched = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (trackMatched) eligible.add(user);
+                }
+
+                if (eligible.isEmpty()) continue;
+
+                User selected = eligible.get(random.nextInt(eligible.size()));
+                String matchedCombo = selected.getId() + ":" + title.getTrackId();
+                matchedCombosThisRun.add(matchedCombo);
+                existingCombos.add(matchedCombo);
+                matchedTitleIdsThisRun.add(title.getId()); // 标记该标题已匹配，防止同一次预览中重复出现
+
+                Map<String, Object> item = new HashMap<>();
+                item.put("titleId", title.getId());
+                item.put("title", title.getTitle());
+                item.put("platform", title.getPlatform());
+                item.put("trackId", title.getTrackId());
+                item.put("trackName", trackNameMap.getOrDefault(title.getTrackId(), title.getTrackId()));
+                item.put("userId", selected.getId());
+                item.put("username", selected.getUsername());
+                item.put("userEmail", selected.getEmail());
+                item.put("editedTitle", title.getTitle()); // 初始为原标题
+                proposedMatches.add(item);
+            }
+
+            return Result.ok(proposedMatches);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("预览失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 确认匹配：保存审核后批准的部分匹配项
+     */
+    @PostMapping("/match-confirm")
+    public Result<Map<String, Object>> matchConfirm(
+            @RequestParam(value = "date", required = false) String dateStr,
+            @RequestBody List<Map<String, Object>> matches) {
+        try {
+            LocalDate targetDate = (dateStr != null && !dateStr.isEmpty()) ? LocalDate.parse(dateStr) : LocalDate.now();
+            int saved = 0;
+            List<String> savedIds = new ArrayList<>();
+            for (Map<String, Object> m : matches) {
+                String titleId = m.get("titleId") != null ? m.get("titleId").toString() : null;
+                String userId = m.get("userId") != null ? m.get("userId").toString() : null;
+                String editedTitle = m.get("editedTitle") != null ? m.get("editedTitle").toString() : null;
+                if (titleId == null || userId == null) continue;
+
+                TitleLibrary title = titleLibraryService.getById(titleId);
+                if (title == null) continue;
+
+                // 如果编辑了标题，先更新标题
+                if (editedTitle != null && !editedTitle.equals(title.getTitle())) {
+                    title.setTitle(editedTitle);
+                    titleLibraryService.updateTitle(title);
+                }
+
+                TitleRecommendation rec = new TitleRecommendation();
+                rec.setId(UUID.randomUUID().toString().replace("-", ""));
+                rec.setTitleLibraryId(titleId);
+                rec.setUserId(userId);
+                rec.setPlatform(title.getPlatform());
+                rec.setTrackId(title.getTrackId());
+                rec.setRecommendDate(targetDate);
+                titleRecommendationMapper.insert(rec);
+                titleLibraryService.updatePushDate(titleId, targetDate);
+                titleLibraryService.updateIsUsed(titleId, 1);
+                saved++;
+                savedIds.add(titleId);
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("saved", saved);
+            result.put("savedTitleIds", savedIds);
+            return Result.ok(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("确认匹配失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 重新匹配单个标题：针对指定用户获取另一个可用的匹配标题
+     */
+    @GetMapping("/match-one")
+    public Result<Map<String, Object>> matchOne(
+            @RequestParam(value = "date", required = false) String dateStr,
+            @RequestParam(value = "userId", required = false) String userId,
+            @RequestParam(value = "titleId", required = false) String currentTitleId) {
+        try {
+            LocalDate targetDate = (dateStr != null && !dateStr.isEmpty()) ? LocalDate.parse(dateStr) : LocalDate.now();
+
+            if (userId == null || userId.isEmpty()) {
+                return Result.error("用户ID不能为空");
+            }
+
+            User user = userMapper.findById(userId);
+            if (user == null) {
+                return Result.error("用户不存在");
+            }
+
+            // 获取用户当前已匹配的标题（当天）
+            Set<String> matchedTitleIds = new HashSet<>();
+            List<Map<String, Object>> existingTitles = titleRecommendationMapper.findMatchedTitlesByDateAndUser(targetDate, userId);
+            for (Map<String, Object> row : existingTitles) {
+                matchedTitleIds.add((String) row.get("titleId"));
+            }
+            // 排除当前正在编辑的标题（如果传了的话）
+            if (currentTitleId != null && !currentTitleId.isEmpty()) {
+                matchedTitleIds.add(currentTitleId);
+            }
+
+            // 获取用户可选的赛道
+            Set<String> userTrackIds = getActiveTrackIdsForUser(user);
+
+            // 获取该用户历史上已绑定过的标题（排除重复推荐）
+            Set<String> historyTitleIds = new HashSet<>();
+            List<String> hist = titleRecommendationMapper.findHistoricallyMatchedTitleIdsByUserId(userId);
+            historyTitleIds.addAll(hist);
+
+            List<Track> allTracks = trackMapper.findAll();
+            Map<String, String> trackNameMap = new HashMap<>();
+            for (Track t : allTracks) {
+                if (t.getName() != null) trackNameMap.put(t.getId(), t.getName());
+            }
+
+            // 找出该用户已占用的 (titleId, trackId) 组合（同一天）
+            Set<String> usedCombos = new HashSet<>();
+            List<Map<String, Object>> usedComboRows = titleRecommendationMapper.findUserTrackCombosByDate(targetDate);
+            for (Map<String, Object> row : usedComboRows) {
+                String uid = (String) row.get("user_id");
+                if (userId.equals(uid)) {
+                    String tid = (String) row.get("track_id");
+                    if (tid != null) usedCombos.add(tid);
+                }
+            }
+
+            // 查所有未匹配的标题
+            List<TitleLibrary> allTitles = titleLibraryService.getAllUnmatchedTitles();
+
+            List<TitleLibrary> eligible = new ArrayList<>();
+            for (TitleLibrary t : allTitles) {
+                String tid = t.getId();
+                if (matchedTitleIds.contains(tid)) continue;
+                if (historyTitleIds.contains(tid)) continue;
+                if (t.getIsUsed() != null && t.getIsUsed() == 1) continue; // 过滤已使用的标题
+
+                String titleTrackId = t.getTrackId();
+                boolean trackMatched = userTrackIds.contains(titleTrackId);
+                if (!trackMatched && t.getTitle() != null) {
+                    for (String utid : userTrackIds) {
+                        String trackName = trackNameMap.get(utid);
+                        if (trackName != null && t.getTitle().contains(trackName)) {
+                            trackMatched = true;
+                            break;
+                        }
+                    }
+                }
+                if (!trackMatched) continue;
+
+                // 检查赛道是否已被该用户占用（当天）
+                if (usedCombos.contains(titleTrackId)) continue;
+
+                eligible.add(t);
+            }
+
+            if (eligible.isEmpty()) {
+                return Result.error("没有可用的匹配标题");
+            }
+
+            Random random = new Random();
+            TitleLibrary selected = eligible.get(random.nextInt(eligible.size()));
+            Map<String, Object> result = new HashMap<>();
+            result.put("titleId", selected.getId());
+            result.put("title", selected.getTitle());
+            result.put("trackId", selected.getTrackId());
+            result.put("platform", selected.getPlatform());
+            result.put("trackName", trackNameMap.get(selected.getTrackId()));
+            result.put("userId", userId);
+            result.put("username", user.getUsername());
+            result.put("userEmail", user.getEmail());
+            return Result.ok(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("重配失败：" + e.getMessage());
+        }
+    }
+
     @PostMapping("/{id}/used")
     public Result<Void> markUsed(@PathVariable String id) {
         TitleLibrary tl = titleLibraryService.getById(id);
@@ -1512,12 +1840,28 @@ public class TitleLibraryController {
     }
 
     /**
-     * 查询指定用户历史上绑定的所有标题记录
+     * 查询指定用户历史上绑定的所有标题记录（带相似度）
      */
     @GetMapping("/user-history/{userId}")
-    public Result<List<Map<String, Object>>> getUserHistory(@PathVariable String userId) {
+    public Result<List<Map<String, Object>>> getUserHistory(
+            @PathVariable String userId,
+            @RequestParam(value = "title", required = false) String title) {
         try {
             List<Map<String, Object>> list = titleRecommendationMapper.findHistoryByUserId(userId);
+            if (list == null) list = new ArrayList<>();
+            if (title != null && !title.trim().isEmpty()) {
+                for (Map<String, Object> item : list) {
+                    String historyTitle = item.get("titleName") != null ? item.get("titleName").toString() : "";
+                    double sim = com.example.blogger.util.TextSimilarityUtil.similarity(title, historyTitle);
+                    item.put("similarity", (int) Math.round(sim * 100));
+                }
+                // 按相似度降序
+                list.sort((a, b) -> {
+                    int simA = ((Number) a.getOrDefault("similarity", 0)).intValue();
+                    int simB = ((Number) b.getOrDefault("similarity", 0)).intValue();
+                    return Integer.compare(simB, simA);
+                });
+            }
             return Result.ok(list);
         } catch (Exception e) {
             e.printStackTrace();
@@ -1562,12 +1906,55 @@ public class TitleLibraryController {
         }
     }
 
+    /**
+     * 去除AI味：调用本地 python replace_periods.py 脚本处理指定路径的文件
+     */
+    @PostMapping("/remove-ai-flavor")
+    public Result<Map<String, Object>> removeAiFlavor(@RequestBody Map<String, Object> params) {
+        String path = params.get("path") != null ? params.get("path").toString() : "";
+        if (path.isEmpty()) {
+            return Result.error("路径不能为空");
+        }
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder("python", "replace_periods.py", path);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            // 读取 stdout
+            StringBuilder stdout = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    stdout.append(line).append("\n");
+                }
+            }
+
+            boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                return Result.error("脚本执行超时（30秒）");
+            }
+
+            int exitCode = process.exitValue();
+            Map<String, Object> result = new HashMap<>();
+            result.put("exitCode", exitCode);
+            result.put("stdout", stdout.toString().trim());
+            return Result.ok(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("执行失败：" + e.getMessage());
+        }
+    }
+
     @PostMapping("/generate")
     public Result<Map<String, Object>> generate(@RequestBody Map<String, Object> params) {
         int countPerCombo = params.get("countPerCombo") != null ?
                 Integer.parseInt(params.get("countPerCombo").toString()) : 3;
         String rawOutputPath = params.get("outputPath") != null ?
                 params.get("outputPath").toString() : "";
+        String instruction = params.get("instruction") != null ?
+                params.get("instruction").toString() : "";
 
         final String outputPath;
         if (rawOutputPath.isEmpty()) {
@@ -1596,7 +1983,7 @@ public class TitleLibraryController {
         task.put("path", outputPath);
         generateTasks.put(taskId, task);
 
-        executor.submit(() -> runGenerateTask(taskId, countPerCombo, outputPath, selectedPlatforms, selectedTrackIds));
+        executor.submit(() -> runGenerateTask(taskId, countPerCombo, outputPath, selectedPlatforms, selectedTrackIds, instruction));
 
         Map<String, Object> result = new HashMap<>();
         result.put("taskId", taskId);
@@ -1670,6 +2057,207 @@ public class TitleLibraryController {
             task.put("message", "任务已取消");
         }
         return Result.ok(null);
+    }
+
+    // ==================== 文章反馈相关 ====================
+
+    /**
+     * 保存文章反馈（针对某个赛道）
+     */
+    @PostMapping("/feedback")
+    public Result<Void> saveFeedback(@RequestBody ArticleFeedback feedback) {
+        if (feedback.getContent() == null || feedback.getContent().trim().isEmpty()) {
+            return Result.error("反馈内容不能为空");
+        }
+        if (feedback.getId() == null || feedback.getId().isEmpty()) {
+            feedback.setId(UUID.randomUUID().toString().replace("-", ""));
+        }
+        articleFeedbackMapper.insert(feedback);
+        return Result.ok(null);
+    }
+
+    /**
+     * 查询某个赛道的文章反馈列表
+     */
+    @GetMapping("/feedback")
+    public Result<List<ArticleFeedback>> listFeedback(
+            @RequestParam(value = "trackId", required = false) String trackId,
+            @RequestParam(value = "platform", required = false) String platform) {
+        return Result.ok(articleFeedbackMapper.findByTrackAndPlatform(trackId, platform));
+    }
+
+    /**
+     * 删除文章反馈
+     */
+    @DeleteMapping("/feedback/{id}")
+    public Result<Void> deleteFeedback(@PathVariable String id) {
+        articleFeedbackMapper.deleteById(id);
+        return Result.ok(null);
+    }
+
+    // ==================== 单标题生成文章 ====================
+
+    /**
+     * 为指定标题生成文章（不依赖匹配流程，直接生成并保存）
+     */
+    @PostMapping("/{id}/generate-post")
+    public Result<Map<String, Object>> generatePostSingle(@PathVariable String id) {
+        TitleLibrary titleLib = titleLibraryService.getById(id);
+        if (titleLib == null) {
+            return Result.error("标题不存在");
+        }
+        try {
+            // Build prompt for single title
+            String promptText = buildSingleArticlePrompt(titleLib);
+
+            // Call Claude
+            String content = callClaudeForContent(promptText, new File(System.getProperty("user.home")));
+            if (content == null || content.isEmpty()) {
+                return Result.error("文章生成失败，AI 返回内容为空");
+            }
+
+            // Wrap with style CSS
+            String styleCss = buildDefaultStyleCss();
+            String fullHtml = wrapContentWithStyle(titleLib.getTitle(), content, styleCss);
+
+            // Save HTML file
+            String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
+            File dir = new File(articlesDir);
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            String fileName = "article_single_" + id + "_" + System.currentTimeMillis() + ".html";
+            String filePath = articlesDir + File.separator + fileName;
+            try (FileWriter fw = new FileWriter(filePath, StandardCharsets.UTF_8)) {
+                fw.write(fullHtml);
+            }
+
+            // Save subscription post (without user binding)
+            SubscriptionPost post = new SubscriptionPost();
+            post.setUserId(null);
+            post.setTrackId(titleLib.getTrackId());
+            post.setTitle(titleLib.getTitle());
+            post.setDescription(content);
+            post.setFileUrl("/uploads/articles/" + fileName);
+            post.setFileName(fileName);
+            post.setStatus("已上架");
+            post.setUsed(0);
+            subscriptionPostService.save(post);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("postId", post.getId());
+            result.put("fileUrl", post.getFileUrl());
+            result.put("title", titleLib.getTitle());
+            return Result.ok(result);
+        } catch (Exception e) {
+            return Result.error("生成文章失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 构建单标题文章生成的 prompt（注入赛道反馈）
+     */
+    private String buildSingleArticlePrompt(TitleLibrary titleLib) {
+        String styleDesc = "";
+        String styleCss = buildDefaultStyleCss();
+        Style defaultStyle = styleMapper.findDefault();
+        if (defaultStyle != null && defaultStyle.getStyleJson() != null && !defaultStyle.getStyleJson().isEmpty()) {
+            try {
+                ObjectMapper mapper = new ObjectMapper();
+                JsonNode styleNode = mapper.readTree(defaultStyle.getStyleJson());
+                StringBuilder sb = new StringBuilder();
+                sb.append("字体：").append(styleNode.path("fontFamily").asText("默认")).append("；");
+                sb.append("正文字号：").append(styleNode.path("fontSize").asText("16px")).append("；");
+                sb.append("行高：").append(styleNode.path("lineHeight").asText("1.8")).append("；");
+                sb.append("段落间距：").append(styleNode.path("paragraphSpacing").asText("1em")).append("；");
+                sb.append("标题颜色：").append(styleNode.path("titleColor").asText("#333")).append("；");
+                sb.append("正文颜色：").append(styleNode.path("textColor").asText("#333")).append("；");
+                styleDesc = sb.toString();
+                styleCss = buildStyleCss(styleNode);
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+
+        // Load prompt template
+        com.example.blogger.entity.PromptTemplate promptTemplate = promptTemplateMapper.findDefaultByType("generate_post");
+        if (promptTemplate == null) {
+            promptTemplate = promptTemplateMapper.findLatestByType("generate_post");
+        }
+
+        String promptText;
+        if (promptTemplate != null && promptTemplate.getContent() != null && !promptTemplate.getContent().isEmpty()) {
+            promptText = promptTemplate.getContent()
+                    .replace("{title}", titleLib.getTitle() != null ? titleLib.getTitle() : "")
+                    .replace("{description}", titleLib.getDescription() != null ? titleLib.getDescription() : "")
+                    .replace("{styleDesc}", styleDesc)
+                    .replace("{styleRef}", "");
+        } else {
+            StringBuilder prompt = new StringBuilder();
+            prompt.append("请根据以下标题和描述，生成一篇完整的公众号风格文章。\n\n");
+            prompt.append("标题：").append(titleLib.getTitle()).append("\n");
+            prompt.append("描述：").append(titleLib.getDescription() != null ? titleLib.getDescription() : "").append("\n\n");
+            prompt.append("要求：\n");
+            prompt.append("1. 文章必须围绕标题主题展开，内容充实、有深度、有观点\n");
+            prompt.append("2. 文章结构清晰，包含开头引入、正文论述、结尾总结\n");
+            prompt.append("3. 适合公众号传播，语言自然流畅，有阅读吸引力\n");
+            prompt.append("4. 文章长度适中，约800-1500字\n");
+            prompt.append("5. 输出纯HTML正文内容（不含html/head/body标签，只返回div包裹的内容），使用h1/h2/p/blockquote等标签组织内容\n");
+            prompt.append("6. 不要在任何标签上添加 style 属性或 class 属性，保持标签纯净\n");
+            prompt.append("7. 只输出纯JSON，不要markdown代码块，不要任何额外文字，不要在JSON前添加任何说明\n\n");
+            prompt.append("格式：{\"content\":\"<div>文章HTML内容</div>\"}");
+            promptText = prompt.toString();
+        }
+
+        // Inject track feedback
+        String feedback = loadTrackFeedback(titleLib.getTrackId(), titleLib.getPlatform());
+        if (feedback != null && !feedback.isEmpty()) {
+            promptText += "\n\n【历史反馈 - 生成时需避免】\n" + feedback;
+        }
+
+        return promptText;
+    }
+
+    /**
+     * 加载指定赛道的反馈内容（多条合并）
+     */
+    private String loadTrackFeedback(String trackId, String platform) {
+        List<ArticleFeedback> feedbacks = articleFeedbackMapper.findByTrackAndPlatform(trackId, platform);
+        if (feedbacks == null || feedbacks.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < feedbacks.size(); i++) {
+            sb.append(i + 1).append(". ").append(feedbacks.get(i).getContent().trim());
+            if (i < feedbacks.size() - 1) sb.append("\n");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 获取某标题关联的文章内容（用于预览反馈）
+     */
+    @GetMapping("/{id}/post-content")
+    public Result<Map<String, Object>> getPostContent(@PathVariable String id) {
+        TitleLibrary titleLib = titleLibraryService.getById(id);
+        if (titleLib == null) {
+            return Result.error("标题不存在");
+        }
+        // Find the latest subscription post for this title
+        TitleRecommendation rec = titleRecommendationMapper.findLatestByTitleId(id);
+        if (rec == null || rec.getSubscriptionPostId() == null || rec.getSubscriptionPostId().isEmpty()) {
+            return Result.error("该标题尚未生成文章");
+        }
+        SubscriptionPost post = subscriptionPostService.getById(rec.getSubscriptionPostId());
+        if (post == null) {
+            return Result.error("文章不存在");
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("content", post.getDescription());
+        result.put("postId", post.getId());
+        result.put("trackId", titleLib.getTrackId());
+        result.put("platform", titleLib.getPlatform());
+        return Result.ok(result);
     }
 
     @PostMapping("/{id}/send-email")
@@ -2220,6 +2808,12 @@ public class TitleLibraryController {
                     promptText = prompt.toString();
                 }
 
+                // Inject track feedback
+                String trackFeedback = loadTrackFeedback(rec.getTrackId(), titleLib.getPlatform());
+                if (trackFeedback != null && !trackFeedback.isEmpty()) {
+                    promptText += "\n\n【历史反馈 - 生成时需避免】\n" + trackFeedback;
+                }
+
                 String content = callClaudeForContent(promptText, claudeWorkingDir);
                 if (content == null || content.isEmpty()) {
                     failCount++;
@@ -2549,7 +3143,8 @@ public class TitleLibraryController {
     }
 
     private void runGenerateTask(String taskId, int countPerCombo, String outputPath,
-                                 List<String> selectedPlatforms, List<String> selectedTrackIds) {
+                                 List<String> selectedPlatforms, List<String> selectedTrackIds,
+                                 String instruction) {
         Map<String, Object> task = generateTasks.get(taskId);
         log.info("[生成标题] 任务开始 taskId={}, countPerCombo={}, outputPath={}, platforms={}, trackIds={}",
                 taskId, countPerCombo, outputPath, selectedPlatforms, selectedTrackIds);
@@ -2666,6 +3261,9 @@ public class TitleLibraryController {
                     prompt.append("5. 标题和描述中禁止出现英文双引号 \"，如有引用需求请使用中文引号「」或『』代替\n");
                     prompt.append("6. 只输出纯JSON，不要markdown代码块，不要任何额外文字\n\n");
                     prompt.append("格式：{\"titles\":[{\"track\":\"赛道名称\",\"title\":\"标题文字\",\"description\":\"SEO描述\"},...]}");
+                    if (instruction != null && !instruction.trim().isEmpty()) {
+                        prompt.append("\n\n【额外要求】").append(instruction.trim()).append("（请在生成标题时严格遵循此要求）");
+                    }
 
                     log.info("[生成标题] Prompt 长度={} 内容前200字={}", prompt.length(), prompt.substring(0, Math.min(200, prompt.length())));
                     JsonNode arr = callClaude(prompt.toString());
@@ -2844,7 +3442,6 @@ public class TitleLibraryController {
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.directory(new File(System.getProperty("user.home")));
             pb.redirectErrorStream(true);
-            pb.redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null")));
             process = pb.start();
 
             final Process finalProcess = process;

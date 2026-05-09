@@ -286,6 +286,13 @@ public interface TitleLibraryMapper {
     @Update("UPDATE tu_title_library SET platform = #{platform} WHERE id = #{id}")
     int updatePlatform(@Param("id") String id, @Param("platform") String platform);
 
+    /** 查询所有未匹配用户的标题（用于重配）：排除已有 tu_title_recommendation 关联记录的标题 */
+    @Select("SELECT t.*, tr.name as trackName FROM tu_title_library t " +
+            "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
+            "WHERE t.is_deleted = 0 " +
+            "AND NOT EXISTS (SELECT 1 FROM tu_title_recommendation r WHERE r.title_library_id = t.id)")
+    List<TitleLibrary> findAllUnmatched();
+
     /** 临时：删除 track_id 指向已不存在的赛道的脏数据标题（逻辑删除） */
     @Update("UPDATE tu_title_library t SET t.is_deleted = 1 WHERE t.is_deleted = 0 AND t.track_id IS NOT NULL AND t.track_id != '' AND NOT EXISTS (SELECT 1 FROM tu_track tr WHERE tr.id = t.track_id AND tr.is_deleted = 0)")
     int deleteOrphanTitles();

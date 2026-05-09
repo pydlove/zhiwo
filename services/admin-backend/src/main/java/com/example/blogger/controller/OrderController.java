@@ -99,9 +99,40 @@ public class OrderController {
         }
     }
 
+    @PutMapping("/amount")
+    public Result<Void> updateAmount(@RequestBody Map<String, Object> req) {
+        String id = req.get("id") != null ? req.get("id").toString() : "";
+        if (id.isEmpty()) {
+            return Result.error("订单ID不能为空");
+        }
+        BigDecimal amount = null;
+        Object amtObj = req.get("amount");
+        if (amtObj instanceof Number) {
+            amount = BigDecimal.valueOf(((Number) amtObj).doubleValue());
+        } else if (amtObj != null) {
+            try {
+                amount = new BigDecimal(amtObj.toString());
+            } catch (Exception e) {
+                return Result.error("金额格式错误");
+            }
+        }
+        try {
+            orderService.updateAmount(id, amount);
+            return Result.ok(null);
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
     @GetMapping("/stats")
     public Result<Map<String, Object>> stats() {
         return Result.ok(orderService.stats());
+    }
+
+    @DeleteMapping("/{id}")
+    public Result<Void> delete(@PathVariable String id) {
+        orderService.delete(id);
+        return Result.ok(null);
     }
 
     @GetMapping("/export")

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination } from 'ant-design-vue'
+import { Card, Input, Select, Button, Table, Tag, Modal, Form, Popconfirm, message, Pagination } from 'ant-design-vue'
 import { listAdmins, saveAdmin, deleteAdmin } from '../api/admin.js'
 import { listMembershipPlans } from '../api/membershipPlan.js'
 import request from '../api/request.js'
@@ -42,10 +42,12 @@ const oaPlatform = ref('公众号')
 const oaCount = ref(3)
 const oaMembershipPlanId = ref('')
 const oaBaseUrl = ref(window.location.hostname === 'localhost' ? 'http://localhost:5174' : 'http://www.mmshuo.tech')
-const oaLink = ref('')
 const oaGenerating = ref(false)
 const membershipPlanOptions = ref([])
 const promoLinkLoading = ref('')
+const oaLinks = ref([])        // 该运营者所有开户链接
+const oaLoading = ref(false)
+const oaDeleting = ref('')
 
 async function loadData() {
   try {
@@ -195,13 +197,24 @@ async function loadMembershipPlanOptions() {
   }
 }
 
-function openOaModal(record) {
+async function openOaModal(record) {
   oaRecord.value = record
   oaPlatform.value = '公众号'
   oaCount.value = 3
   oaMembershipPlanId.value = ''
-  oaLink.value = ''
+  oaLinks.value = []
+  oaLoading.value = true
   oaModalOpen.value = true
+
+  // 加载该运营者所有开户链接
+  try {
+    const list = await request.get('/configs/open-account-link', { params: { adminId: record.id } })
+    oaLinks.value = list || []
+  } catch (e) {
+    oaLinks.value = []
+  } finally {
+    oaLoading.value = false
+  }
 }
 
 async function generateOaLink() {
@@ -214,9 +227,11 @@ async function generateOaLink() {
       baseUrl: oaBaseUrl.value,
       adminId: oaRecord.value.id,
     }
-    const data = await request.post('/configs/open-account-link', payload)
-    oaLink.value = data.url
+    await request.post('/configs/open-account-link', payload)
     message.success('链接生成成功')
+    // 重新加载列表
+    const list = await request.get('/configs/open-account-link', { params: { adminId: oaRecord.value.id } })
+    oaLinks.value = list || []
   } catch (e) {
     message.error(e.message || '链接生成失败')
   } finally {
@@ -224,17 +239,39 @@ async function generateOaLink() {
   }
 }
 
-function copyOaLink() {
-  if (!oaLink.value) return
+async function deleteOaLink(code) {
+  try {
+    await request.delete('/configs/open-account-link/' + code)
+    message.success('删除成功')
+    oaLinks.value = oaLinks.value.filter(l => l.code !== code)
+  } catch (e) {
+    message.error(e.message || '删除失败')
+  }
+}
+
+function copyOaLink(link) {
+  if (!link) return
   if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(oaLink.value).then(() => {
+    navigator.clipboard.writeText(link).then(() => {
       message.success('链接已复制到剪贴板')
     }).catch(() => {
-      fallbackCopyOaLink()
+      fallbackCopyText(link)
     })
   } else {
-    fallbackCopyOaLink()
+    fallbackCopyText(link)
   }
+}
+
+function fallbackCopyText(text) {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textarea)
+  message.success('链接已复制到剪贴板')
 }
 
 async function generatePromoLink(record) {
@@ -271,43 +308,10 @@ function copyText(text) {
   }
 }
 
-function fallbackCopyText(text) {
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.style.position = 'fixed'
-  textarea.style.left = '-9999px'
-  textarea.style.top = '-9999px'
-  document.body.appendChild(textarea)
-  textarea.focus()
-  textarea.select()
-  try {
-    document.execCommand('copy')
-  } catch (e) {}
-  document.body.removeChild(textarea)
-}
-
 function copyDialogueLink(record) {
   const url = oaBaseUrl.value + '/customer-dialogue?op=' + encodeURIComponent(record.username)
   copyText(url)
   message.success('客服话术链接已复制')
-}
-
-function fallbackCopyOaLink() {
-  const textarea = document.createElement('textarea')
-  textarea.value = oaLink.value
-  textarea.style.position = 'fixed'
-  textarea.style.left = '-9999px'
-  textarea.style.top = '-9999px'
-  document.body.appendChild(textarea)
-  textarea.focus()
-  textarea.select()
-  try {
-    document.execCommand('copy')
-    message.success('链接已复制到剪贴板')
-  } catch (e) {
-    message.error('复制失败，请手动复制')
-  }
-  document.body.removeChild(textarea)
 }
 
 onMounted(() => {
@@ -401,7 +405,7 @@ onMounted(() => {
     </Form>
   </Modal>
 
-  <Modal v-model:open="oaModalOpen" :title="'开户链接配置 — ' + (oaRecord?.name || oaRecord?.username || '')" :mask-closable="false" :footer="null" :width="600">
+  <Modal v-model:open="oaModalOpen" :title="'开户链接配置 — ' + (oaRecord?.name || oaRecord?.username || '')" :mask-closable="false" :footer="null" :width="720">
     <Form layout="vertical" style="margin-top: 12px;">
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
         <Form.Item label="平台" required>
@@ -416,7 +420,7 @@ onMounted(() => {
         </Form.Item>
       </div>
       <Form.Item label="会员套餐">
-        <Select v-model:value="oaMembershipPlanId" placeholder="请选择会员套餐" style="width: 100%;" allow-clear>
+        <Select v-model:value="oaMembershipPlanId" placeholder="不选择则不绑定特定套餐" style="width: 100%;" allow-clear>
           <Select.Option v-for="p in membershipPlanOptions" :key="p.id" :value="p.id">{{ p.name }}</Select.Option>
         </Select>
         <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">选择后，通过该链接开户的用户将自动关联此会员套餐</div>
@@ -426,17 +430,49 @@ onMounted(() => {
         <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">本地开发用 localhost:5174，线上用 www.mmshuo.tech</div>
       </Form.Item>
       <Form.Item>
-        <div style="display: flex; gap: 12px;">
-          <Button type="primary" :loading="oaGenerating" @click="generateOaLink">生成开户链接</Button>
-        </div>
-      </Form.Item>
-      <Form.Item v-if="oaLink" label="开户链接">
-        <div style="display: flex; gap: 12px; align-items: center;">
-          <Input v-model:value="oaLink" readonly />
-          <Button @click="copyOaLink">复制</Button>
-        </div>
-        <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">该链接包含平台限制和赛道数量限制，归属运营者：{{ oaRecord?.name || oaRecord?.username }}</div>
+        <Button type="primary" :loading="oaGenerating" @click="generateOaLink">生成开户链接</Button>
       </Form.Item>
     </Form>
+
+    <!-- 已有的开户链接列表 -->
+    <div v-if="oaLinks.length > 0" style="margin-top: 24px;">
+      <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #262626;">已生成的开户链接</div>
+      <Table :data-source="oaLinks" :pagination="false" size="small" :scroll="{ x: 620 }">
+        <Table.Column title="开户链接" dataIndex="url" key="url" :width="220">
+          <template #default="{ record }">
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <Input :value="record.url" readonly size="small" style="flex: 1;" />
+              <Button size="small" @click="copyOaLink(record.url)">复制</Button>
+            </div>
+          </template>
+        </Table.Column>
+        <Table.Column title="平台" dataIndex="platform" key="platform" :width="80" />
+        <Table.Column title="会员套餐" dataIndex="membershipPlanName" key="membershipPlanName" :width="120">
+          <template #default="{ record }">
+            {{ record.membershipPlanName || '-' }}
+          </template>
+        </Table.Column>
+        <Table.Column title="可选赛道" dataIndex="count" key="count" :width="80">
+          <template #default="{ record }">
+            {{ record.count }}个
+          </template>
+        </Table.Column>
+        <Table.Column title="创建时间" dataIndex="createdAt" key="createdAt" :width="120">
+          <template #default="{ record }">
+            {{ record.createdAt ? record.createdAt.slice(0, 16) : '-' }}
+          </template>
+        </Table.Column>
+        <Table.Column title="操作" key="action" :width="60">
+          <template #default="{ record }">
+            <Popconfirm title="确定删除该链接？" @confirm="deleteOaLink(record.code)">
+              <a style="color: #ff4d4f;">删除</a>
+            </Popconfirm>
+          </template>
+        </Table.Column>
+      </Table>
+    </div>
+    <div v-else-if="!oaLoading" style="margin-top: 24px; color: #999; text-align: center;">
+      暂无开户链接
+    </div>
   </Modal>
 </template>

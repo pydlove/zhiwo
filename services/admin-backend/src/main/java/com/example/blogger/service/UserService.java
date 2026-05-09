@@ -10,6 +10,7 @@ import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -117,5 +118,9 @@ public class UserService {
 
     public void batchUpdateAdminId(List<String> userIds, String adminId) {
         userMapper.batchUpdateAdminId(userIds, adminId);
+    }
+
+    public List<Map<String, Object>> findExpiringUsers(int days) {
+        return userMapper.findExpiringUsers(days);
     }
 }

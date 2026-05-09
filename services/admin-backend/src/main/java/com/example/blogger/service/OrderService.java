@@ -54,6 +54,20 @@ public class OrderService {
         save(order);
     }
 
+    public void updateAmount(String id, BigDecimal amount) {
+        if (id == null || id.isEmpty()) {
+            throw new RuntimeException("订单ID不能为空");
+        }
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new RuntimeException("金额不能为负数");
+        }
+        Order order = orderMapper.findById(id);
+        if (order == null) {
+            throw new RuntimeException("订单不存在");
+        }
+        orderMapper.updateAmount(id, amount);
+    }
+
     public void refund(String id, BigDecimal refundAmount) {
         Order order = orderMapper.findById(id);
         if (order == null) {
@@ -80,5 +94,9 @@ public class OrderService {
         result.put("refundMonth", orderMapper.sumRefundThisMonth());
         result.put("refundTotal", orderMapper.sumRefundTotal());
         return result;
+    }
+
+    public void delete(String id) {
+        orderMapper.deleteById(id);
     }
 }

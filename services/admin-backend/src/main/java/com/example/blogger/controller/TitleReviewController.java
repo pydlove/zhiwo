@@ -176,4 +176,65 @@ public class TitleReviewController {
         // TODO: 从认证上下文获取当前用户ID，临时返回空字符串
         return "";
     }
+
+    /**
+     * AI 优化标题：对指定审核中的标题进行 Claude 优化
+     */
+    @PostMapping("/{id}/optimize")
+    public Result<Map<String, Object>> optimizeTitle(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body) {
+        String currentTitle = body != null ? (String) body.get("currentTitle") : null;
+        String instruction = body != null ? (String) body.get("instruction") : null;
+        if (currentTitle == null || currentTitle.isBlank()) {
+            return Result.error("标题内容不能为空");
+        }
+
+        TitleReview review = titleReviewService.getById(id);
+        if (review == null) {
+            return Result.error("审核记录不存在");
+        }
+        if (!"pending".equals(review.getReviewStatus())) {
+            return Result.error("只有待审核状态才能优化标题");
+        }
+
+        String trackName = review.getTrackName() != null ? review.getTrackName() : "";
+        String platform = review.getPlatform() != null ? review.getPlatform() : "";
+
+        String prompt = String.format("""
+            请优化以下标题，使其更具吸引力、更符合%s平台%s赛道的风格。
+
+            原始标题：%s
+            """, platform, trackName, currentTitle);
+
+        if (instruction != null && !instruction.isBlank()) {
+            prompt += String.format("""
+            优化方向要求：%s
+            """, instruction);
+        }
+
+        prompt += """
+            要求：
+            1. 保持原意，适当改写，增强吸引力
+            2. 不超过30个字符
+            3. 不要加"深度"、"详解"、"全面"等空洞词汇
+            4. 避免重复的感叹词和形容词
+
+            输出格式（只输出优化后的标题，不要任何解释）：
+            优化标题：[你的优化结果]
+            """;
+
+        String optimizedTitle;
+        try {
+            optimizedTitle = titleReviewService.optimizeTitleByClaude(prompt);
+        } catch (Exception e) {
+            return Result.error("AI 优化失败: " + e.getMessage());
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("originalTitle", currentTitle);
+        result.put("optimizedTitle", optimizedTitle);
+        result.put("id", id);
+        return Result.ok(result);
+    }
 }

@@ -32,6 +32,13 @@ spring:
           connectiontimeout: 5000
           timeout: 5000
 
+# AI 文本检测服务配置（暂时禁用）
+# ai:
+#   detect:
+#     enabled: ${AI_DETECT_ENABLED:false}
+#     url: ${AI_DETECT_URL:http://127.0.0.1:5000}
+#     timeout-ms: ${AI_DETECT_TIMEOUT_MS:5000}
+
 # 流程自动化调度器开关（线上环境开启，本地环境关闭）
 process:
   auto:
@@ -47,6 +54,7 @@ online:
 
 # Tab 可见性配置（环境变量控制，逗号分隔）
 app:
+  base-url: ${APP_BASE_URL:http://localhost:5173}
   visible-tabs:
     process-manage: ${VISIBLE_PROCESS_TABS:pending,approved,pushed,rejected,pushed-up,push-logs}
 

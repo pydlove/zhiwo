@@ -1,8 +1,8 @@
 <script setup>
 import { ref, onMounted, computed, h } from 'vue'
-import { Card, Row, Col, Table, Button, Tag, Modal, Form, Input, Select, DatePicker, message, Pagination, Statistic } from 'ant-design-vue'
+import { Card, Row, Col, Table, Button, Tag, Modal, Form, Input, Select, DatePicker, message, Pagination, Statistic, Popconfirm } from 'ant-design-vue'
 import dayjs from 'dayjs'
-import { listOrders, createOrder, getOrderStats, refundOrder, exportOrders } from '../api/order.js'
+import { listOrders, createOrder, getOrderStats, refundOrder, exportOrders, updateOrderAmount, deleteOrder } from '../api/order.js'
 import { listUsers } from '../api/user.js'
 import { listMembershipPlans } from '../api/membershipPlan.js'
 
@@ -144,6 +144,10 @@ const createForm = ref({ userId: '', planId: '', type: 'renew', amount: '', rema
 const refundModalOpen = ref(false)
 const refundForm = ref({ id: '', amount: '', refundAmount: '' })
 
+// Edit amount modal
+const editAmountModalOpen = ref(false)
+const editAmountForm = ref({ id: '', amount: '' })
+
 function openCreateModal() {
   createForm.value = { userId: '', planId: '', type: 'renew', amount: '', remark: '' }
   createModalOpen.value = true
@@ -156,6 +160,42 @@ function openRefundModal(record) {
     refundAmount: record.refundAmount || record.amount || '',
   }
   refundModalOpen.value = true
+}
+
+function openEditAmountModal(record) {
+  editAmountForm.value = {
+    id: record.id,
+    amount: record.amount != null ? String(record.amount) : '',
+  }
+  editAmountModalOpen.value = true
+}
+
+async function handleEditAmount() {
+  const amt = parseFloat(editAmountForm.value.amount)
+  if (isNaN(amt) || amt < 0) {
+    message.warning('请输入有效的金额')
+    return
+  }
+  try {
+    await updateOrderAmount({ id: editAmountForm.value.id, amount: amt })
+    message.success('金额修改成功')
+    editAmountModalOpen.value = false
+    loadData()
+    loadStats()
+  } catch (e) {
+    message.error(e.message || '修改失败')
+  }
+}
+
+async function handleDeleteOrder(record) {
+  try {
+    await deleteOrder(record.id)
+    message.success('删除成功')
+    loadData()
+    loadStats()
+  } catch (e) {
+    message.error(e.message || '删除失败')
+  }
 }
 
 async function handleRefund() {
@@ -229,9 +269,14 @@ const columns = [
   {
     title: '金额',
     dataIndex: 'amount',
-    width: 100,
+    width: 120,
     align: 'right',
-    customRender: ({ text }) => '¥' + (text != null ? Number(text).toFixed(2) : '0.00'),
+    customRender: ({ record }) => {
+      if (isRefunded(record)) {
+        return h('span', { style: { color: '#999' } }, '¥' + (record.amount != null ? Number(record.amount).toFixed(2) : '0.00'))
+      }
+      return h('span', { style: { color: '#52c41a', cursor: 'pointer' }, onClick: () => openEditAmountModal(record) }, '¥' + (record.amount != null ? Number(record.amount).toFixed(2) : '0.00') + ' ✎')
+    },
   },
   {
     title: '退单金额',
@@ -252,21 +297,37 @@ const columns = [
     width: 170,
     customRender: ({ text }) => text ? dayjs(text).format('YYYY-MM-DD HH:mm') : '-',
   },
-  {
+{
     title: '操作',
     key: 'action',
-    width: 100,
+    width: 200,
     align: 'center',
     customRender: ({ record }) => {
       if (isRefunded(record)) {
-        return h(Tag, { color: 'red' }, () => '已退单')
+        return h('div', { style: 'display:flex;gap:4px;justify-content:center;' }, [
+          h(Tag, { color: 'red' }, () => '已退单'),
+          h(Popconfirm, {
+            title: '确认删除该退单？',
+            okText: '确认',
+            cancelText: '取消',
+            onConfirm: () => handleDeleteOrder(record),
+          }, () => h(Button, { type: 'link', size: 'small', danger: true }, () => '删除')),
+        ])
       }
-      return h(Button, {
-        type: 'link',
-        size: 'small',
-        danger: true,
-        onClick: () => openRefundModal(record),
-      }, () => '退单')
+      return h('div', { style: 'display:flex;gap:4px;justify-content:center;' }, [
+        h(Button, {
+          type: 'link',
+          size: 'small',
+          danger: true,
+          onClick: () => openRefundModal(record),
+        }, () => '退单'),
+        h(Popconfirm, {
+          title: '确认删除该订单？',
+          okText: '确认',
+          cancelText: '取消',
+          onConfirm: () => handleDeleteOrder(record),
+        }, () => h(Button, { type: 'link', size: 'small', danger: true }, () => '删除')),
+      ])
     },
   },
 ]
@@ -430,6 +491,22 @@ onMounted(() => {
       </Form.Item>
       <div style="font-size: 12px; color: #ff4d4f;">
         退单后该订单金额将不再计入收益统计，退单金额会单独记录。
+      </div>
+    </Form>
+  </Modal>
+
+  <!-- Edit Amount Modal -->
+  <Modal
+    v-model:open="editAmountModalOpen"
+    title="修改订单金额"
+    @ok="handleEditAmount"
+  >
+    <Form layout="vertical" :model="editAmountForm">
+      <Form.Item label="订单金额" required>
+        <Input v-model:value="editAmountForm.amount" placeholder="请输入新的订单金额" />
+      </Form.Item>
+      <div style="font-size: 12px; color: #8c8c8c;">
+        修改后金额将立即生效，同时更新收益统计数据。
       </div>
     </Form>
   </Modal>

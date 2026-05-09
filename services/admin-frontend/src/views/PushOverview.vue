@@ -2,11 +2,12 @@
 import { ref, computed, onMounted, h, watch } from 'vue'
 import dayjs from 'dayjs'
 import {
-  Card, DatePicker, Tabs, Table, Tag, Button, Badge, Input, Select,
-  Drawer, message, Row, Col, Statistic, Spin, Empty, Pagination
+  Card, Tabs, Table, Tag, Button, Badge, Input, Select,
+  Drawer, message, Row, Col, Statistic, Spin, Empty, Pagination, Modal, TimePicker, Popconfirm, DatePicker
 } from 'ant-design-vue'
 import { SearchOutlined } from '@ant-design/icons-vue'
 import { getPushOverview, batchPushEmail, getUserHistory } from '../api/titleLibrary.js'
+import { createScheduledPush, listScheduledPush, cancelScheduledPush } from '../api/scheduledPush.js'
 
 const STORAGE_KEY = 'push-overview-filters'
 
@@ -150,8 +151,142 @@ watch(pageSize, () => saveFilters())
 onMounted(() => {
   loadFilters()
   loadData()
+  loadScheduledTasks()
 })
 
+// ---- Scheduled Push ----
+const scheduledPushModalOpen = ref(false)
+const scheduledPushLoading = ref(false)
+const scheduledPushForm = ref({
+  pushTime: null,
+  userFilterType: 'all',
+  userIds: [],
+})
+
+async function openScheduledPushModal() {
+  scheduledPushForm.value = { pushTime: null, userFilterType: 'all', userIds: [] }
+  scheduledPushModalOpen.value = true
+}
+
+async function handleCreateScheduledPush() {
+  if (!scheduledPushForm.value.pushTime) {
+    message.warning('请选择每日推送时间')
+    return
+  }
+  const timeStr = scheduledPushForm.value.pushTime.format('HH:mm')
+  scheduledPushLoading.value = true
+  try {
+    await createScheduledPush({
+      pushTime: timeStr,
+      userFilterType: scheduledPushForm.value.userFilterType,
+      userIds: scheduledPushForm.value.userFilterType === 'selected' ? scheduledPushForm.value.userIds : [],
+    })
+    message.success('定时推送任务已创建')
+    scheduledPushModalOpen.value = false
+    loadScheduledTasks()
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e.message || '创建失败')
+  } finally {
+    scheduledPushLoading.value = false
+  }
+}
+
+// ---- Scheduled Task List ----
+const scheduledTasks = ref([])
+const scheduledTasksTotal = ref(0)
+const scheduledTasksPage = ref(1)
+const scheduledTasksLoading = ref(false)
+
+async function loadScheduledTasks() {
+  scheduledTasksLoading.value = true
+  try {
+    const result = await listScheduledPush({ page: scheduledTasksPage.value, pageSize: 10 })
+    scheduledTasks.value = result?.list || []
+    scheduledTasksTotal.value = result?.total || 0
+  } catch (e) {
+    // silent
+  } finally {
+    scheduledTasksLoading.value = false
+  }
+}
+
+function onScheduledTasksPageChange(page) {
+  scheduledTasksPage.value = page
+  loadScheduledTasks()
+}
+
+async function handleCancelTask(id) {
+  try {
+    await cancelScheduledPush(id)
+    message.success('任务已取消')
+    loadScheduledTasks()
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e.message || '取消失败')
+  }
+}
+
+const scheduledStatusMap = {
+  0: { color: 'processing', label: '待执行' },
+  1: { color: 'warning', label: '执行中' },
+  2: { color: 'success', label: '已执行' },
+  3: { color: 'default', label: '已取消' },
+}
+
+const scheduledColumns = [
+  {
+    title: '每日推送时间',
+    dataIndex: 'pushTime',
+    width: 120,
+    customRender: ({ record }) => record.pushTime ? record.pushTime + ':00' : '-',
+  },
+  {
+    title: '用户范围',
+    dataIndex: 'userFilterType',
+    width: 100,
+    customRender: ({ record }) => record.userFilterType === 'all' ? '全部用户' : '指定用户',
+  },
+  {
+    title: '状态',
+    dataIndex: 'status',
+    width: 90,
+    align: 'center',
+    customRender: ({ record }) => {
+      const s = scheduledStatusMap[record.status] || { color: 'default', label: '未知' }
+      return h(Tag, { color: s.color }, () => s.label)
+    },
+  },
+  {
+    title: '上次执行',
+    dataIndex: 'lastExecutedDate',
+    width: 110,
+    customRender: ({ text }) => text || '未执行过',
+  },
+  {
+    title: '创建时间',
+    dataIndex: 'createdAt',
+    width: 170,
+    customRender: ({ text }) => text ? dayjs(text).format('YYYY-MM-DD HH:mm') : '-',
+  },
+  {
+    title: '操作',
+    key: 'action',
+    width: 100,
+    align: 'center',
+    customRender: ({ record }) => {
+      if (record.status === 0) {
+        return h(Popconfirm, {
+          title: '确认取消该任务？',
+          okText: '确认',
+          cancelText: '取消',
+          onConfirm: () => handleCancelTask(record.id),
+        }, () => h(Button, { type: 'link', size: 'small', danger: true }, () => '取消'))
+      }
+      return h('span', { style: 'color: #999;' }, '—')
+    },
+  },
+]
+
+// ---- Main table columns ----
 const columns = [
   {
     title: '用户',
@@ -355,6 +490,7 @@ async function handleBatchPush() {
       </Select>
       <Button type="primary" @click="onSearch">查询</Button>
       <Button @click="() => { searchKeyword = ''; filterEmailPushed = ''; filterArticleComplete = ''; onSearch() }">重置</Button>
+      <Button type="primary" @click="openScheduledPushModal">定时推送</Button>
     </div>
 
     <!-- 用户类型 Tabs -->
@@ -450,7 +586,63 @@ async function handleBatchPush() {
         />
       </div>
     </Spin>
+
+    <!-- 定时推送任务列表 -->
+    <div style="margin-top: 32px;">
+      <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #262626;">定时推送任务</div>
+      <Spin :spinning="scheduledTasksLoading">
+        <Table
+          :columns="scheduledColumns"
+          :data-source="scheduledTasks"
+          row-key="id"
+          :pagination="false"
+          size="small"
+        />
+        <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
+          <Pagination
+            v-model:current="scheduledTasksPage"
+            :total="scheduledTasksTotal"
+            :page-size="10"
+            :show-total="t => `共 ${t} 条`"
+            @change="onScheduledTasksPageChange"
+          />
+        </div>
+      </Spin>
+    </div>
   </Card>
+
+  <!-- 定时推送弹窗 -->
+  <Modal
+    v-model:open="scheduledPushModalOpen"
+    title="创建每日定时推送任务"
+    :confirm-loading="scheduledPushLoading"
+    @ok="handleCreateScheduledPush"
+  >
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+      <div>
+        <div style="font-size: 13px; color: #595959; margin-bottom: 6px;">每日推送时间 <span style="color: #ff4d4f;">*</span></div>
+        <TimePicker
+          v-model:value="scheduledPushForm.pushTime"
+          style="width: 100%;"
+          format="HH:mm"
+          placeholder="选择每日推送时间"
+        />
+      </div>
+      <div>
+        <div style="font-size: 13px; color: #595959; margin-bottom: 6px;">用户范围</div>
+        <Select v-model:value="scheduledPushForm.userFilterType" style="width: 100%;">
+          <Select.Option value="all">全部用户</Select.Option>
+          <Select.Option value="selected">指定用户</Select.Option>
+        </Select>
+      </div>
+      <div v-if="scheduledPushForm.userFilterType === 'selected'" style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 8px; padding: 12px; font-size: 13px; color: #52c41a;">
+        将向选中的 {{ scheduledPushForm.userIds.length }} 位用户推送邮件
+      </div>
+      <div style="font-size: 12px; color: #8c8c8c;">
+        系统每日在设定时间自动执行推送（每分钟检查一次），已执行的任务会显示在"上次执行"列。
+      </div>
+    </div>
+  </Modal>
 
   <!-- 详情抽屉 -->
   <Drawer

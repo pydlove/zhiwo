@@ -3,6 +3,7 @@ package com.example.blogger.mapper;
 import com.example.blogger.entity.TitleLibrary;
 import org.apache.ibatis.annotations.*;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -230,8 +231,17 @@ public interface TitleLibraryMapper {
     @Update("UPDATE tu_title_library SET is_used=#{isUsed} WHERE id=#{id}")
     int updateIsUsed(@Param("id") String id, @Param("isUsed") Integer isUsed);
 
+    @Update("UPDATE tu_title_library SET is_ai_passed=#{isAiPassed} WHERE id=#{id}")
+    int updateIsAiPassed(@Param("id") String id, @Param("isAiPassed") Integer isAiPassed);
+
+    @Update("UPDATE tu_title_library SET is_copied=#{isCopied} WHERE id=#{id}")
+    int updateIsCopied(@Param("id") String id, @Param("isCopied") Integer isCopied);
+
     @Update("UPDATE tu_title_library SET push_date=#{pushDate} WHERE id=#{id}")
     int updatePushDate(@Param("id") String id, @Param("pushDate") java.time.LocalDate pushDate);
+
+    @Update("UPDATE tu_title_library SET generated_file_url = #{generatedFileUrl}, generated_file_name = #{generatedFileName}, generated_at = #{generatedAt} WHERE id = #{id}")
+    int updateGeneratedFile(@Param("id") String id, @Param("generatedFileUrl") String generatedFileUrl, @Param("generatedFileName") String generatedFileName, @Param("generatedAt") LocalDateTime generatedAt);
 
     @Update("UPDATE tu_title_library SET is_deleted = 1 WHERE id = #{id}")
     int delete(String id);

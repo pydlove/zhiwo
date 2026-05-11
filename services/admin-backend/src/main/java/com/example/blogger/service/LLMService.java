@@ -17,7 +17,7 @@ import java.util.Map;
 @Service
 public class LLMService {
 
-    private static final String KIMI_API_URL = "https://api.moonshot.cn/v1/chat/completions";
+    private static final String KIMI_API_URL = "https://api.kimi.com/coding/v1/chat/completions";
     private static final String MINIMAX_API_URL = "https://api.minimax.chat/v1/chat/completions";
 
     private static final int CONNECT_TIMEOUT_MS = 30000;

@@ -566,7 +566,7 @@ onMounted(loadData)
   <Card :body-style="{ padding: '24px' }" style="border-radius: 2px;">
     <div style="display: flex; gap: 12px; margin-bottom: 24px; align-items: center;">
       <Input v-model:value="search" placeholder="搜索技巧标题" style="width: 240px;" />
-      <Select v-model:value="categoryFilter" placeholder="全部分类" style="min-width: 140px;" allow-clear>
+      <Select show-search v-model:value="categoryFilter" placeholder="全部分类" style="min-width: 140px;" allow-clear>
         <Select.Option value="标题技巧">标题技巧</Select.Option>
         <Select.Option value="开头写法">开头写法</Select.Option>
         <Select.Option value="结构模板">结构模板</Select.Option>
@@ -574,11 +574,11 @@ onMounted(loadData)
         <Select.Option value="创作技巧">创作技巧</Select.Option>
         <Select.Option value="养号技巧">养号技巧</Select.Option>
       </Select>
-      <Select v-model:value="statusFilter" placeholder="全部状态" style="min-width: 140px;" allow-clear>
+      <Select show-search v-model:value="statusFilter" placeholder="全部状态" style="min-width: 140px;" allow-clear>
         <Select.Option value="已上架">已上架</Select.Option>
         <Select.Option value="已下架">已下架</Select.Option>
       </Select>
-      <Select v-model:value="recommendedFilter" placeholder="全部推荐" style="min-width: 140px;" allow-clear>
+      <Select show-search v-model:value="recommendedFilter" placeholder="全部推荐" style="min-width: 140px;" allow-clear>
         <Select.Option :value="1">已推荐</Select.Option>
         <Select.Option :value="0">未推荐</Select.Option>
       </Select>
@@ -628,7 +628,7 @@ onMounted(loadData)
           <Input v-model:value="form.title" placeholder="请输入技巧标题" />
         </Form.Item>
         <Form.Item label="所属分类" required>
-          <Select v-model:value="form.category" placeholder="请选择分类">
+          <Select show-search v-model:value="form.category" placeholder="请选择分类">
             <Select.Option value="标题技巧">标题技巧</Select.Option>
             <Select.Option value="开头写法">开头写法</Select.Option>
             <Select.Option value="结构模板">结构模板</Select.Option>
@@ -643,7 +643,7 @@ onMounted(loadData)
       </Form.Item>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <Form.Item label="内容类型" required>
-          <Select v-model:value="form.contentType">
+          <Select show-search v-model:value="form.contentType">
             <Select.Option value="平台阅读">平台阅读</Select.Option>
             <Select.Option value="外部链接">外部链接</Select.Option>
           </Select>
@@ -654,7 +654,7 @@ onMounted(loadData)
       </div>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <Form.Item label="状态">
-          <Select v-model:value="form.status">
+          <Select show-search v-model:value="form.status">
             <Select.Option value="已上架">已上架</Select.Option>
             <Select.Option value="已下架">已下架</Select.Option>
           </Select>
@@ -702,7 +702,7 @@ onMounted(loadData)
   <Modal v-model:open="generateModalOpen" title="AI 生成创作技巧" :mask-closable="false" :width="480" @ok="handleGenerate">
     <Form layout="vertical" style="margin-top: 12px;">
       <Form.Item label="内容类型" required>
-        <Select v-model:value="generateForm.category" placeholder="请选择要生成的内容类型">
+        <Select show-search v-model:value="generateForm.category" placeholder="请选择要生成的内容类型">
           <Select.Option value="标题技巧">标题技巧</Select.Option>
           <Select.Option value="开头写法">开头写法</Select.Option>
           <Select.Option value="结构模板">结构模板</Select.Option>
@@ -712,7 +712,7 @@ onMounted(loadData)
         </Select>
       </Form.Item>
       <Form.Item label="生成数量">
-        <Select v-model:value="generateForm.count" placeholder="生成数量">
+        <Select show-search v-model:value="generateForm.count" placeholder="生成数量">
           <Select.Option :value="1">1 篇</Select.Option>
           <Select.Option :value="2">2 篇</Select.Option>
           <Select.Option :value="3">3 篇</Select.Option>

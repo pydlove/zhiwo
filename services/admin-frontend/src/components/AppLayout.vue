@@ -53,6 +53,7 @@ const allMenuItems = [
   { key: '/expire-reminder', label: '到期提醒', perm: 'user' },
   { key: '/process', label: '流程管理', perm: 'title-library' },
   { key: '/customer-dialogues', label: '客服对话', perm: 'config' },
+  { key: '/ai-flavor-rules', label: 'AI去除规则', perm: 'config' },
 ]
 
 const menuGroups = [
@@ -85,6 +86,7 @@ const menuGroups = [
       { key: '/customer-dialogues', label: '客服对话', perm: 'config' },
       { key: '/process', label: '流程管理', perm: 'title-library' },
       { key: '/banned-words', label: '违禁词管理', perm: 'config' },
+      { key: '/ai-flavor-rules', label: 'AI去除规则', perm: 'config' },
     ],
   },
   {

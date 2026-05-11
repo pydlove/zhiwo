@@ -462,7 +462,7 @@ onMounted(loadData)
   <Card :body-style="{ padding: '24px' }" style="border-radius: 2px;">
     <div style="display: flex; gap: 12px; margin-bottom: 24px; align-items: center;">
       <Input v-model:value="search" placeholder="搜索模板名称" style="width: 240px;" />
-      <Select v-model:value="sceneFilter" placeholder="全部场景" style="min-width: 140px;" allow-clear>
+      <Select show-search v-model:value="sceneFilter" placeholder="全部场景" style="min-width: 140px;" allow-clear>
         <Select.Option value="通用">通用</Select.Option>
         <Select.Option value="商务">商务</Select.Option>
         <Select.Option value="情感">情感</Select.Option>
@@ -521,8 +521,8 @@ onMounted(loadData)
             <Input v-model:value="designForm.name" />
           </Form.Item>
           <Form.Item label="适用平台" required>
-            <Select v-model:value="designForm.platform" placeholder="请选择平台">
-              <Select.Option v-for="opt in platformOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
+            <Select show-search v-model:value="designForm.platform" placeholder="请选择平台">
+              <Select.Option v-for="opt in platformOptions" :key="opt.value" :value="opt.value" :label="opt.label">{{ opt.label }}</Select.Option>
             </Select>
           </Form.Item>
           <Form.Item label="适用赛道">

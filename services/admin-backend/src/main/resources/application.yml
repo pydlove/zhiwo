@@ -57,6 +57,9 @@ app:
   base-url: ${APP_BASE_URL:http://localhost:5173}
   visible-tabs:
     process-manage: ${VISIBLE_PROCESS_TABS:pending,approved,pushed,rejected,pushed-up,push-logs}
+  script:
+    # 本地开发使用项目内的绝对路径；生产环境在 application-prod.yml 中覆盖
+    replace-periods-path: ${REPLACE_PERIODS_SCRIPT_PATH:/Users/panyong/aio_project/小程序/services/admin-backend/src/main/resources/py/replace_periods.py}
 
 # Jasypt 配置（生产环境通过环境变量 JASYPT_ENCRYPTOR_PASSWORD 提供密钥）
 jasypt:

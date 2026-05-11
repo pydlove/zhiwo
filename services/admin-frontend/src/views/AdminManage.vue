@@ -324,12 +324,12 @@ onMounted(() => {
   <Card :body-style="{ padding: '24px' }" style="border-radius: 2px;">
     <div style="display: flex; gap: 12px; margin-bottom: 24px; align-items: center;">
       <Input v-model:value="search" placeholder="搜索管理员账号/姓名" style="width: 240px;" />
-      <Select v-model:value="roleFilter" placeholder="全部角色" style="min-width: 140px;" allow-clear>
+      <Select show-search v-model:value="roleFilter" placeholder="全部角色" style="min-width: 140px;" allow-clear>
         <Select.Option value="超级管理员">超级管理员</Select.Option>
         <Select.Option value="内容管理员">内容管理员</Select.Option>
         <Select.Option value="运营管理员">运营管理员</Select.Option>
       </Select>
-      <Select v-model:value="statusFilter" placeholder="全部状态" style="min-width: 140px;" allow-clear>
+      <Select show-search v-model:value="statusFilter" placeholder="全部状态" style="min-width: 140px;" allow-clear>
         <Select.Option value="正常">正常</Select.Option>
         <Select.Option value="已禁用">已禁用</Select.Option>
       </Select>
@@ -382,7 +382,7 @@ onMounted(() => {
         </Form.Item>
       </div>
       <Form.Item label="分配角色" required>
-        <Select v-model:value="form.role" placeholder="请选择角色">
+        <Select show-search v-model:value="form.role" placeholder="请选择角色">
           <Select.Option value="超级管理员">超级管理员</Select.Option>
           <Select.Option value="内容管理员">内容管理员</Select.Option>
           <Select.Option value="运营管理员">运营管理员</Select.Option>
@@ -397,7 +397,7 @@ onMounted(() => {
         <div style="font-size: 12px; color: #999; margin-top: 4px;">运营管理员专属，用户端登录页将展示此二维码</div>
       </Form.Item>
       <Form.Item v-if="editingId" label="账号状态">
-        <Select v-model:value="form.status">
+        <Select show-search v-model:value="form.status">
           <Select.Option :value="1">正常</Select.Option>
           <Select.Option :value="0">已禁用</Select.Option>
         </Select>
@@ -409,7 +409,7 @@ onMounted(() => {
     <Form layout="vertical" style="margin-top: 12px;">
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
         <Form.Item label="平台" required>
-          <Select v-model:value="oaPlatform" style="width: 100%;">
+          <Select show-search v-model:value="oaPlatform" style="width: 100%;">
             <Select.Option value="公众号">公众号</Select.Option>
             <Select.Option value="今日头条">今日头条</Select.Option>
             <Select.Option value="百家号">百家号</Select.Option>
@@ -420,8 +420,8 @@ onMounted(() => {
         </Form.Item>
       </div>
       <Form.Item label="会员套餐">
-        <Select v-model:value="oaMembershipPlanId" placeholder="不选择则不绑定特定套餐" style="width: 100%;" allow-clear>
-          <Select.Option v-for="p in membershipPlanOptions" :key="p.id" :value="p.id">{{ p.name }}</Select.Option>
+        <Select show-search v-model:value="oaMembershipPlanId" placeholder="不选择则不绑定特定套餐" style="width: 100%;" allow-clear>
+          <Select.Option v-for="p in membershipPlanOptions" :key="p.id" :value="p.id" :label="p.name">{{ p.name }}</Select.Option>
         </Select>
         <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">选择后，通过该链接开户的用户将自动关联此会员套餐</div>
       </Form.Item>

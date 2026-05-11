@@ -354,14 +354,14 @@ onMounted(loadData)
   <Card :body-style="{ padding: '24px' }" style="border-radius: 2px;">
     <div style="display: flex; gap: 12px; margin-bottom: 24px; align-items: center;">
       <Input v-model:value="searchTitle" placeholder="搜索文章标题" style="width: 240px;" />
-      <Select v-model:value="platformFilter" placeholder="全部平台" style="min-width: 140px;" allow-clear>
-        <Select.Option v-for="opt in platformOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
+      <Select show-search v-model:value="platformFilter" placeholder="全部平台" style="min-width: 140px;" allow-clear>
+        <Select.Option v-for="opt in platformOptions" :key="opt.value" :value="opt.value" :label="opt.label">{{ opt.label }}</Select.Option>
       </Select>
-      <Select v-model:value="trackFilter" placeholder="全部赛道" style="min-width: 140px;" allow-clear :disabled="!platformFilter">
-        <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.name">{{ t.name }}</Select.Option>
+      <Select show-search v-model:value="trackFilter" placeholder="全部赛道" style="min-width: 140px;" allow-clear :disabled="!platformFilter">
+        <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.name" :label="t.name">{{ t.name }}</Select.Option>
       </Select>
-      <Select v-model:value="bloggerFilter" placeholder="全部博主" style="min-width: 140px;" allow-clear>
-        <Select.Option v-for="b in bloggers" :key="b.id" :value="b.name">{{ b.name }}</Select.Option>
+      <Select show-search v-model:value="bloggerFilter" placeholder="全部博主" style="min-width: 140px;" allow-clear>
+        <Select.Option v-for="b in bloggers" :key="b.id" :value="b.name" :label="b.name">{{ b.name }}</Select.Option>
       </Select>
       <Button type="primary" @click="handleSearch">查询</Button>
       <Button @click="handleReset">重置</Button>
@@ -402,12 +402,12 @@ onMounted(loadData)
       </Form.Item>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <Form.Item label="所属博主" required>
-          <Select v-model:value="form.blogger" placeholder="请选择博主">
-            <Select.Option v-for="b in bloggers" :key="b.id" :value="b.id">{{ b.name }}</Select.Option>
+          <Select show-search v-model:value="form.blogger" placeholder="请选择博主">
+            <Select.Option v-for="b in bloggers" :key="b.id" :value="b.id" :label="b.name">{{ b.name }}</Select.Option>
           </Select>
         </Form.Item>
         <Form.Item label="所属平台" required>
-          <Select v-model:value="form.platform" placeholder="请选择平台">
+          <Select show-search v-model:value="form.platform" placeholder="请选择平台">
             <Select.Option value="公众号">公众号</Select.Option>
             <Select.Option value="今日头条">今日头条</Select.Option>
             <Select.Option value="百家号">百家号</Select.Option>

@@ -6,6 +6,9 @@ import { listTracks } from '../api/track.js'
 
 const apiKey = ref('sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
 const model = ref('moonshot-v1-8k')
+const miniMaxApiKey = ref('')
+const miniMaxModel = ref('MiniMax-M2.7')
+const selectedLLMModel = ref('kimi')
 const systemName = ref('知我公众号创作助手')
 const logoUrl = ref('')
 const qrCodeUrl = ref('')
@@ -70,6 +73,8 @@ const notifyEmailAddress = ref('')
 
 const backupLoading = ref(false)
 
+const defaultArticleStyle = ref('')
+
 async function handleBackupDb() {
   backupLoading.value = true
   try {
@@ -103,9 +108,15 @@ async function loadConfig() {
       qrCodeUrl.value = data.qrCodeUrl || ''
       if (data.apiKey) apiKey.value = data.apiKey
       if (data.model) model.value = data.model
+      if (data.miniMaxApiKey) miniMaxApiKey.value = data.miniMaxApiKey
+      if (data.miniMaxModel) miniMaxModel.value = data.miniMaxModel
+      if (data.selectedLLMModel) selectedLLMModel.value = data.selectedLLMModel
       notifyEmailEnabled.value = data.notifyEmailEnabled === '1'
       if (data.notifyEmailAddress) notifyEmailAddress.value = data.notifyEmailAddress
       if (data.mainOperator) mainOperator.value = data.mainOperator
+      if (data.defaultArticleStyle !== undefined) {
+        defaultArticleStyle.value = data.defaultArticleStyle
+      }
     }
   } catch (e) {
     // ignore
@@ -127,12 +138,16 @@ async function handleSave() {
     await request.post('/configs', {
       apiKey: apiKey.value,
       model: model.value,
+      miniMaxApiKey: miniMaxApiKey.value,
+      miniMaxModel: miniMaxModel.value,
+      selectedLLMModel: selectedLLMModel.value,
       systemName: systemName.value,
       logoUrl: logoUrl.value,
       qrCodeUrl: qrCodeUrl.value,
       notifyEmailEnabled: notifyEmailEnabled.value ? '1' : '0',
       notifyEmailAddress: notifyEmailAddress.value,
       mainOperator: mainOperator.value || '',
+      defaultArticleStyle: defaultArticleStyle.value,
     })
     message.success('配置已保存')
   } catch (e) {
@@ -254,6 +269,21 @@ onMounted(() => {
   <div>
     <Card style="border-radius: 2px; margin-bottom: 24px;">
       <template #title>
+        <span style="font-size: 16px; font-weight: 500; color: #262626;">大模型选择</span>
+      </template>
+      <Form layout="vertical">
+        <Form.Item label="默认模型">
+          <Select v-model:value="selectedLLMModel" style="max-width: 480px; height: 36px;">
+            <Select.Option value="kimi">Kimi K2.6</Select.Option>
+            <Select.Option value="minimax">MiniMax M2.7</Select.Option>
+          </Select>
+          <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">生成文章时使用的默认大模型</div>
+        </Form.Item>
+      </Form>
+    </Card>
+
+    <Card style="border-radius: 2px; margin-bottom: 24px;">
+      <template #title>
         <span style="font-size: 16px; font-weight: 500; color: #262626;">Kimi API 配置</span>
       </template>
       <Form layout="vertical">
@@ -262,10 +292,27 @@ onMounted(() => {
           <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">用于 AI 生成标题、大纲和全文，仅管理员可见</div>
         </Form.Item>
         <Form.Item label="模型选择">
-          <Select v-model:value="model" style="max-width: 480px; height: 36px;">
+          <Select show-search v-model:value="model" style="max-width: 480px; height: 36px;">
             <Select.Option value="moonshot-v1-8k">moonshot-v1-8k</Select.Option>
             <Select.Option value="moonshot-v1-32k">moonshot-v1-32k</Select.Option>
             <Select.Option value="moonshot-v1-128k">moonshot-v1-128k</Select.Option>
+            <Select.Option value="kimi-k2-6">kimi-k2-6</Select.Option>
+          </Select>
+        </Form.Item>
+      </Form>
+    </Card>
+
+    <Card style="border-radius: 2px; margin-bottom: 24px;">
+      <template #title>
+        <span style="font-size: 16px; font-weight: 500; color: #262626;">MiniMax API 配置</span>
+      </template>
+      <Form layout="vertical">
+        <Form.Item label="API Key" required>
+          <Input.Password v-model:value="miniMaxApiKey" placeholder="请输入 MiniMax API Key" style="max-width: 480px;" />
+        </Form.Item>
+        <Form.Item label="模型选择">
+          <Select show-search v-model:value="miniMaxModel" style="max-width: 480px; height: 36px;">
+            <Select.Option value="MiniMax-M2.7">MiniMax-M2.7</Select.Option>
           </Select>
         </Form.Item>
       </Form>
@@ -334,12 +381,33 @@ onMounted(() => {
 
     <Card style="border-radius: 2px; margin-bottom: 24px;">
       <template #title>
+        <span style="font-size: 16px; font-weight: 500; color: #262626;">默认文章样式提示词</span>
+      </template>
+      <Form layout="vertical">
+        <Form.Item label="样式提示词" style="max-width: 800px;">
+          <Input.TextArea
+            v-model:value="defaultArticleStyle"
+            :rows="6"
+            placeholder="请输入默认的文章排版样式描述，例如：标题使用 #E74C3C 颜色，字体使用 PingFang SC，引用框背景为 #F8F9FA..."
+          />
+          <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">此处填写全局默认的样式描述。用户未单独配置时，复制提示词会自动将此处内容填充到 ${stylePrompt} 变量中。</div>
+        </Form.Item>
+        <div style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 12px; font-size: 12px; color: #52c41a; max-width: 800px;">
+          <div style="font-weight: 600; margin-bottom: 8px;">使用说明</div>
+          <div>在「标题库」的提示词模板中使用 <code style="font-family: monospace;">${stylePrompt}</code> 变量即可引用此处内容。</div>
+          <div style="margin-top: 4px;">管理员也可以在「用户管理」中为用户单独配置样式提示词，单独配置的优先级高于默认样式。</div>
+        </div>
+      </Form>
+    </Card>
+
+    <Card style="border-radius: 2px; margin-bottom: 24px;">
+      <template #title>
         <span style="font-size: 16px; font-weight: 500; color: #262626;">主运营人员</span>
       </template>
       <Form layout="vertical">
         <Form.Item label="默认归属运营者">
-          <Select v-model:value="mainOperator" placeholder="请选择主运营人员" style="max-width: 480px;" allow-clear>
-            <Select.Option v-for="op in operatorOptions" :key="op.username" :value="op.username">{{ op.name || op.username }}</Select.Option>
+          <Select show-search v-model:value="mainOperator" placeholder="请选择主运营人员" style="max-width: 480px;" allow-clear>
+            <Select.Option v-for="op in operatorOptions" :key="op.username" :value="op.username" :label="op.name || op.username">{{ op.name || op.username }}</Select.Option>
           </Select>
           <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">用户直接访问（不带 op 参数）时，默认展示该运营者的二维码和话术</div>
         </Form.Item>
@@ -419,15 +487,15 @@ onMounted(() => {
         </Form.Item>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 600px;">
           <Form.Item label="平台" required>
-            <Select v-model:value="parsePlatform" style="width: 100%;">
+            <Select show-search v-model:value="parsePlatform" style="width: 100%;">
               <Select.Option value="公众号">公众号</Select.Option>
               <Select.Option value="今日头条">今日头条</Select.Option>
               <Select.Option value="百家号">百家号</Select.Option>
             </Select>
           </Form.Item>
           <Form.Item label="赛道" required>
-            <Select v-model:value="parseTrackId" placeholder="请选择赛道" style="width: 100%;" allow-clear>
-              <Select.Option v-for="t in trackOptions" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+            <Select show-search v-model:value="parseTrackId" placeholder="请选择赛道" style="width: 100%;" allow-clear>
+              <Select.Option v-for="t in trackOptions" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
             </Select>
           </Form.Item>
         </div>

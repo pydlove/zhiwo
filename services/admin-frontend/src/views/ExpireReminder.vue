@@ -108,7 +108,7 @@ onMounted(() => {
     <!-- 筛选区 -->
     <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
       <span style="font-size: 14px; color: #595959;">查看未来</span>
-      <Select v-model:value="days" style="width: 100px;" @change="onSearch">
+      <Select show-search v-model:value="days" style="width: 100px;" @change="onSearch">
         <Select.Option :value="3">3天内</Select.Option>
         <Select.Option :value="7">7天内</Select.Option>
         <Select.Option :value="14">14天内</Select.Option>

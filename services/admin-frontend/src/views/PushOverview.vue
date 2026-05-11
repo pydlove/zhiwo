@@ -482,11 +482,11 @@ async function handleBatchPush() {
           <SearchOutlined />
         </template>
       </Input>
-      <Select v-model:value="filterEmailPushed" style="width: 150px;" @change="onFilterChange">
-        <Select.Option v-for="opt in emailPushedOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
+      <Select show-search v-model:value="filterEmailPushed" style="width: 150px;" @change="onFilterChange">
+        <Select.Option v-for="opt in emailPushedOptions" :key="opt.value" :value="opt.value" :label="opt.label">{{ opt.label }}</Select.Option>
       </Select>
-      <Select v-model:value="filterArticleComplete" style="width: 150px;" @change="onFilterChange">
-        <Select.Option v-for="opt in articleCompleteOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
+      <Select show-search v-model:value="filterArticleComplete" style="width: 150px;" @change="onFilterChange">
+        <Select.Option v-for="opt in articleCompleteOptions" :key="opt.value" :value="opt.value" :label="opt.label">{{ opt.label }}</Select.Option>
       </Select>
       <Button type="primary" @click="onSearch">查询</Button>
       <Button @click="() => { searchKeyword = ''; filterEmailPushed = ''; filterArticleComplete = ''; onSearch() }">重置</Button>
@@ -630,7 +630,7 @@ async function handleBatchPush() {
       </div>
       <div>
         <div style="font-size: 13px; color: #595959; margin-bottom: 6px;">用户范围</div>
-        <Select v-model:value="scheduledPushForm.userFilterType" style="width: 100%;">
+        <Select show-search v-model:value="scheduledPushForm.userFilterType" style="width: 100%;">
           <Select.Option value="all">全部用户</Select.Option>
           <Select.Option value="selected">指定用户</Select.Option>
         </Select>

@@ -296,13 +296,13 @@ onMounted(loadData)
   <Card :body-style="{ padding: '24px' }" style="border-radius: 2px;">
     <div style="display: flex; gap: 12px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;">
       <Input v-model:value="search" placeholder="搜索标题 / 描述 / 文件名" style="width: 240px;" @pressEnter="handleSearch" />
-      <Select v-model:value="userFilter" placeholder="全部用户" style="min-width: 160px;" allow-clear>
-        <Select.Option v-for="u in users" :key="u.id" :value="u.id">{{ u.username || u.name || u.id }}</Select.Option>
+      <Select show-search v-model:value="userFilter" placeholder="全部用户" style="min-width: 160px;" allow-clear>
+        <Select.Option v-for="u in users" :key="u.id" :value="u.id" :label="u.username || u.name || u.id">{{ u.username || u.name || u.id }}</Select.Option>
       </Select>
-      <Select v-model:value="trackFilter" placeholder="全部赛道" style="min-width: 160px;" allow-clear>
-        <Select.Option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+      <Select show-search v-model:value="trackFilter" placeholder="全部赛道" style="min-width: 160px;" allow-clear>
+        <Select.Option v-for="t in tracks" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
       </Select>
-      <Select v-model:value="statusFilter" placeholder="全部状态" style="min-width: 120px;" allow-clear>
+      <Select show-search v-model:value="statusFilter" placeholder="全部状态" style="min-width: 120px;" allow-clear>
         <Select.Option value="已上架">已上架</Select.Option>
         <Select.Option value="已下架">已下架</Select.Option>
       </Select>
@@ -395,13 +395,13 @@ onMounted(loadData)
   <Modal v-model:open="modalOpen" :title="modalTitle" :mask-closable="false" @ok="handleSave" :width="560">
     <Form layout="vertical" style="margin-top: 12px;">
       <Form.Item label="目标用户" required>
-        <Select v-model:value="form.userId" placeholder="请选择用户">
-          <Select.Option v-for="u in users" :key="u.id" :value="u.id">{{ u.username || u.name || u.id }}</Select.Option>
+        <Select show-search v-model:value="form.userId" placeholder="请选择用户">
+          <Select.Option v-for="u in users" :key="u.id" :value="u.id" :label="u.username || u.name || u.id">{{ u.username || u.name || u.id }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item label="所属赛道" required>
-        <Select v-model:value="form.trackId" placeholder="请先选择用户，再选择赛道" :disabled="!form.userId">
-          <Select.Option v-for="t in filteredTracksForUser" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+        <Select show-search v-model:value="form.trackId" placeholder="请先选择用户，再选择赛道" :disabled="!form.userId">
+          <Select.Option v-for="t in filteredTracksForUser" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item label="文章标题" required>
@@ -417,7 +417,7 @@ onMounted(loadData)
         <Input v-model:value="form.fileName" placeholder="请输入文件名（用于展示）" />
       </Form.Item>
       <Form.Item label="状态">
-        <Select v-model:value="form.status">
+        <Select show-search v-model:value="form.status">
           <Select.Option value="已上架">已上架</Select.Option>
           <Select.Option value="已下架">已下架</Select.Option>
         </Select>

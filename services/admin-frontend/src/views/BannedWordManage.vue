@@ -166,8 +166,8 @@ onMounted(loadData)
 <template>
   <Card title="违禁词管理" :bordered="false">
     <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: flex-end;">
-      <Select v-model:value="filterCategory" placeholder="筛选分类" style="width: 160px;" allowClear>
-        <Select.Option v-for="c in categoryOptions" :key="c" :value="c">{{ c }}</Select.Option>
+      <Select show-search v-model:value="filterCategory" placeholder="筛选分类" style="width: 160px;" allowClear>
+        <Select.Option v-for="c in categoryOptions" :key="c" :value="c" :label="c">{{ c }}</Select.Option>
       </Select>
       <Button type="primary" @click="() => openModal(null)">新增违禁词</Button>
       <Button @click="handleExport">导出</Button>
@@ -198,13 +198,13 @@ onMounted(loadData)
         <Input v-model:value="form.replacement" placeholder="请输入替换词，为空则直接避免" />
       </Form.Item>
       <Form.Item label="分类">
-        <Select v-model:value="form.category">
-          <Select.Option v-for="c in categoryOptions" :key="c" :value="c">{{ c }}</Select.Option>
+        <Select show-search v-model:value="form.category">
+          <Select.Option v-for="c in categoryOptions" :key="c" :value="c" :label="c">{{ c }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item label="等级">
-        <Select v-model:value="form.severity">
-          <Select.Option v-for="s in severityOptions" :key="s.value" :value="s.value">{{ s.label }}</Select.Option>
+        <Select show-search v-model:value="form.severity">
+          <Select.Option v-for="s in severityOptions" :key="s.value" :value="s.value" :label="s.label">{{ s.label }}</Select.Option>
         </Select>
       </Form.Item>
     </Form>

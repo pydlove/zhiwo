@@ -22,7 +22,7 @@ import {
   getTodayLog, getRecentLogs, triggerCheck
 } from '../api/processAuto.js'
 import { listTracks } from '../api/track.js'
-import { generateTitles, getGenerateStatus, cancelGenerate, saveTitle } from '../api/titleLibrary.js'
+import { generateTitles, getGenerateStatus, cancelGenerate, saveTitle, batchChangeTrack } from '../api/titleLibrary.js'
 import { getVisibleTabs } from '../api/config.js'
 
 // 流程类型 Tabs
@@ -631,8 +631,33 @@ async function handleEditConfirm() {
 
 function handleChangeTrack(record) {
   changeTrackForm.value = {
+    isBatch: false,
     id: record.titleLibraryId,
+    ids: [],
     trackId: record.trackId || ''
+  }
+  changeTrackModalOpen.value = true
+}
+
+function handleBatchChangeTrack() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择要修改赛道的标题')
+    return
+  }
+  // 从 tableData 中提取 titleLibraryId（selectedRowKeys 存储的是 TitleReview.id）
+  const titleLibraryIds = tableData.value
+    .filter(r => selectedRowKeys.value.includes(r.id))
+    .map(r => r.titleLibraryId)
+    .filter(Boolean)
+  if (titleLibraryIds.length === 0) {
+    message.warning('未找到有效的标题ID')
+    return
+  }
+  changeTrackForm.value = {
+    isBatch: true,
+    id: '',
+    ids: titleLibraryIds,
+    trackId: ''
   }
   changeTrackModalOpen.value = true
 }
@@ -644,11 +669,18 @@ async function handleChangeTrackConfirm() {
   }
   changeTrackLoading.value = true
   try {
-    await saveTitle({
-      id: changeTrackForm.value.id,
-      trackId: changeTrackForm.value.trackId
-    })
-    message.success('赛道修改成功')
+    if (changeTrackForm.value.isBatch) {
+      // 批量修改：调用专用批量接口
+      await batchChangeTrack(changeTrackForm.value.ids, changeTrackForm.value.trackId)
+      message.success(`赛道修改成功：${changeTrackForm.value.ids.length} 条`)
+      selectedRowKeys.value = []
+    } else {
+      await saveTitle({
+        id: changeTrackForm.value.id,
+        trackId: changeTrackForm.value.trackId
+      })
+      message.success('赛道修改成功')
+    }
     changeTrackModalOpen.value = false
     loadData()
   } catch (e) {
@@ -1111,7 +1143,7 @@ async function loadVisibleTabs() {
             </Col>
             <Col :span="8">
               <Form.Item label="是否启用">
-                <Select v-model:value="autoConfig.isEnabled">
+                <Select show-search v-model:value="autoConfig.isEnabled">
                   <Select.Option :value="1">启用</Select.Option>
                   <Select.Option :value="0">禁用</Select.Option>
                 </Select>
@@ -1121,7 +1153,7 @@ async function loadVisibleTabs() {
           <Row :gutter="24">
             <Col :span="8">
               <Form.Item label="检查范围">
-                <Select v-model:value="autoConfig.checkAllTracks">
+                <Select show-search v-model:value="autoConfig.checkAllTracks">
                   <Select.Option :value="1">全部赛道</Select.Option>
                   <Select.Option :value="0">仅已订阅赛道</Select.Option>
                 </Select>
@@ -1129,7 +1161,7 @@ async function loadVisibleTabs() {
             </Col>
             <Col :span="8">
               <Form.Item label="不足时通知本地生成">
-                <Select v-model:value="autoConfig.autoNotifyLocal">
+                <Select show-search v-model:value="autoConfig.autoNotifyLocal">
                   <Select.Option :value="1">是</Select.Option>
                   <Select.Option :value="0">否</Select.Option>
                 </Select>
@@ -1137,7 +1169,7 @@ async function loadVisibleTabs() {
             </Col>
             <Col :span="8">
               <Form.Item label="审核后自动推送">
-                <Select v-model:value="autoConfig.autoPushAfterApprove">
+                <Select show-search v-model:value="autoConfig.autoPushAfterApprove">
                   <Select.Option :value="1">是</Select.Option>
                   <Select.Option :value="0">否</Select.Option>
                 </Select>
@@ -1147,7 +1179,7 @@ async function loadVisibleTabs() {
           <Row :gutter="24">
             <Col :span="8">
               <Form.Item label="推送后自动匹配">
-                <Select v-model:value="autoConfig.autoMatchAfterPush">
+                <Select show-search v-model:value="autoConfig.autoMatchAfterPush">
                   <Select.Option :value="1">是</Select.Option>
                   <Select.Option :value="0">否</Select.Option>
                 </Select>
@@ -1241,15 +1273,15 @@ async function loadVisibleTabs() {
     <Card style="margin-bottom: 16px;">
       <Row :gutter="16" align="middle">
         <Col :span="4">
-          <Select v-model:value="searchPlatform" placeholder="平台" allow-clear style="width: 100%;"
+          <Select show-search v-model:value="searchPlatform" placeholder="平台" allow-clear style="width: 100%;"
                   @change="onSearchPlatformChange">
-            <Select.Option v-for="p in platforms" :key="p" :value="p">{{ p }}</Select.Option>
+            <Select.Option v-for="p in platforms" :key="p" :value="p" :label="p">{{ p }}</Select.Option>
           </Select>
         </Col>
         <Col :span="4">
           <Select v-model:value="searchTrack" placeholder="赛道" allow-clear show-search style="width: 100%;"
                   @change="onSearchTrackChange">
-            <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+            <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
           </Select>
         </Col>
         <Col :span="6">
@@ -1279,6 +1311,9 @@ async function loadVisibleTabs() {
           <Button type="primary" :disabled="selectedRowKeys.length === 0" @click="handleBatchApprove">
             批量通过
           </Button>
+          <Button :disabled="selectedRowKeys.length === 0" @click="handleBatchChangeTrack">
+            批量改赛道
+          </Button>
           <Button danger :disabled="selectedRowKeys.length === 0" @click="handleBatchReject">
             批量拒绝
           </Button>
@@ -1291,6 +1326,9 @@ async function loadVisibleTabs() {
         <template v-if="reviewStatus === 'approved'">
           <Button type="primary" :disabled="selectedRowKeys.length === 0" @click="handleBatchPush">
             批量推送
+          </Button>
+          <Button :disabled="selectedRowKeys.length === 0" @click="handleBatchChangeTrack">
+            批量改赛道
           </Button>
           <Button :disabled="selectedRowKeys.length === 0" @click="handleBatchCancel">
             批量取消审核
@@ -1437,7 +1475,7 @@ async function loadVisibleTabs() {
         </div>
         <Form.Item label="选择平台-赛道">
           <Select v-model:value="generateTrackIds" mode="multiple" placeholder="不选则生成全部赛道" show-search style="width: 100%;">
-            <Select.Option v-for="t in sortedTrackOptions" :key="t.id" :value="t.id">{{ t.displayLabel }}</Select.Option>
+            <Select.Option v-for="t in sortedTrackOptions" :key="t.id" :value="t.id" :label="t.displayLabel">{{ t.displayLabel }}</Select.Option>
           </Select>
         </Form.Item>
         <Form.Item label="每个组合生成数量" required>
@@ -1452,7 +1490,7 @@ async function loadVisibleTabs() {
             v-model:value="generateInstruction"
             placeholder="例如：更口语化、更具悬念、突出数字效果、适合抖音风格、偏新闻报道类..."
             :rows="2"
-            :maxlength="200"
+            :maxlength="1000"
             show-count
           />
           <div style="font-size: 12px; color: #999; margin-top: 4px;">不填则使用默认策略生成</div>
@@ -1480,14 +1518,14 @@ async function loadVisibleTabs() {
     <!-- 改赛道弹窗 -->
     <Modal
       v-model:open="changeTrackModalOpen"
-      title="修改赛道"
+      :title="changeTrackForm.isBatch ? '批量修改赛道' : '修改赛道'"
       :confirm-loading="changeTrackLoading"
       @ok="handleChangeTrackConfirm"
     >
       <Form layout="vertical">
         <Form.Item label="选择赛道" required>
           <Select v-model:value="changeTrackForm.trackId" placeholder="请选择赛道" show-search style="width: 100%;">
-            <Select.Option v-for="t in sortedTrackOptions" :key="t.id" :value="t.id">{{ t.displayLabel }}</Select.Option>
+            <Select.Option v-for="t in sortedTrackOptions" :key="t.id" :value="t.id" :label="t.displayLabel">{{ t.displayLabel }}</Select.Option>
           </Select>
         </Form.Item>
       </Form>

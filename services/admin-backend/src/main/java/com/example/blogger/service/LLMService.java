@@ -65,8 +65,11 @@ public class LLMService {
     private String callKimiAPI(String prompt) {
         String apiKey = getConfigValue("apiKey");
         String model = getConfigValue("model");
+        if (apiKey != null) apiKey = apiKey.trim();
+        System.out.println("[LLMService] Kimi API Key length: " + (apiKey != null ? apiKey.length() : 0));
+        System.out.println("[LLMService] Kimi model: " + model);
         if (apiKey == null || apiKey.isEmpty()) {
-            throw new RuntimeException("Kimi API Key 未配置");
+            throw new RuntimeException("Kimi API Key 未配置，请在系统配置中设置");
         }
         if (model == null || model.isEmpty()) {
             model = "moonshot-v1-8k";
@@ -136,12 +139,10 @@ public class LLMService {
     }
 
     private String getConfigValue(String key) {
-        if (configCache == null) {
-            List<Config> configs = configMapper.findAll();
-            configCache = new HashMap<>();
-            for (Config c : configs) {
-                configCache.put(c.getConfigKey(), c.getConfigValue());
-            }
+        List<Config> configs = configMapper.findAll();
+        configCache = new HashMap<>();
+        for (Config c : configs) {
+            configCache.put(c.getConfigKey(), c.getConfigValue());
         }
         return configCache.get(key);
     }

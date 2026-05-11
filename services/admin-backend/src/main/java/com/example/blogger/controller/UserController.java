@@ -202,6 +202,7 @@ public class UserController {
         if (user.getInviteCode() != null) existing.setInviteCode(user.getInviteCode());
         if (user.getInvitedBy() != null) existing.setInvitedBy(user.getInvitedBy());
         if (user.getAdminId() != null) existing.setAdminId(user.getAdminId());
+        if (user.getStyleConfig() != null) existing.setStyleConfig(user.getStyleConfig());
         // Detect account opening: userType changed to 1 (开户)
         boolean wasOpened = existing.getUserType() != null && existing.getUserType() == 1;
         if (user.getUserType() != null) existing.setUserType(user.getUserType());
@@ -232,6 +233,24 @@ public class UserController {
             return Result.error("请选择用户");
         }
         userService.batchUpdateAdminId(userIds, adminId);
+        return Result.ok(null);
+    }
+
+    @PostMapping("/batch-style")
+    public Result<Void> batchUpdateStyle(@RequestBody Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
+        List<String> userIds = (List<String>) body.get("userIds");
+        String styleConfig = (String) body.get("styleConfig");
+        if (userIds == null || userIds.isEmpty()) {
+            return Result.error("请选择用户");
+        }
+        for (String userId : userIds) {
+            User user = userService.getById(userId);
+            if (user != null) {
+                user.setStyleConfig(styleConfig);
+                userService.save(user);
+            }
+        }
         return Result.ok(null);
     }
 

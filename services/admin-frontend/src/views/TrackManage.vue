@@ -204,7 +204,7 @@ onMounted(loadData)
   <Card :body-style="{ padding: '24px' }" style="border-radius: 2px;">
     <div style="display: flex; gap: 12px; margin-bottom: 24px; align-items: center;">
       <Input v-model:value="searchName" placeholder="搜索赛道名称" style="width: 240px;" />
-      <Select v-model:value="platformFilter" placeholder="全部平台" style="min-width: 140px;" allow-clear>
+      <Select show-search v-model:value="platformFilter" placeholder="全部平台" style="min-width: 140px;" allow-clear>
         <Select.Option value="公众号">公众号</Select.Option>
         <Select.Option value="今日头条">今日头条</Select.Option>
         <Select.Option value="百家号">百家号</Select.Option>

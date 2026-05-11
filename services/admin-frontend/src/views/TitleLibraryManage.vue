@@ -3086,7 +3086,7 @@ onMounted(() => {
           <div v-if="removeAiFlavorRules.length === 0" style="color: #999; text-align: center; padding: 8px;">暂无规则</div>
         </div>
         <div style="font-size: 12px; color: #999; margin-top: 6px;">
-          内置规则：。→，；→，：/:→，、→，「」→空，——→，，「孤句号行」→合并到下一行（这些规则始终生效，列表中的规则在此基础上追加执行）
+          内置规则：。→，；→，：/:→，、→，「」→空，——→，；短句合并：逗号≤2且仅1个句号的段落 → 句号改逗号并合并到下一段（跳过空段落）。（这些规则始终生效，列表中的规则在此基础上追加执行）
         </div>
       </div>
       <div style="font-size: 12px; color: #999; line-height: 1.6;">

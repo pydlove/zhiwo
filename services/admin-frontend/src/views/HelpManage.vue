@@ -476,10 +476,10 @@ onMounted(() => {
   <Card :body-style="{ padding: '24px' }" style="border-radius: 2px;">
     <div style="display: flex; gap: 12px; margin-bottom: 24px; align-items: center;">
       <Input v-model:value="search" placeholder="搜索文档标题" style="width: 240px;" />
-      <Select v-model:value="categoryFilter" placeholder="全部分类" style="min-width: 140px;" allow-clear>
-        <Select.Option v-for="c in categories" :key="c.id" :value="c.name">{{ c.name }}</Select.Option>
+      <Select show-search v-model:value="categoryFilter" placeholder="全部分类" style="min-width: 140px;" allow-clear>
+        <Select.Option v-for="c in categories" :key="c.id" :value="c.name" :label="c.name">{{ c.name }}</Select.Option>
       </Select>
-      <Select v-model:value="statusFilter" placeholder="全部状态" style="min-width: 140px;" allow-clear>
+      <Select show-search v-model:value="statusFilter" placeholder="全部状态" style="min-width: 140px;" allow-clear>
         <Select.Option value="已上架">已上架</Select.Option>
         <Select.Option value="已下架">已下架</Select.Option>
       </Select>
@@ -517,8 +517,8 @@ onMounted(() => {
           <Input v-model:value="form.title" placeholder="请输入文档标题" />
         </Form.Item>
         <Form.Item label="所属分类" required>
-          <Select v-model:value="form.category" placeholder="请选择分类">
-            <Select.Option v-for="c in categories" :key="c.id" :value="c.name">{{ c.name }}</Select.Option>
+          <Select show-search v-model:value="form.category" placeholder="请选择分类">
+            <Select.Option v-for="c in categories" :key="c.id" :value="c.name" :label="c.name">{{ c.name }}</Select.Option>
           </Select>
         </Form.Item>
       </div>
@@ -527,7 +527,7 @@ onMounted(() => {
           <Input type="number" v-model:value="form.sortOrder" placeholder="数字越小越靠前" />
         </Form.Item>
         <Form.Item label="状态">
-          <Select v-model:value="form.status">
+          <Select show-search v-model:value="form.status">
             <Select.Option value="已上架">已上架</Select.Option>
             <Select.Option value="已下架">已下架</Select.Option>
           </Select>
@@ -567,14 +567,14 @@ onMounted(() => {
   >
     <Form layout="vertical" style="margin-top: 12px;">
       <Form.Item label="选择用户" required>
-        <Select
+        <Select show-search
           v-model:value="selectedUserIds"
           mode="multiple"
           placeholder="请选择要推送的用户（仅显示有邮箱的活跃用户）"
           style="width: 100%;"
           :max-tag-count="3"
         >
-          <Select.Option v-for="u in allUsers" :key="u.id" :value="u.id">{{ u.username }}（{{ u.email }}）</Select.Option>
+          <Select.Option v-for="u in allUsers" :key="u.id" :value="u.id" :label="u.username + '（' + u.email + '）'">{{ u.username }}（{{ u.email }}）</Select.Option>
         </Select>
       </Form.Item>
       <div v-if="emailHelpRecord" style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 12px; font-size: 13px; color: #52c41a;">
@@ -593,8 +593,8 @@ onMounted(() => {
         </div>
         <div style="width: 120px;">
           <div style="font-size: 12px; color: #999; margin-bottom: 4px;">标签颜色</div>
-          <Select v-model:value="categoryForm.color" placeholder="颜色">
-            <Select.Option v-for="color in categoryColors" :key="color" :value="color">
+          <Select show-search v-model:value="categoryForm.color" placeholder="颜色">
+            <Select.Option v-for="color in categoryColors" :key="color" :value="color" :label="color">
               <Tag :color="color" size="small">{{ color }}</Tag>
             </Select.Option>
           </Select>

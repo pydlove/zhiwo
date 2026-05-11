@@ -27,6 +27,7 @@ const routes = [
       { path: 'expire-reminder', name: 'ExpireReminder', component: () => import('../views/ExpireReminder.vue'), meta: { title: '到期提醒', perm: 'user' } },
       { path: 'process', name: 'ProcessManage', component: () => import('../views/ProcessManage.vue'), meta: { title: '流程管理', perm: 'title-library' } },
       { path: 'customer-dialogues', name: 'CustomerDialogueManage', component: () => import('../views/CustomerDialogueManage.vue'), meta: { title: '客服对话', perm: 'config' } },
+      { path: 'ai-flavor-rules', name: 'AiFlavorRuleManage', component: () => import('../views/AiFlavorRuleManage.vue'), meta: { title: 'AI去除规则', perm: 'config' } },
       // FIXME: AI 检测功能暂时禁用
 //       { path: 'article-ai-detect', name: 'ArticleAiDetect', component: () => import('../views/ArticleAiDetect.vue'), meta: { title: 'AI检测', perm: 'title-library' } },
     ],

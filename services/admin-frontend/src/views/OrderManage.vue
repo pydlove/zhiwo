@@ -406,14 +406,14 @@ onMounted(() => {
 
     <!-- Filters -->
     <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: flex-end;">
-      <Select v-model:value="filterUserId" placeholder="选择用户" style="width: 160px;" allowClear>
-        <Select.Option v-for="u in users" :key="u.id" :value="u.id">{{ u.nickName ? u.username + '(' + u.nickName + ')' : u.username }}</Select.Option>
+      <Select show-search v-model:value="filterUserId" placeholder="选择用户" style="width: 160px;" allowClear>
+        <Select.Option v-for="u in users" :key="u.id" :value="u.id" :label="u.nickName ? u.username + '(' + u.nickName + ')' : u.username">{{ u.nickName ? u.username + '(' + u.nickName + ')' : u.username }}</Select.Option>
       </Select>
-      <Select v-model:value="filterType" placeholder="订单类型" style="width: 120px;" allowClear>
-        <Select.Option v-for="t in typeOptions" :key="t.value" :value="t.value">{{ t.label }}</Select.Option>
+      <Select show-search v-model:value="filterType" placeholder="订单类型" style="width: 120px;" allowClear>
+        <Select.Option v-for="t in typeOptions" :key="t.value" :value="t.value" :label="t.label">{{ t.label }}</Select.Option>
       </Select>
-      <Select v-model:value="filterPlanId" placeholder="选择套餐" style="width: 160px;" allowClear>
-        <Select.Option v-for="p in plans" :key="p.id" :value="p.id">{{ p.name }}</Select.Option>
+      <Select show-search v-model:value="filterPlanId" placeholder="选择套餐" style="width: 160px;" allowClear>
+        <Select.Option v-for="p in plans" :key="p.id" :value="p.id" :label="p.name">{{ p.name }}</Select.Option>
       </Select>
       <DatePicker.RangePicker v-model:value="filterDateRange" style="width: 240px;" />
       <Button type="primary" @click="onSearch">查询</Button>
@@ -453,18 +453,18 @@ onMounted(() => {
   >
     <Form layout="vertical" :model="createForm">
       <Form.Item label="用户" required>
-        <Select v-model:value="createForm.userId" placeholder="选择用户">
-          <Select.Option v-for="u in users" :key="u.id" :value="u.id">{{ u.nickName ? u.username + '(' + u.nickName + ')' : u.username }}</Select.Option>
+        <Select show-search v-model:value="createForm.userId" placeholder="选择用户">
+          <Select.Option v-for="u in users" :key="u.id" :value="u.id" :label="u.nickName ? u.username + '(' + u.nickName + ')' : u.username">{{ u.nickName ? u.username + '(' + u.nickName + ')' : u.username }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item label="套餐" required>
-        <Select v-model:value="createForm.planId" placeholder="选择套餐">
-          <Select.Option v-for="p in plans" :key="p.id" :value="p.id">{{ p.name }}</Select.Option>
+        <Select show-search v-model:value="createForm.planId" placeholder="选择套餐">
+          <Select.Option v-for="p in plans" :key="p.id" :value="p.id" :label="p.name">{{ p.name }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item label="类型" required>
-        <Select v-model:value="createForm.type">
-          <Select.Option v-for="t in typeOptions" :key="t.value" :value="t.value">{{ t.label }}</Select.Option>
+        <Select show-search v-model:value="createForm.type">
+          <Select.Option v-for="t in typeOptions" :key="t.value" :value="t.value" :label="t.label">{{ t.label }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item label="金额（留空自动取套餐价格）">

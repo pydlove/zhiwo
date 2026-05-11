@@ -39,6 +39,9 @@ mybatis:
 app:
   visible-tabs:
     process-manage: pushed-up
+  script:
+    # 生产环境脚本路径，部署时请将脚本放到服务器对应位置并修改此配置
+    replace-periods-path: ${REPLACE_PERIODS_SCRIPT_PATH:/opt/scripts/replace_periods.py}
 
 jasypt:
   encryptor:

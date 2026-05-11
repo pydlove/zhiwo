@@ -69,7 +69,38 @@ const columns = [
     },
   },
   { title: '邮箱', dataIndex: 'email', key: 'email', width: 150 },
-  { title: '公众号名称', dataIndex: 'wxName', key: 'wxName', width: 130, ellipsis: true },
+  { title: '公众号名称', key: 'wxName', width: 160,
+    customRender: ({ record }) => {
+      const name = record.wxName || ''
+      return h('div', { style: 'display: flex; align-items: center; gap: 4px;' }, [
+        h('span', { style: 'flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;' }, name),
+        name ? h(Button, {
+          type: 'link', size: 'small', style: 'padding: 0; flex-shrink: 0;',
+          onClick: (e) => {
+            e.stopPropagation()
+            const text = name
+            try {
+              if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                navigator.clipboard.writeText(text).then(() => message.success('已复制')).catch(() => message.error('复制失败'))
+              } else {
+                const ta = document.createElement('textarea')
+                ta.value = text
+                ta.style.position = 'fixed'
+                ta.style.left = '-9999px'
+                document.body.appendChild(ta)
+                ta.select()
+                if (document.execCommand('copy')) message.success('已复制')
+                else message.error('复制失败')
+                document.body.removeChild(ta)
+              }
+            } catch (e) {
+              message.error('复制失败')
+            }
+          }
+        }, () => '复制') : null,
+      ])
+    }
+  },
   { title: '归属运营者', dataIndex: 'adminId', key: 'adminId', width: 120 },
   { title: '赛道信息', key: 'trackInfo', width: 140 },
   { title: '可选赛道', dataIndex: 'trackLimitText', key: 'trackLimitText', width: 90 },
@@ -834,6 +865,38 @@ const trackInfoLoading = ref(false)
 const selectedAddTrackId = ref(null)
 const addTrackLoading = ref(false)
 
+// Style config modal state
+const styleModalOpen = ref(false)
+const styleUser = ref({})
+const styleForm = ref('')
+const styleLoading = ref(false)
+
+function openStyleModal(record) {
+  styleUser.value = record
+  styleForm.value = record.styleConfig || ''
+  styleModalOpen.value = true
+}
+
+async function saveStyle() {
+  if (!styleUser.value.id) return
+  styleLoading.value = true
+  try {
+    const payload = { styleConfig: styleForm.value }
+    await request.put('/users/' + styleUser.value.id, payload)
+    message.success('样式提示词已保存')
+    styleModalOpen.value = false
+    // 更新本地数据
+    const idx = data.value.findIndex(u => u.id === styleUser.value.id)
+    if (idx !== -1) {
+      data.value[idx].styleConfig = payload.styleConfig
+    }
+  } catch (e) {
+    message.error('保存失败')
+  } finally {
+    styleLoading.value = false
+  }
+}
+
 const availableTracksForAdd = computed(() => {
   const subscribedIds = new Set((trackInfoList.value || []).map(t => t.id))
   return (allTracks.value || []).filter(t => !subscribedIds.has(t.id))
@@ -964,6 +1027,41 @@ async function handleBatchUpdateAdmin() {
   }
 }
 
+const batchStyleModalOpen = ref(false)
+const batchStyleForm = ref('')
+const batchStyleLoading = ref(false)
+
+function openBatchStyleModal() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先勾选要配置的用户')
+    return
+  }
+  batchStyleForm.value = ''
+  batchStyleModalOpen.value = true
+}
+
+async function handleBatchSaveStyle() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请选择用户')
+    return
+  }
+  batchStyleLoading.value = true
+  try {
+    await request.post('/users/batch-style', {
+      userIds: selectedRowKeys.value,
+      styleConfig: batchStyleForm.value,
+    })
+    message.success('批量配置样式成功')
+    batchStyleModalOpen.value = false
+    selectedRowKeys.value = []
+    loadData()
+  } catch (e) {
+    message.error(e?.message || '批量配置失败')
+  } finally {
+    batchStyleLoading.value = false
+  }
+}
+
 async function openTrackInfoModal(record) {
   trackInfoUser.value = record
   trackInfoModalOpen.value = true
@@ -1044,21 +1142,22 @@ onMounted(() => {
           <Input v-model:value="searchMap[activeTab].username" placeholder="用户名" style="width: 160px;" />
           <Input v-model:value="searchMap[activeTab].email" placeholder="邮箱" style="width: 160px;" />
           <Input v-model:value="searchMap[activeTab].wxName" placeholder="公众号名称" style="width: 160px;" />
-          <Select v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
+          <Select show-search v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
             <Select.Option value="公众号">公众号</Select.Option>
             <Select.Option value="今日头条">今日头条</Select.Option>
             <Select.Option value="百家号">百家号</Select.Option>
           </Select>
-          <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
-            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          <Select show-search v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
+            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
           </Select>
-          <Select v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
-            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id">{{ op.name || op.username }}</Select.Option>
+          <Select show-search v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
+            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id" :label="op.name || op.username">{{ op.name || op.username }}</Select.Option>
           </Select>
           <Button type="primary" @click="handleSearch">查询</Button>
           <Button @click="handleReset">重置</Button>
           <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
           <Button style="margin-left: 12px;" @click="openBatchAdminModal">批量修改运营者</Button>
+          <Button style="margin-left: 12px;" @click="openBatchStyleModal">批量配置样式</Button>
           <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
           <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
         </div>
@@ -1080,6 +1179,7 @@ onMounted(() => {
               <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
               <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
               <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
+              <a style="margin-right: 12px; color: #722ed1;" @click="openStyleModal(record)">文章样式</a>
               <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
                 {{ record.status === 1 ? '禁用' : '启用' }}
               </a>
@@ -1093,21 +1193,22 @@ onMounted(() => {
           <Input v-model:value="searchMap[activeTab].username" placeholder="用户名" style="width: 160px;" />
           <Input v-model:value="searchMap[activeTab].email" placeholder="邮箱" style="width: 160px;" />
           <Input v-model:value="searchMap[activeTab].wxName" placeholder="公众号名称" style="width: 160px;" />
-          <Select v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
+          <Select show-search v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
             <Select.Option value="公众号">公众号</Select.Option>
             <Select.Option value="今日头条">今日头条</Select.Option>
             <Select.Option value="百家号">百家号</Select.Option>
           </Select>
-          <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
-            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          <Select show-search v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
+            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
           </Select>
-          <Select v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
-            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id">{{ op.name || op.username }}</Select.Option>
+          <Select show-search v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
+            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id" :label="op.name || op.username">{{ op.name || op.username }}</Select.Option>
           </Select>
           <Button type="primary" @click="handleSearch">查询</Button>
           <Button @click="handleReset">重置</Button>
           <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
           <Button style="margin-left: 12px;" @click="openBatchAdminModal">批量修改运营者</Button>
+          <Button style="margin-left: 12px;" @click="openBatchStyleModal">批量配置样式</Button>
           <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
           <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
         </div>
@@ -1129,6 +1230,7 @@ onMounted(() => {
               <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
               <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
               <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
+              <a style="margin-right: 12px; color: #722ed1;" @click="openStyleModal(record)">文章样式</a>
               <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
                 {{ record.status === 1 ? '禁用' : '启用' }}
               </a>
@@ -1142,21 +1244,22 @@ onMounted(() => {
           <Input v-model:value="searchMap[activeTab].username" placeholder="用户名" style="width: 160px;" />
           <Input v-model:value="searchMap[activeTab].email" placeholder="邮箱" style="width: 160px;" />
           <Input v-model:value="searchMap[activeTab].wxName" placeholder="公众号名称" style="width: 160px;" />
-          <Select v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
+          <Select show-search v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
             <Select.Option value="公众号">公众号</Select.Option>
             <Select.Option value="今日头条">今日头条</Select.Option>
             <Select.Option value="百家号">百家号</Select.Option>
           </Select>
-          <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
-            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          <Select show-search v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
+            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
           </Select>
-          <Select v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
-            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id">{{ op.name || op.username }}</Select.Option>
+          <Select show-search v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
+            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id" :label="op.name || op.username">{{ op.name || op.username }}</Select.Option>
           </Select>
           <Button type="primary" @click="handleSearch">查询</Button>
           <Button @click="handleReset">重置</Button>
           <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
           <Button style="margin-left: 12px;" @click="openBatchAdminModal">批量修改运营者</Button>
+          <Button style="margin-left: 12px;" @click="openBatchStyleModal">批量配置样式</Button>
           <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
           <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
         </div>
@@ -1178,6 +1281,7 @@ onMounted(() => {
               <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
               <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
               <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
+              <a style="margin-right: 12px; color: #722ed1;" @click="openStyleModal(record)">文章样式</a>
               <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
                 {{ record.status === 1 ? '禁用' : '启用' }}
               </a>
@@ -1191,21 +1295,22 @@ onMounted(() => {
           <Input v-model:value="searchMap[activeTab].username" placeholder="用户名" style="width: 160px;" />
           <Input v-model:value="searchMap[activeTab].email" placeholder="邮箱" style="width: 160px;" />
           <Input v-model:value="searchMap[activeTab].wxName" placeholder="公众号名称" style="width: 160px;" />
-          <Select v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
+          <Select show-search v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
             <Select.Option value="公众号">公众号</Select.Option>
             <Select.Option value="今日头条">今日头条</Select.Option>
             <Select.Option value="百家号">百家号</Select.Option>
           </Select>
-          <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
-            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          <Select show-search v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
+            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
           </Select>
-          <Select v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
-            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id">{{ op.name || op.username }}</Select.Option>
+          <Select show-search v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
+            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id" :label="op.name || op.username">{{ op.name || op.username }}</Select.Option>
           </Select>
           <Button type="primary" @click="handleSearch">查询</Button>
           <Button @click="handleReset">重置</Button>
           <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
           <Button style="margin-left: 12px;" @click="openBatchAdminModal">批量修改运营者</Button>
+          <Button style="margin-left: 12px;" @click="openBatchStyleModal">批量配置样式</Button>
           <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
           <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
         </div>
@@ -1227,6 +1332,7 @@ onMounted(() => {
               <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
               <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
               <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
+              <a style="margin-right: 12px; color: #722ed1;" @click="openStyleModal(record)">文章样式</a>
               <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
                 {{ record.status === 1 ? '禁用' : '启用' }}
               </a>
@@ -1240,21 +1346,22 @@ onMounted(() => {
           <Input v-model:value="searchMap[activeTab].username" placeholder="用户名" style="width: 160px;" />
           <Input v-model:value="searchMap[activeTab].email" placeholder="邮箱" style="width: 160px;" />
           <Input v-model:value="searchMap[activeTab].wxName" placeholder="公众号名称" style="width: 160px;" />
-          <Select v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
+          <Select show-search v-model:value="searchMap[activeTab].platform" placeholder="平台" style="width: 130px;" allowClear>
             <Select.Option value="公众号">公众号</Select.Option>
             <Select.Option value="今日头条">今日头条</Select.Option>
             <Select.Option value="百家号">百家号</Select.Option>
           </Select>
-          <Select v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
-            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          <Select show-search v-model:value="searchMap[activeTab].trackId" placeholder="赛道" style="width: 160px;" allowClear>
+            <Select.Option v-for="t in allTracks" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
           </Select>
-          <Select v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
-            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id">{{ op.name || op.username }}</Select.Option>
+          <Select show-search v-if="isSuperAdmin" v-model:value="searchMap[activeTab].adminId" placeholder="归属运营者" style="width: 160px;" allowClear>
+            <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id" :label="op.name || op.username">{{ op.name || op.username }}</Select.Option>
           </Select>
           <Button type="primary" @click="handleSearch">查询</Button>
           <Button @click="handleReset">重置</Button>
           <Button style="margin-left: auto;" @click="handleExport">导出 Excel</Button>
           <Button style="margin-left: 12px;" @click="openBatchAdminModal">批量修改运营者</Button>
+          <Button style="margin-left: 12px;" @click="openBatchStyleModal">批量配置样式</Button>
           <Button style="margin-left: 12px;" @click="openImportModal">批量导入</Button>
           <Button type="primary" style="margin-left: 12px;" @click="handleAdd">+ 新增用户</Button>
         </div>
@@ -1276,6 +1383,7 @@ onMounted(() => {
               <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
               <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
               <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
+              <a style="margin-right: 12px; color: #722ed1;" @click="openStyleModal(record)">文章样式</a>
               <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
                 {{ record.status === 1 ? '禁用' : '启用' }}
               </a>
@@ -1286,7 +1394,7 @@ onMounted(() => {
     </Tabs>
 
     <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
-      <Pagination v-model:current="currentPage" v-model:page-size="pageSize" :total="filteredData.length" :show-total="total => `共 ${total} 条`" />
+      <Pagination v-model:current="currentPage" v-model:page-size="pageSize" :total="filteredData.length" show-size-changer :page-size-options="['10', '20', '50', '100']" :show-total="total => `共 ${total} 条`" />
     </div>
   </Card>
 
@@ -1297,7 +1405,7 @@ onMounted(() => {
       </Form.Item>
       <Form.Item label="联系方式">
         <div style="display: grid; grid-template-columns: 120px 1fr; gap: 12px; align-items: flex-end;">
-          <Select v-model:value="addForm.contactType">
+          <Select show-search v-model:value="addForm.contactType">
             <Select.Option value="手机号">手机号</Select.Option>
             <Select.Option value="微信号">微信号</Select.Option>
             <Select.Option value="邮箱">邮箱</Select.Option>
@@ -1324,8 +1432,8 @@ onMounted(() => {
         </Form.Item>
       </div>
       <Form.Item label="会员套餐">
-        <Select v-model:value="addForm.membershipPlanId" placeholder="请选择会员套餐" allow-clear style="width: 240px;" @change="(val) => { addForm.expireDate = computeExpireDate(val) }">
-          <Select.Option v-for="p in allPlans" :key="p.id" :value="p.id">{{ p.name }}</Select.Option>
+        <Select show-search v-model:value="addForm.membershipPlanId" placeholder="请选择会员套餐" allow-clear style="width: 240px;" @change="(val) => { addForm.expireDate = computeExpireDate(val) }">
+          <Select.Option v-for="p in allPlans" :key="p.id" :value="p.id" :label="p.name">{{ p.name }}</Select.Option>
         </Select>
       </Form.Item>
       <div style="font-size: 12px; color: #999; margin-top: -8px; margin-bottom: 16px;">可选赛道数 0 表示不限制。选择套餐后会自动计算到期时间</div>
@@ -1336,8 +1444,8 @@ onMounted(() => {
         <Checkbox v-model:checked="addForm.canSetEmail" :true-value="1" :false-value="0">允许设置邮箱接收文章</Checkbox>
       </Form.Item>
       <Form.Item label="用户类型">
-        <Select v-model:value="addForm.userType" style="width: 200px;">
-          <Select.Option v-for="opt in userTypeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
+        <Select show-search v-model:value="addForm.userType" style="width: 200px;">
+          <Select.Option v-for="opt in userTypeOptions" :key="opt.value" :value="opt.value" :label="opt.label">{{ opt.label }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item label="备注">
@@ -1361,8 +1469,8 @@ onMounted(() => {
         <Input v-model:value="editForm.nickName" placeholder="请输入微信名称" />
       </Form.Item>
       <Form.Item v-if="isSuperAdmin" label="归属运营者">
-        <Select v-model:value="editForm.adminId" placeholder="请选择归属运营者" allow-clear style="width: 100%;">
-          <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id">{{ op.name || op.username }}</Select.Option>
+        <Select show-search v-model:value="editForm.adminId" placeholder="请选择归属运营者" allow-clear style="width: 100%;">
+          <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id" :label="op.name || op.username">{{ op.name || op.username }}</Select.Option>
         </Select>
       </Form.Item>
       <div v-if="editForm.userType === 1" style="margin-bottom: 16px; padding: 12px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px;">
@@ -1377,8 +1485,8 @@ onMounted(() => {
           <Input v-model:value="editForm.inviteCode" placeholder="请输入邀请码" />
         </Form.Item>
         <Form.Item label="邀请人">
-          <Select v-model:value="editForm.invitedBy" placeholder="请选择邀请人" allow-clear style="width: 100%;">
-            <Select.Option v-for="u in data" :key="u.id" :value="u.id">{{ u.username }}</Select.Option>
+          <Select show-search v-model:value="editForm.invitedBy" placeholder="请选择邀请人" allow-clear style="width: 100%;">
+            <Select.Option v-for="u in data" :key="u.id" :value="u.id" :label="u.username">{{ u.username }}</Select.Option>
           </Select>
         </Form.Item>
       </div>
@@ -1391,8 +1499,8 @@ onMounted(() => {
         </Form.Item>
       </div>
       <Form.Item label="会员套餐">
-        <Select v-model:value="editForm.membershipPlanId" placeholder="请选择会员套餐" allow-clear style="width: 240px;" @change="(val) => { editForm.expireDate = computeExpireDate(val, editForm.expireDate) }">
-          <Select.Option v-for="p in allPlans" :key="p.id" :value="p.id">{{ p.name }}</Select.Option>
+        <Select show-search v-model:value="editForm.membershipPlanId" placeholder="请选择会员套餐" allow-clear style="width: 240px;" @change="(val) => { editForm.expireDate = computeExpireDate(val, editForm.expireDate) }">
+          <Select.Option v-for="p in allPlans" :key="p.id" :value="p.id" :label="p.name">{{ p.name }}</Select.Option>
         </Select>
       </Form.Item>
       <div style="font-size: 12px; color: #999; margin-top: -8px; margin-bottom: 16px;">0 表示不限制赛道数。选择套餐后会自动计算到期时间</div>
@@ -1400,8 +1508,8 @@ onMounted(() => {
         <Checkbox.Group :value="editForm.platformLimit" :options="platformOptions" @change="(val) => handlePlatformLimitChange(editForm, val)" />
       </Form.Item>
       <Form.Item label="默认样式">
-        <Select v-model:value="editForm.template" placeholder="请选择默认样式" allow-clear style="width: 240px;">
-          <Select.Option v-for="s in allStyles" :key="s.id" :value="s.name">{{ s.name }}</Select.Option>
+        <Select show-search v-model:value="editForm.template" placeholder="请选择默认样式" allow-clear style="width: 240px;">
+          <Select.Option v-for="s in allStyles" :key="s.id" :value="s.name" :label="s.name">{{ s.name }}</Select.Option>
         </Select>
         <div style="font-size: 12px; color: #999; margin-top: 4px;">用户在创作文章时使用的默认排版风格</div>
       </Form.Item>
@@ -1409,14 +1517,14 @@ onMounted(() => {
         <Checkbox v-model:checked="editForm.canSetEmail" :true-value="1" :false-value="0">允许设置邮箱接收文章</Checkbox>
       </Form.Item>
       <Form.Item label="账号状态">
-        <Select v-model:value="editForm.status">
+        <Select show-search v-model:value="editForm.status">
           <Select.Option :value="1">正常</Select.Option>
           <Select.Option :value="0">已禁用</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item label="用户类型">
-        <Select v-model:value="editForm.userType" style="width: 200px;">
-          <Select.Option v-for="opt in userTypeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
+        <Select show-search v-model:value="editForm.userType" style="width: 200px;">
+          <Select.Option v-for="opt in userTypeOptions" :key="opt.value" :value="opt.value" :label="opt.label">{{ opt.label }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item label="备注">
@@ -1577,13 +1685,13 @@ onMounted(() => {
   >
     <div style="margin-top: 12px;">
       <div style="display: flex; gap: 12px; margin-bottom: 16px;">
-        <Select
+        <Select show-search
           v-model:value="selectedAddTrackId"
           placeholder="选择要添加的赛道"
           style="flex: 1;"
           allowClear
         >
-          <Select.Option v-for="t in availableTracksForAdd" :key="t.id" :value="t.id">
+          <Select.Option v-for="t in availableTracksForAdd" :key="t.id" :value="t.id" :label="t.name + '（' + ((t.platforms || '').split(/[,，\s]+/).filter(Boolean).join('、') || '-') + '）'">
             {{ t.name }}（{{ (t.platforms || '').split(/[,，\s]+/).filter(Boolean).join('、') || '-' }}）
           </Select.Option>
         </Select>
@@ -1653,8 +1761,8 @@ onMounted(() => {
   >
     <Form layout="vertical" style="margin-top: 12px;">
       <Form.Item label="套餐" required>
-        <Select v-model:value="orderForm.planId" placeholder="选择套餐" allowClear>
-          <Select.Option v-for="p in allPlans" :key="p.id" :value="p.id">{{ p.name }}（¥{{ p.price }}）</Select.Option>
+        <Select show-search v-model:value="orderForm.planId" placeholder="选择套餐" allowClear>
+          <Select.Option v-for="p in allPlans" :key="p.id" :value="p.id" :label="p.name + '（¥' + p.price + '）'">{{ p.name }}（¥{{ p.price }}）</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item label="金额（留空自动取套餐价格）">
@@ -1709,10 +1817,63 @@ onMounted(() => {
         已选择 <strong style="color: #1890ff;">{{ selectedRowKeys.length }}</strong> 位用户
       </div>
       <Form.Item label="归属运营者">
-        <Select v-model:value="batchAdminId" placeholder="请选择归属运营者（留空表示取消归属）" allow-clear style="width: 100%;">
-          <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id">{{ op.name || op.username }}</Select.Option>
+        <Select show-search v-model:value="batchAdminId" placeholder="请选择归属运营者（留空表示取消归属）" allow-clear style="width: 100%;">
+          <Select.Option v-for="op in allOperators" :key="op.id" :value="op.id" :label="op.name || op.username">{{ op.name || op.username }}</Select.Option>
         </Select>
       </Form.Item>
+    </Form>
+  </Modal>
+
+  <!-- Batch Style Modal -->
+  <Modal
+    v-model:open="batchStyleModalOpen"
+    title="批量配置样式提示词"
+    :mask-closable="false"
+    :confirm-loading="batchStyleLoading"
+    @ok="handleBatchSaveStyle"
+    :width="640"
+  >
+    <Form layout="vertical" style="margin-top: 12px;">
+      <div style="margin-bottom: 16px; color: #666; font-size: 13px;">
+        已选择 <strong style="color: #1890ff;">{{ selectedRowKeys.length }}</strong> 位用户
+      </div>
+      <Form.Item label="样式提示词">
+        <Input.TextArea
+          v-model:value="batchStyleForm"
+          :rows="8"
+          placeholder="请输入要批量应用的样式提示词..."
+        />
+      </Form.Item>
+      <div style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 12px; font-size: 12px; color: #52c41a;">
+        <div style="font-weight: 600; margin-bottom: 8px;">使用说明</div>
+        <div>此处填写的样式提示词将批量应用到已勾选的所有用户。</div>
+        <div style="margin-top: 4px;">留空表示清空这些用户的样式提示词（他们将使用系统默认样式）。</div>
+      </div>
+    </Form>
+  </Modal>
+
+  <!-- Style Config Modal -->
+  <Modal
+    v-model:open="styleModalOpen"
+    :title="`文章样式提示词 — ${styleUser.username || ''}`"
+    :mask-closable="false"
+    :confirm-loading="styleLoading"
+    @ok="saveStyle"
+    :width="640"
+  >
+    <Form layout="vertical" style="margin-top: 12px;">
+      <Form.Item label="样式提示词">
+        <Input.TextArea
+          v-model:value="styleForm"
+          :rows="8"
+          placeholder="请输入该用户专属的文章排版样式描述..."
+        />
+      </Form.Item>
+      <div style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 12px; font-size: 12px; color: #52c41a;">
+        <div style="font-weight: 600; margin-bottom: 8px;">使用说明</div>
+        <div>在此处填写该用户的专属样式描述，支持任意自然语言。</div>
+        <div style="margin-top: 4px;">在「标题库」的提示词模板中使用 <span style="font-family: monospace;">${stylePrompt}</span> 变量即可引用此处内容。</div>
+      </div>
     </Form>
   </Modal>
 </template>

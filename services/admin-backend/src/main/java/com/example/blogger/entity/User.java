@@ -30,6 +30,7 @@ public class User {
     private Integer isDeleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private String styleConfig;
     private java.util.List<String> trackIds;
 
     public String getId() { return id; }
@@ -86,6 +87,8 @@ public class User {
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+    public String getStyleConfig() { return styleConfig; }
+    public void setStyleConfig(String styleConfig) { this.styleConfig = styleConfig; }
     public java.util.List<String> getTrackIds() { return trackIds; }
     public void setTrackIds(java.util.List<String> trackIds) { this.trackIds = trackIds; }
 }

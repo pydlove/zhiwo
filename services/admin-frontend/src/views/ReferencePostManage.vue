@@ -295,13 +295,13 @@ onMounted(loadData)
   <Card :body-style="{ padding: '24px' }" style="border-radius: 2px;">
     <div style="display: flex; gap: 12px; margin-bottom: 24px; align-items: center; flex-wrap: wrap;">
       <Input v-model:value="search" placeholder="搜索文章标题" style="width: 240px;" />
-      <Select v-model:value="platformFilter" placeholder="全部平台" style="min-width: 140px;" allow-clear>
-        <Select.Option v-for="opt in platformOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
+      <Select show-search v-model:value="platformFilter" placeholder="全部平台" style="min-width: 140px;" allow-clear>
+        <Select.Option v-for="opt in platformOptions" :key="opt.value" :value="opt.value" :label="opt.label">{{ opt.label }}</Select.Option>
       </Select>
-      <Select v-model:value="trackFilter" placeholder="全部赛道" style="min-width: 160px;" allow-clear :disabled="!platformFilter">
-        <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+      <Select show-search v-model:value="trackFilter" placeholder="全部赛道" style="min-width: 160px;" allow-clear :disabled="!platformFilter">
+        <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
       </Select>
-      <Select v-model:value="statusFilter" placeholder="全部状态" style="min-width: 140px;" allow-clear>
+      <Select show-search v-model:value="statusFilter" placeholder="全部状态" style="min-width: 140px;" allow-clear>
         <Select.Option value="已上架">已上架</Select.Option>
         <Select.Option value="已下架">已下架</Select.Option>
       </Select>
@@ -341,13 +341,13 @@ onMounted(loadData)
     <Form layout="vertical" style="margin-top: 12px;">
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <Form.Item label="平台" required>
-          <Select v-model:value="form.platform" placeholder="请选择平台">
-            <Select.Option v-for="opt in platformOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
+          <Select show-search v-model:value="form.platform" placeholder="请选择平台">
+            <Select.Option v-for="opt in platformOptions" :key="opt.value" :value="opt.value" :label="opt.label">{{ opt.label }}</Select.Option>
           </Select>
         </Form.Item>
         <Form.Item label="所属赛道" required>
-          <Select v-model:value="form.trackId" placeholder="请先选择平台，再选择赛道" :disabled="!form.platform">
-            <Select.Option v-for="t in filteredTracksForModal" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          <Select show-search v-model:value="form.trackId" placeholder="请先选择平台，再选择赛道" :disabled="!form.platform">
+            <Select.Option v-for="t in filteredTracksForModal" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
           </Select>
         </Form.Item>
       </div>
@@ -356,7 +356,7 @@ onMounted(loadData)
       </Form.Item>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <Form.Item label="内容类型" required>
-          <Select v-model:value="form.contentType">
+          <Select show-search v-model:value="form.contentType">
             <Select.Option value="原文内容">原文内容</Select.Option>
             <Select.Option value="外部链接">外部链接</Select.Option>
           </Select>
@@ -366,7 +366,7 @@ onMounted(loadData)
         </Form.Item>
       </div>
       <Form.Item label="状态">
-        <Select v-model:value="form.status">
+        <Select show-search v-model:value="form.status">
           <Select.Option value="已上架">已上架</Select.Option>
           <Select.Option value="已下架">已下架</Select.Option>
         </Select>

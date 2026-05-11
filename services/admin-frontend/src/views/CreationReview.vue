@@ -96,11 +96,11 @@ onMounted(loadData)
   <Card :body-style="{ padding: '24px' }" style="border-radius: 2px;">
     <div style="display: flex; gap: 12px; margin-bottom: 24px; align-items: center; flex-wrap: wrap;">
       <Input v-model:value="keyword" placeholder="搜索创作标题" style="width: 240px;" />
-      <Select v-model:value="userFilter" placeholder="全部用户" style="min-width: 140px;" allow-clear>
-        <Select.Option v-for="u in users" :key="u.id" :value="u.username">{{ u.username }}</Select.Option>
+      <Select show-search v-model:value="userFilter" placeholder="全部用户" style="min-width: 140px;" allow-clear>
+        <Select.Option v-for="u in users" :key="u.id" :value="u.username" :label="u.username">{{ u.username }}</Select.Option>
       </Select>
-      <Select v-model:value="trackFilter" placeholder="全部赛道" style="min-width: 140px;" allow-clear>
-        <Select.Option v-for="t in tracks" :key="t.id" :value="t.name">{{ t.name }}</Select.Option>
+      <Select show-search v-model:value="trackFilter" placeholder="全部赛道" style="min-width: 140px;" allow-clear>
+        <Select.Option v-for="t in tracks" :key="t.id" :value="t.name" :label="t.name">{{ t.name }}</Select.Option>
       </Select>
       <Input type="date" v-model:value="dateFilter" style="width: 140px;" />
       <Button type="primary">查询</Button>

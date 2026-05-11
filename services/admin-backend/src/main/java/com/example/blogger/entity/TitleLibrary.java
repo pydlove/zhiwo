@@ -12,8 +12,13 @@ public class TitleLibrary {
     private Integer useCount;
     private Integer isUsed;
     private Integer isDeleted;
+    private Integer isAiPassed;
+    private Integer isCopied;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private String generatedFileUrl;
+    private String generatedFileName;
+    private LocalDateTime generatedAt;
 
     // display fields
     private String trackName;
@@ -47,6 +52,10 @@ public class TitleLibrary {
     public void setIsUsed(Integer isUsed) { this.isUsed = isUsed; }
     public Integer getIsDeleted() { return isDeleted; }
     public void setIsDeleted(Integer isDeleted) { this.isDeleted = isDeleted; }
+    public Integer getIsAiPassed() { return isAiPassed; }
+    public void setIsAiPassed(Integer isAiPassed) { this.isAiPassed = isAiPassed; }
+    public Integer getIsCopied() { return isCopied; }
+    public void setIsCopied(Integer isCopied) { this.isCopied = isCopied; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
@@ -67,4 +76,10 @@ public class TitleLibrary {
     public void setSubscriptionPostTitle(String subscriptionPostTitle) { this.subscriptionPostTitle = subscriptionPostTitle; }
     public String getSubscriptionPostFileUrl() { return subscriptionPostFileUrl; }
     public void setSubscriptionPostFileUrl(String subscriptionPostFileUrl) { this.subscriptionPostFileUrl = subscriptionPostFileUrl; }
+    public String getGeneratedFileUrl() { return generatedFileUrl; }
+    public void setGeneratedFileUrl(String generatedFileUrl) { this.generatedFileUrl = generatedFileUrl; }
+    public String getGeneratedFileName() { return generatedFileName; }
+    public void setGeneratedFileName(String generatedFileName) { this.generatedFileName = generatedFileName; }
+    public LocalDateTime getGeneratedAt() { return generatedAt; }
+    public void setGeneratedAt(LocalDateTime generatedAt) { this.generatedAt = generatedAt; }
 }

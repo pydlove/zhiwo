@@ -1,10 +1,12 @@
 <script setup>
 import { ref, onMounted, computed, h, nextTick, watch } from 'vue'
 import dayjs from 'dayjs'
-import { Card, Input, Select, Button, Table, Tag, Modal, Form, Popconfirm, message, Pagination, Descriptions, DatePicker, Tabs, Spin } from 'ant-design-vue'
-import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, matchCheck, matchPreview, matchConfirm, matchOne, unbindRecommendation, batchUnbindRecommendations, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed, batchChangeTrack, clearRecommendationsByDate, getUserHistory, saveArticleFeedback, listArticleFeedback, deleteArticleFeedback, generatePostSingle, getPostContent, removeAiFlavor } from '../api/titleLibrary.js'
+import { Card, Input, Select, Button, Table, Tag, Modal, Form, Popconfirm, message, Pagination, Descriptions, DatePicker, Tabs, Spin, InputNumber, Checkbox, CheckboxGroup } from 'ant-design-vue'
+import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, matchCheck, matchPreview, matchConfirm, matchOne, unbindRecommendation, batchUnbindRecommendations, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed, batchChangeTrack, clearRecommendationsByDate, getUserHistory, saveArticleFeedback, listArticleFeedback, deleteArticleFeedback, generatePostSingle, getPostContent, removeAiFlavor, batchAiPassed, batchCopied, autoInsertImages, sendArticleEmail } from '../api/titleLibrary.js'
+import { listAiFlavorRules } from '../api/aiFlavorRule.js'
 import { listTracks } from '../api/track.js'
 import { listUsers } from '../api/user.js'
+import request from '../api/request.js'
 import { renderAsync } from 'docx-preview'
 
 const activeTab = ref(localStorage.getItem('titleLibrary_activeTab') || 'all')
@@ -63,9 +65,9 @@ const simpleColumns = [
         h(Button, {
           type: 'link',
           size: 'small',
-          style: 'padding: 0; flex-shrink: 0; font-size: 12px;',
+          style: 'padding: 0; flex-shrink: 0; font-size: 12px; color: ' + (record.isCopied ? '#52c41a' : ''),
           onClick: () => copyRowPrompt(record)
-        }, () => '复制提示词'),
+        }, () => record.isCopied ? '✓ 已复制' : '复制提示词'),
         h(Button, {
           type: isUsed ? 'default' : 'primary',
           ghost: !isUsed,
@@ -111,6 +113,9 @@ const simpleColumns = [
 
 const selectedRowKeys = ref([])
 const selectedRows = ref([])
+const selectedTargetUserId = ref(undefined)
+
+const globalDefaultStylePrompt = ref('')
 
 const rowSelection = {
   onChange: (keys, rows) => {
@@ -313,9 +318,9 @@ const columns = [
         h(Button, {
           type: 'link',
           size: 'small',
-          style: 'padding: 0; flex-shrink: 0; font-size: 12px;',
+          style: 'padding: 0; flex-shrink: 0; font-size: 12px; color: ' + (record.isCopied ? '#52c41a' : ''),
           onClick: () => copyRowPrompt(record)
-        }, () => '复制提示词')
+        }, () => record.isCopied ? '✓ 已复制' : '复制提示词')
       )
       return h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, nodes)
     },
@@ -351,14 +356,51 @@ const columns = [
     },
   },
   {
+    title: 'AI味检测',
+    key: 'isAiPassed',
+    width: 90,
+    align: 'center',
+    customRender: ({ record }) => {
+      return record.isAiPassed
+        ? h(Tag, { color: 'success' }, () => '通过')
+        : h('span', { style: 'color: #999;' }, '-')
+    },
+  },
+  {
     title: '操作',
     key: 'action',
     width: 220,
     align: 'center',
     customRender: ({ record }) => {
+      const hasFile = !!(record.generatedFileUrl || record.subscriptionPostFileUrl)
       const btns = [
         h(Button, { type: 'link', size: 'small', onClick: () => handleEdit(record) }, () => '编辑'),
-        record.subscriptionPostId
+        hasFile
+          ? h(Button, {
+              type: 'link',
+              size: 'small',
+              style: 'padding: 0 4px;',
+              onClick: () => downloadArticle(record),
+            }, () => '下载文章')
+          : null,
+        hasFile
+          ? h(Button, {
+              type: 'link',
+              size: 'small',
+              style: 'padding: 0 4px;',
+              onClick: () => handlePreviewGeneratedArticle(record),
+            }, () => '预览文章')
+          : null,
+        hasFile && record.recommendUserId
+          ? h(Button, {
+              type: 'link',
+              size: 'small',
+              style: 'padding: 0 4px;',
+              loading: sendArticleEmailLoading.value,
+              onClick: () => sendArticleEmailToUser(record),
+            }, () => '发送文章邮件')
+          : null,
+        record.subscriptionPostId && !hasFile
           ? h(Button, {
               type: 'link',
               size: 'small',
@@ -366,13 +408,19 @@ const columns = [
               loading: sendEmailLoadingId.value === record.id,
               onClick: () => handleSendEmail(record),
             }, () => '发邮件')
-          : h(Button, {
+          : null,
+        !record.subscriptionPostId && !hasFile
+          ? h(Button, {
               type: 'link',
               size: 'small',
               style: 'padding: 0 4px;',
               loading: generatingPostId.value === record.id,
               onClick: () => handleGeneratePost(record),
-            }, () => '生成文章'),
+            }, () => '生成文章')
+          : null,
+        record.isAiPassed
+          ? h(Button, { type: 'link', size: 'small', style: 'color: #52c41a; padding: 0 4px;', disabled: true }, () => '✓ AI已过')
+          : h(Button, { type: 'link', size: 'small', style: 'padding: 0 4px;', onClick: () => handleAiPassedOne(record) }, () => 'AI味通过'),
         h(Button, { type: 'link', danger: true, size: 'small', onClick: () => handleDelete(record) }, () => '删除'),
       ].filter(Boolean)
       return h('div', { style: 'display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 4px;' }, btns)
@@ -423,11 +471,12 @@ async function loadData() {
     }
     loading.value = false
 
-    // 2. 后台异步加载赛道和用户列表，不阻塞表格显示
+    // 2. 后台异步加载赛道、用户列表和全局默认样式，不阻塞表格显示
     Promise.all([
       listTracks().catch(() => []),
       listUsers().catch(() => []),
-    ]).then(([trackList, userList]) => {
+      request.get('/configs').catch(() => null),
+    ]).then(([trackList, userList, configs]) => {
       tracks.value = trackList || []
       allUsers.value = (userList || []).map(u => ({
         id: u.id,
@@ -436,7 +485,11 @@ async function loadData() {
         email: u.email || '',
         wxName: u.wxName || '',
         status: u.status,
+        styleConfig: u.styleConfig || '',
       }))
+      if (configs && configs.defaultArticleStyle !== undefined) {
+        globalDefaultStylePrompt.value = configs.defaultArticleStyle
+      }
     }).catch(() => {
       // 辅助数据加载失败不影响主表格
     })
@@ -545,6 +598,7 @@ async function handleUnbind() {
 }
 
 const sendEmailLoadingId = ref(null)
+const sendArticleEmailLoading = ref(false)
 
 // 文章反馈相关
 const feedbackList = ref([])
@@ -581,6 +635,53 @@ async function handleGeneratePost(record) {
     message.error(e?.response?.data?.msg || e?.message || '生成失败')
   } finally {
     generatingPostId.value = null
+  }
+}
+
+function downloadArticle(record) {
+  const url = record.generatedFileUrl || record.subscriptionPostFileUrl
+  if (!url) return
+  const link = document.createElement('a')
+  link.href = url
+  link.download = record.generatedFileName || 'article.docx'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+function handlePreviewGeneratedArticle(record) {
+  const previewRecord = {
+    ...record,
+    subscriptionPostId: record.subscriptionPostId,
+    subscriptionPostTitle: record.title,
+    subscriptionPostFileUrl: record.generatedFileUrl || record.subscriptionPostFileUrl
+  }
+  handlePreviewPost(previewRecord)
+}
+
+async function sendArticleEmailToUser(record) {
+  if (!record.generatedFileUrl && !record.subscriptionPostFileUrl) {
+    message.warning('该标题尚未生成文章')
+    return
+  }
+  if (!record.recommendUserId) {
+    message.warning('该标题未关联用户，无法发送邮件')
+    return
+  }
+  // Get user email
+  const user = allUsers.value.find(u => String(u.id) === String(record.recommendUserId))
+  if (!user || !user.email) {
+    message.warning('关联用户未配置邮箱')
+    return
+  }
+  try {
+    sendArticleEmailLoading.value = true
+    await sendArticleEmail(record.id, user.email)
+    message.success('文章邮件发送成功')
+  } catch (e) {
+    message.error('发送邮件失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
+  } finally {
+    sendArticleEmailLoading.value = false
   }
 }
 
@@ -648,6 +749,32 @@ async function handleBatchUnbind() {
       }
     },
   })
+}
+
+async function handleBatchAiPassed() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择要标记的标题')
+    return
+  }
+  try {
+    const result = await batchAiPassed(selectedRowKeys.value)
+    message.success(`已标记 ${result.success} 条为 AI味检测通过` + (result.failed > 0 ? `，失败 ${result.failed} 条` : ''))
+    selectedRowKeys.value = []
+    selectedRows.value = []
+    loadData()
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e?.message || '标记失败')
+  }
+}
+
+async function handleAiPassedOne(record) {
+  try {
+    await batchAiPassed([record.id])
+    record.isAiPassed = 1
+    message.success('已标记为 AI味检测通过')
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e?.message || '标记失败')
+  }
 }
 
 async function handleBatchSendEmail() {
@@ -747,7 +874,7 @@ function handleDelete(record) {
 // Match today（审核制）
 const matching = ref(false)
 const matchModalOpen = ref(false)
-const matchForm = ref({ date: dayjs() })
+const matchForm = ref({ date: dayjs(localStorage.getItem('matchForm_date') || dayjs().format('YYYY-MM-DD')) })
 const matchPreviewData = ref([])      // 待审核匹配列表
 const matchPreviewLoading = ref(false)
 const matchOneLoadingId = ref(null)   // 正在重配的行
@@ -839,6 +966,9 @@ async function runMatchPreview() {
 
     // 加载完后，获取每个匹配用户的最高相似度
     await loadMatchSimilarities()
+
+    // 按用户名排序
+    matchPreviewData.value.sort((a, b) => (a.username || '').localeCompare(b.username || ''))
   } catch (e) {
     message.error('加载匹配预览失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
   } finally {
@@ -900,24 +1030,20 @@ async function handleRematchOne(record) {
   try {
     const dateStr = matchForm.value.date ? matchForm.value.date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD')
     const result = await matchOne(dateStr, record.userId, record.titleId)
-    record.titleId = result.titleId
-    record.title = result.title
-    record.editedTitle = result.title
-    record.trackId = result.trackId
-    record.platform = result.platform
-    record.trackName = result.trackName
-    // 重配成功后重新计算相似度
-    const hist = await getUserHistory(record.userId).catch(() => [])
-    const currentTitle = result.title || ''
-    let maxSim = 0
-    for (const h of hist) {
-      const hTitle = h.titleName || ''
-      if (hTitle && currentTitle) {
-        const sim = Math.round(similarity(currentTitle, hTitle) * 100)
-        if (sim > maxSim) maxSim = sim
-      }
+    // 从预览中移除旧标题对应的行，用新标题数据添加一行
+    matchPreviewData.value = matchPreviewData.value.filter(m => m.titleId !== record.titleId)
+    const newRecord = {
+      ...record,
+      titleId: result.titleId,
+      title: result.title,
+      editedTitle: result.title,
+      trackId: result.trackId,
+      platform: result.platform,
+      trackName: result.trackName,
+      maxSimilarity: null,
     }
-    record.maxSimilarity = maxSim
+    matchPreviewData.value.push(newRecord)
+    matchPreviewData.value.sort((a, b) => (a.username || '').localeCompare(b.username || ''))
     message.success('已重新匹配标题')
   } catch (e) {
     message.error(e?.response?.data?.msg || e?.message || '重配失败')
@@ -931,7 +1057,18 @@ function handleRemoveMatch(record) {
 }
 
 function handleApproveOne(record) {
-  record.approved = true
+  const dateStr = matchForm.value.date ? matchForm.value.date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD')
+  matchConfirm(dateStr, [{
+    titleId: record.titleId,
+    userId: record.userId,
+    editedTitle: record.editedTitle,
+  }]).then(() => {
+    message.success('已通过')
+    matchPreviewData.value = matchPreviewData.value.filter(m => m.titleId !== record.titleId)
+    loadData()
+  }).catch(e => {
+    message.error(e?.response?.data?.msg || e?.message || '保存失败')
+  })
 }
 
 function handleTitleEdit(record, newTitle) {
@@ -1475,24 +1612,112 @@ function insertFieldToTemplate(fieldKey) {
   }
 }
 
-function copyRowPrompt(record) {
-  const template = rowPromptTemplate.value
+async function copyRowPrompt(record) {
+  const template = rowPromptTemplate.value || ''
   if (!template.trim()) {
     message.warning('请先设置提示词模板')
     openRowPromptModal()
     return
   }
   let result = template
+
+  // 1. 先注入样式提示词变量
+  let stylePrompt = globalDefaultStylePrompt.value || ''
+  // 优先使用当前行数据的关联用户样式，其次用手动选择的目标用户
+  const relatedUserId = record.recommendUserId || selectedTargetUserId.value
+  if (relatedUserId) {
+    const uid = String(relatedUserId)
+    const user = allUsers.value.find(u => String(u.id) === uid)
+    if (user && user.styleConfig) {
+      stylePrompt = user.styleConfig
+    } else if (user && !user.styleConfig) {
+      message.info(`用户 ${user.username} 未配置文章样式，使用全局默认样式`)
+    }
+  }
+  // 使用 split/join 避免 $ 特殊字符问题
+  result = result.split('${stylePrompt}').join(stylePrompt)
+  if (template.includes('${stylePrompt}') && !stylePrompt) {
+    message.info('当前样式配置为空，${stylePrompt} 已被替换为空字符串')
+  }
+
+  // 2. 再注入字段变量
   for (const f of availableFields) {
     const val = record[f.key]
     const replacement = val !== undefined && val !== null ? String(val) : ''
-    result = result.replace(new RegExp('\\$\\{' + f.key + '\\}', 'g'), replacement)
+    result = result.split('${' + f.key + '}').join(replacement)
   }
-  navigator.clipboard.writeText(result).then(() => {
+
+  // 复制到剪贴板，带 fallback
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(result)
+    } else {
+      // fallback for older browsers / non-secure contexts
+      const textarea = document.createElement('textarea')
+      textarea.value = result
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      document.body.appendChild(textarea)
+      textarea.select()
+      const success = document.execCommand('copy')
+      document.body.removeChild(textarea)
+      if (!success) throw new Error('execCommand copy failed')
+    }
+    record.isCopied = 1
+    await batchCopied([record.id])
     message.success('已复制提示词')
-  }).catch(() => {
-    message.error('复制失败')
-  })
+  } catch {
+    message.error('复制失败，请手动复制')
+  }
+}
+
+// 自动插入图片弹框
+const AUTO_INSERT_IMAGES_KEY = 'autoInsertImages'
+const autoInsertImagesModalOpen = ref(false)
+const autoInsertImagesForm = ref({
+  fileDir: localStorage.getItem(AUTO_INSERT_IMAGES_KEY + '_fileDir') || '',
+  imageLibDir: localStorage.getItem(AUTO_INSERT_IMAGES_KEY + '_imageLibDir') || '',
+  count: parseInt(localStorage.getItem(AUTO_INSERT_IMAGES_KEY + '_count') || '3'),
+})
+const autoInsertImagesLoading = ref(false)
+
+function openAutoInsertImagesModal() {
+  autoInsertImagesModalOpen.value = true
+}
+
+function saveAutoInsertImagesParams() {
+  localStorage.setItem(AUTO_INSERT_IMAGES_KEY + '_fileDir', autoInsertImagesForm.value.fileDir)
+  localStorage.setItem(AUTO_INSERT_IMAGES_KEY + '_imageLibDir', autoInsertImagesForm.value.imageLibDir)
+  localStorage.setItem(AUTO_INSERT_IMAGES_KEY + '_count', String(autoInsertImagesForm.value.count))
+  message.success('参数已保存')
+}
+
+async function handleAutoInsertImages() {
+  if (!autoInsertImagesForm.value.fileDir.trim()) {
+    message.warning('请填写文件目录')
+    return
+  }
+  if (!autoInsertImagesForm.value.imageLibDir.trim()) {
+    message.warning('请填写图片库目录')
+    return
+  }
+  autoInsertImagesLoading.value = true
+  try {
+    const res = await autoInsertImages({
+      fileDir: autoInsertImagesForm.value.fileDir.trim(),
+      imageLibDir: autoInsertImagesForm.value.imageLibDir.trim(),
+      count: autoInsertImagesForm.value.count,
+    })
+    if (res && res.exitCode === 0) {
+      message.success('插入图片成功')
+    } else {
+      message.warning('执行完成但可能有异常：' + (res?.stdout || '未知'))
+    }
+  } catch (e) {
+    message.error('调用失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
+  } finally {
+    autoInsertImagesLoading.value = false
+  }
 }
 
 // 去除AI味弹框
@@ -1500,14 +1725,58 @@ const REMOVE_AI_FLAVOR_PATH_KEY = 'removeAiFlavor_path'
 const removeAiFlavorModalOpen = ref(false)
 const removeAiFlavorPath = ref(localStorage.getItem(REMOVE_AI_FLAVOR_PATH_KEY) || '')
 const removeAiFlavorLoading = ref(false)
+const removeAiFlavorRules = ref([
+  { from: '', to: '' }
+])
+const aiFlavorRulesLibrary = ref([])
+const removeAiFlavorSelectModalOpen = ref(false)
+const selectedAiFlavorRules = ref([])
 
 function openRemoveAiFlavorModal() {
   removeAiFlavorModalOpen.value = true
+  loadAiFlavorRulesLibrary()
+}
+
+async function loadAiFlavorRulesLibrary() {
+  try {
+    const result = await listAiFlavorRules()
+    aiFlavorRulesLibrary.value = result || []
+  } catch (e) {
+    console.error('加载规则库失败', e)
+  }
 }
 
 function saveRemoveAiFlavorPath() {
   localStorage.setItem(REMOVE_AI_FLAVOR_PATH_KEY, removeAiFlavorPath.value)
   message.success('路径已保存')
+}
+
+function addRemoveAiFlavorRule() {
+  removeAiFlavorRules.value.push({ from: '', to: '' })
+}
+
+function removeRemoveAiFlavorRule(index) {
+  if (removeAiFlavorRules.value.length > 1) {
+    removeAiFlavorRules.value.splice(index, 1)
+  }
+}
+
+function openRemoveAiFlavorSelectModal() {
+  selectedAiFlavorRules.value = []
+  removeAiFlavorSelectModalOpen.value = true
+}
+
+function confirmImportAiFlavorRules() {
+  for (const rule of selectedAiFlavorRules.value) {
+    const existIndex = removeAiFlavorRules.value.findIndex(r => r.from === rule.ruleFrom && r.to === rule.ruleTo)
+    if (existIndex < 0) {
+      removeAiFlavorRules.value.push({ from: rule.ruleFrom, to: rule.ruleTo })
+    }
+  }
+  removeAiFlavorSelectModalOpen.value = false
+  if (selectedAiFlavorRules.value.length > 0) {
+    message.success('已添加 ' + selectedAiFlavorRules.value.length + ' 条规则')
+  }
 }
 
 async function handleRemoveAiFlavor() {
@@ -1517,7 +1786,15 @@ async function handleRemoveAiFlavor() {
   }
   removeAiFlavorLoading.value = true
   try {
-    const res = await removeAiFlavor(removeAiFlavorPath.value.trim())
+    // 过滤掉空的规则对
+    const validRules = removeAiFlavorRules.value
+      .filter(r => r.from.trim())
+      .map(r => [r.from.trim(), r.to.trim()])
+    const params = {
+      path: removeAiFlavorPath.value.trim(),
+      rules: validRules
+    }
+    const res = await removeAiFlavor(params)
     if (res && res.exitCode === 0) {
       message.success('去除AI味成功')
     } else {
@@ -1951,14 +2228,14 @@ onMounted(() => {
           <Card :title="'标题库 — ' + t.label" :bordered="false">
             <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
               <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
-              <Select v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear @change="handleSearch">
-                <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value">{{ p.label }}</Select.Option>
+              <Select show-search v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear @change="handleSearch">
+                <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value" :label="p.label">{{ p.label }}</Select.Option>
               </Select>
-              <Select v-model:value="searchTrack" placeholder="选择赛道" style="width: 160px;" allowClear :disabled="!searchPlatform" @change="handleSearch">
-                <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+              <Select show-search v-model:value="searchTrack" placeholder="选择赛道" style="width: 160px;" allowClear :disabled="!searchPlatform" @change="handleSearch">
+                <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
               </Select>
               <Input v-model:value="searchUserName" placeholder="关联用户" style="width: 140px;" @pressEnter="handleSearch" />
-              <Select v-model:value="searchMatched" placeholder="匹配状态" style="width: 130px;" allowClear>
+              <Select show-search v-model:value="searchMatched" placeholder="匹配状态" style="width: 130px;" allowClear>
                 <Select.Option value="1">已匹配</Select.Option>
                 <Select.Option value="0">未匹配</Select.Option>
               </Select>
@@ -1971,11 +2248,16 @@ onMounted(() => {
               <Button @click="openGenerateModal">生成标题</Button>
               <Button type="primary" ghost :disabled="selectedRowKeys.length === 0" @click="handleBatchSendEmail">批量发邮件</Button>
               <Button danger :disabled="selectedRowKeys.length === 0" @click="handleBatchUnbind">批量解绑</Button>
+              <Button type="primary" ghost :disabled="selectedRowKeys.length === 0" @click="handleBatchAiPassed">检测AI味通过</Button>
               <Button @click="openExportRuleModal">导出</Button>
               <Button @click="openImportArticleModal">导入文章</Button>
+              <Select show-search v-model:value="selectedTargetUserId" placeholder="选择目标用户（用于样式）" style="width: 180px;" allowClear>
+                <Select.Option v-for="u in allUsers" :key="u.id" :value="u.id" :label="u.username">{{ u.username }}</Select.Option>
+              </Select>
               <Button @click="openCopyPromptModal">复制提示词</Button>
               <Button @click="openRowPromptModal">提示词模板</Button>
               <Button @click="openRemoveAiFlavorModal">去除AI味</Button>
+              <Button @click="openAutoInsertImagesModal">插入图片</Button>
               <Button type="primary" @click="handleAdd">+ 新增标题</Button>
             </div>
 
@@ -2068,13 +2350,13 @@ onMounted(() => {
       <Card title="标题库简洁视图" :bordered="false">
         <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
           <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
-          <Select v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear>
-            <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value">{{ p.label }}</Select.Option>
+          <Select show-search v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear>
+            <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value" :label="p.label">{{ p.label }}</Select.Option>
           </Select>
-          <Select v-model:value="searchTrack" placeholder="选择赛道" style="width: 160px;" allowClear :disabled="!searchPlatform">
-            <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+          <Select show-search v-model:value="searchTrack" placeholder="选择赛道" style="width: 160px;" allowClear :disabled="!searchPlatform">
+            <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
           </Select>
-          <Select v-model:value="searchIsUsed" placeholder="使用状态" style="width: 130px;" allowClear>
+          <Select show-search v-model:value="searchIsUsed" placeholder="使用状态" style="width: 130px;" allowClear>
             <Select.Option value="1">已使用</Select.Option>
             <Select.Option value="0">未使用</Select.Option>
           </Select>
@@ -2119,14 +2401,10 @@ onMounted(() => {
     >
       <Form.Item label="选择赛道" required
       >
-        <Select v-model:value="changeTrackForm.trackId" placeholder="请选择赛道"
+        <Select show-search v-model:value="changeTrackForm.trackId" placeholder="请选择赛道"
         >
-          <Select.Option v-for="t in tracks" :key="t.id" :value="t.id"
-          >{{ t.name }}
-          </Select.Option
-          >
-        </Select
-        >
+          <Select.Option v-for="t in tracks" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
+        </Select>
       </Form.Item
       >
       <div v-if="!changeTrackForm.singleRecord" style="color: #999; font-size: 12px;"
@@ -2147,7 +2425,7 @@ onMounted(() => {
     :width="1100"
   >
     <div style="margin-bottom: 12px; display: flex; gap: 12px; align-items: center;">
-      <DatePicker v-model:value="matchForm.date" placeholder="推荐日期" @change="runMatchPreview" />
+      <DatePicker v-model:value="matchForm.date" placeholder="推荐日期" @change="() => { localStorage.setItem('matchForm_date', matchForm.date.format('YYYY-MM-DD')); runMatchPreview(); }" />
       <Button @click="runMatchPreview" :loading="matchPreviewLoading">刷新预览</Button>
       <Button danger :loading="matchClearing" @click="handleClearAndMatch" style="margin-left: auto;">清理后重新匹配</Button>
     </div>
@@ -2242,7 +2520,129 @@ onMounted(() => {
         <DatePicker v-model:value="form.pushDate" placeholder="选择推荐日期" style="width: 100%;" />
       </Form.Item>
       <Form.Item label="适用平台-赛道">
-        <Select
+        <Select show-search
+          v-model:value="form.trackId"
+          placeholder="选择平台-赛道"
+          allowClear
+          @change="handleTrackChange"
+        >
+          <Select.Option v-for="t in sortedTrackOptions" :key="t.id" :value="t.id" :label="t.displayLabel">{{ t.displayLabel }}</Select.Option>
+        </Select>
+      </Form.Item>
+      <div v-if="!changeTrackForm.singleRecord" style="color: #999; font-size: 12px;"
+      >
+        已选择 {{ changeTrackForm.titleIds.length }} 条标题
+      </div
+      >
+    </Form
+    >
+  </Modal
+  >
+
+  <Modal
+    v-model:open="matchModalOpen"
+    title="匹配推荐"
+    :confirm-loading="matching"
+    @ok="handleMatchConfirm"
+    :width="1100"
+  >
+    <div style="margin-bottom: 12px; display: flex; gap: 12px; align-items: center;">
+      <DatePicker v-model:value="matchForm.date" placeholder="推荐日期" @change="() => { localStorage.setItem('matchForm_date', matchForm.date.format('YYYY-MM-DD')); runMatchPreview(); }" />
+      <Button @click="runMatchPreview" :loading="matchPreviewLoading">刷新预览</Button>
+      <Button danger :loading="matchClearing" @click="handleClearAndMatch" style="margin-left: auto;">清理后重新匹配</Button>
+    </div>
+    <div style="color: #999; font-size: 12px; margin-bottom: 12px;">
+      以下为系统预匹配结果，请审核后确认。所有变更前可编辑标题或重新匹配用户。
+    </div>
+
+    <!-- 加载中 -->
+    <div v-if="matchPreviewLoading" style="text-align: center; padding: 32px;">
+      <Spin /> 正在加载匹配预览...
+    </div>
+
+    <!-- 匹配预览表格 -->
+    <div v-else>
+      <Table
+        :data-source="matchPreviewData"
+        :pagination="{ pageSize: 10 }"
+        size="small"
+        :scroll="{ x: 900 }"
+        row-key="titleId"
+        style="border: 1px solid #f0f0f0; border-radius: 4px;"
+      >
+        <Table.Column title="标题" key="title" :width="420">
+          <template #default="{ record }">
+            <Input.TextArea
+              :value="record.editedTitle || record.title"
+              placeholder="可编辑标题"
+              :rows="2"
+              :auto-size="{ minRows: 1, maxRows: 3 }"
+              size="small"
+              @change="(e) => handleTitleEdit(record, e.target.value)"
+              style="font-size: 13px; width: 400px;"
+            />
+            <div v-if="record.editedTitle && record.editedTitle !== record.title" style="font-size: 11px; color: #52c41a;">已修改</div>
+          </template>
+        </Table.Column>
+        <Table.Column title="最高相似度" key="maxSimilarity" :width="100" align="center">
+          <template #default="{ record }">
+            <Tag v-if="record.maxSimilarity != null" :color="record.maxSimilarity >= 50 ? 'red' : record.maxSimilarity >= 25 ? 'orange' : 'green'" style="font-size: 12px;">
+              {{ record.maxSimilarity }}%
+            </Tag>
+            <span v-else style="color: #999;">-</span>
+          </template>
+        </Table.Column>
+        <Table.Column title="平台" dataIndex="platform" key="platform" :width="80" />
+        <Table.Column title="赛道" dataIndex="trackName" key="trackName" :width="100" />
+        <Table.Column title="匹配用户" key="user" :width="130">
+          <template #default="{ record }">
+            <a style="color: #1890ff;" @click="openHistoryModal(record.userId, record.username, record.editedTitle || record.title)">{{ record.username }}</a>
+            <div style="font-size: 11px; color: #999;">{{ record.userEmail }}</div>
+          </template>
+        </Table.Column>
+        <Table.Column title="操作" key="action" :width="200">
+          <template #default="{ record }">
+            <template v-if="record.approved">
+              <Tag color="green">已通过</Tag>
+            </template>
+            <template v-else>
+              <Button type="link" size="small" style="color: #52c41a;" @click="handleApproveOne(record)">通过</Button>
+              <Button
+                type="link" size="small"
+                :loading="matchOneLoadingId === record.titleId"
+                @click="handleRematchOne(record)"
+              >重配</Button>
+              <Popconfirm title="确定移除该项？" @confirm="handleRemoveMatch(record)">
+                <Button type="link" size="small" danger>移除</Button>
+              </Popconfirm>
+            </template>
+          </template>
+        </Table.Column>
+      </Table>
+
+      <div v-if="matchPreviewData.length === 0 && !matchPreviewLoading" style="text-align: center; padding: 24px; color: #999;">
+        暂无待匹配项
+      </div>
+
+      <div style="margin-top: 12px; font-size: 13px; color: #595959;">
+        共 <strong>{{ matchPreviewData.length }}</strong> 项待确认匹配
+      </div>
+    </div>
+  </Modal>
+
+  <Modal v-model:open="modalOpen" :title="modalTitle" :mask-closable="false" :confirm-loading="saving" @ok="handleSave">
+    <Form layout="vertical" style="margin-top: 12px;">
+      <Form.Item label="标题内容" required>
+        <Input.TextArea v-model:value="form.title" placeholder="请输入标题内容" :rows="3" />
+      </Form.Item>
+      <Form.Item label="描述">
+        <Input.TextArea v-model:value="form.description" placeholder="请输入标题SEO描述（30字以内）" :rows="2" />
+      </Form.Item>
+      <Form.Item label="推荐日期">
+        <DatePicker v-model:value="form.pushDate" placeholder="选择推荐日期" style="width: 100%;" />
+      </Form.Item>
+      <Form.Item label="适用平台-赛道">
+        <Select show-search
           v-model:value="form.trackId"
           placeholder="选择平台-赛道"
           allowClear
@@ -2252,8 +2652,8 @@ onMounted(() => {
         </Select>
       </Form.Item>
       <Form.Item label="关联用户">
-        <Select v-model:value="form.recommendUserId" placeholder="选择关联用户（可选）" allowClear style="width: 100%;" @change="handleUserChange">
-          <Select.Option v-for="u in filteredUsersForSelect" :key="u.id" :value="u.id">{{ u.displayText }}</Select.Option>
+        <Select show-search v-model:value="form.recommendUserId" placeholder="选择关联用户（可选）" allowClear style="width: 100%;" @change="handleUserChange">
+          <Select.Option v-for="u in filteredUsersForSelect" :key="u.id" :value="u.id" :label="u.displayText">{{ u.displayText }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item v-if="form.recommendUserName" label="当前关联">
@@ -2316,13 +2716,13 @@ onMounted(() => {
         </div>
       </div>
       <Form.Item label="选择平台">
-        <Select v-model:value="generatePlatforms" mode="multiple" placeholder="不选则生成全部平台" style="width: 100%;" @change="onPlatformChange">
-          <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value">{{ p.label }}</Select.Option>
+        <Select show-search v-model:value="generatePlatforms" mode="multiple" placeholder="不选则生成全部平台" style="width: 100%;" @change="onPlatformChange">
+          <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value" :label="p.label">{{ p.label }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item label="选择赛道">
-        <Select v-model:value="generateTrackIds" mode="multiple" placeholder="不选则生成全部赛道" style="width: 100%;">
-          <Select.Option v-for="t in filteredTracksForGenerate" :key="t.id" :value="t.id">{{ t.name }}</Select.Option>
+        <Select show-search v-model:value="generateTrackIds" mode="multiple" placeholder="不选则生成全部赛道" style="width: 100%;">
+          <Select.Option v-for="t in filteredTracksForGenerate" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item label="每个组合生成数量" required>
@@ -2337,7 +2737,7 @@ onMounted(() => {
           v-model:value="generateInstruction"
           placeholder="例如：更口语化、更具悬念、突出数字效果、适合抖音风格、偏新闻报道类..."
           :rows="2"
-          :maxlength="200"
+          :maxlength="1000"
           show-count
         />
         <div style="font-size: 12px; color: #999; margin-top: 4px;">不填则使用默认策略生成</div>
@@ -2663,7 +3063,7 @@ onMounted(() => {
     v-model:open="removeAiFlavorModalOpen"
     title="去除AI味"
     :mask-closable="false"
-    width="520"
+    width="600"
     :footer="null"
   >
     <div style="display: flex; flex-direction: column; gap: 16px;">
@@ -2671,12 +3071,86 @@ onMounted(() => {
         <div style="margin-bottom: 4px; font-size: 13px; color: #666;">文件或目录绝对路径</div>
         <Input v-model:value="removeAiFlavorPath" placeholder="请输入绝对路径，如 /Users/panyong/Documents/article.docx" />
       </div>
+      <div>
+        <div style="margin-bottom: 8px; font-size: 13px; color: #666;">
+          自定义替换规则 <Button type="link" size="small" @click="addRemoveAiFlavorRule">+ 添加规则</Button>
+          <Button type="link" size="small" @click="openRemoveAiFlavorSelectModal">从规则库选择</Button>
+        </div>
+        <div style="max-height: 200px; overflow-y: auto; border: 1px solid #d9d9d9; border-radius: 4px; padding: 8px;">
+          <div v-for="(rule, index) in removeAiFlavorRules" :key="index" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <Input v-model:value="rule.from" placeholder="替换前" style="width: 140px;" />
+            <span style="color: #999;">→</span>
+            <Input v-model:value="rule.to" placeholder="替换后（留空则删除）" style="width: 180px;" />
+            <Button type="link" size="small" danger @click="removeRemoveAiFlavorRule(index)">删除</Button>
+          </div>
+          <div v-if="removeAiFlavorRules.length === 0" style="color: #999; text-align: center; padding: 8px;">暂无规则</div>
+        </div>
+        <div style="font-size: 12px; color: #999; margin-top: 6px;">
+          内置规则：。→，；→，：/:→，、→，「」→空，——→，，「孤句号行」→合并到下一行（这些规则始终生效，列表中的规则在此基础上追加执行）
+        </div>
+      </div>
       <div style="font-size: 12px; color: #999; line-height: 1.6;">
-        点击"去除"后将调用本地脚本 <code>python replace_periods.py ${path}</code> 处理指定路径的文件。
+        点击"去除"后将调用本地脚本处理指定路径的文件。
       </div>
       <div style="display: flex; gap: 8px;">
         <Button @click="saveRemoveAiFlavorPath">保存路径</Button>
         <Button type="primary" :loading="removeAiFlavorLoading" @click="handleRemoveAiFlavor">去除</Button>
+      </div>
+    </div>
+  </Modal>
+
+  <!-- 从规则库选择弹窗 -->
+  <Modal
+    v-model:open="removeAiFlavorSelectModalOpen"
+    title="从规则库选择"
+    :mask-closable="false"
+    width="480"
+    @ok="confirmImportAiFlavorRules"
+    ok-text="确认添加"
+  >
+    <div style="max-height: 400px; overflow-y: auto;">
+      <div v-if="aiFlavorRulesLibrary.length === 0" style="text-align: center; padding: 40px; color: #999;">
+        规则库为空，请先在「AI去除规则」菜单中添加
+      </div>
+      <CheckboxGroup v-model:value="selectedAiFlavorRules" style="width: 100%;">
+        <div v-for="rule in aiFlavorRulesLibrary" :key="rule.id" style="padding: 10px 8px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
+          <Checkbox :value="rule">{{ '' }}</Checkbox>
+          <span style="flex: 1;">{{ rule.ruleFrom }}</span>
+          <span style="color: #999; font-size: 12px;">→</span>
+          <span style="flex: 1; color: #666;">{{ rule.ruleTo || '（删除）' }}</span>
+        </div>
+      </CheckboxGroup>
+    </div>
+  </Modal>
+
+  <!-- 自动插入图片弹窗 -->
+  <Modal
+    v-model:open="autoInsertImagesModalOpen"
+    title="自动插入图片"
+    :mask-closable="false"
+    width="520"
+    :footer="null"
+  >
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+      <div>
+        <div style="margin-bottom: 4px; font-size: 13px; color: #666;">文件目录（doc/docx 所在目录）</div>
+        <Input v-model:value="autoInsertImagesForm.fileDir" placeholder="如 /Users/panyong/Documents/articles" />
+      </div>
+      <div>
+        <div style="margin-bottom: 4px; font-size: 13px; color: #666;">图片库目录</div>
+        <Input v-model:value="autoInsertImagesForm.imageLibDir" placeholder="如 /Users/panyong/Pictures/article_images" />
+      </div>
+      <div>
+        <div style="margin-bottom: 4px; font-size: 13px; color: #666;">每个文件插入图片数量</div>
+        <InputNumber v-model:value="autoInsertImagesForm.count" :min="1" :max="20" style="width: 100%;" />
+      </div>
+      <div style="font-size: 12px; color: #999; line-height: 1.6;">
+        点击"插入"后将调用本地脚本处理指定目录及子目录下所有 docx 文件。<br>
+        第一张图片插入到文件最前面居中，后续图片随机插入到文末区域换行后居中显示。
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <Button @click="saveAutoInsertImagesParams">保存参数</Button>
+        <Button type="primary" :loading="autoInsertImagesLoading" @click="handleAutoInsertImages">插入</Button>
       </div>
     </div>
   </Modal>
@@ -2708,6 +3182,12 @@ onMounted(() => {
             size="small"
             @click="insertFieldToTemplate(f.key)"
           >{{ f.label }} <code style="margin-left: 4px;">{{ '${' + f.key + '}' }}</code></Button>
+        </div>
+      </div>
+      <div>
+        <div style="margin-bottom: 8px; font-size: 13px; color: #666; font-weight: 500;">样式提示词变量（根据「目标用户」配置自动注入，点击插入）</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          <Button size="small" @click="insertFieldToTemplate('stylePrompt')">样式提示词 <code style="margin-left: 4px;">${stylePrompt}</code></Button>
         </div>
       </div>
       <div style="display: flex; gap: 8px; margin-top: 8px;">

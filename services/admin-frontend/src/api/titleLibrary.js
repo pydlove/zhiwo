@@ -222,6 +222,30 @@ export function getPostContent(id) {
 }
 
 // 去除AI味：调用本地 python 脚本
-export function removeAiFlavor(path) {
-  return request.post('/title-library/remove-ai-flavor', { path })
+export function removeAiFlavor(params) {
+  return request.post('/title-library/remove-ai-flavor', params)
+}
+
+// 自动插入图片：调用本地 python 脚本
+export function autoInsertImages(data) {
+  return request.post('/title-library/auto-insert-images', data)
+}
+
+// 批量标记 AI 味检测通过
+export function batchAiPassed(titleIds) {
+  return request.post('/title-library/batch-ai-passed', { titleIds })
+}
+
+// 批量标记复制提示词
+export function batchCopied(titleIds) {
+  return request.post('/title-library/batch-copied', { titleIds })
+}
+
+// 发送文章邮件（带附件）
+export function sendArticleEmail(titleId, email) {
+  return request({
+    url: `/title-library/${titleId}/send-article-email`,
+    method: 'post',
+    data: { email }
+  })
 }

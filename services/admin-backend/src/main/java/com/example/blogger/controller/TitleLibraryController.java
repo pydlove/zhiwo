@@ -25,6 +25,7 @@ import org.apache.poi.hwpf.HWPFDocument;
 import org.apache.poi.hwpf.extractor.WordExtractor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.util.HtmlUtils;
 
 import jakarta.annotation.PostConstruct;
 import javax.sql.DataSource;
@@ -34,6 +35,8 @@ import java.sql.SQLException;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.*;
@@ -2818,8 +2821,18 @@ public class TitleLibraryController {
 
         try {
             // 读取文件
-            String realPath = System.getProperty("user.dir") + fileUrl.replace("/", File.separator);
-            File file = new File(realPath);
+            if (!fileUrl.startsWith("/uploads/articles/")) {
+                return Result.error("文件路径无效");
+            }
+
+            Path basePath = Paths.get(System.getProperty("user.dir"), "uploads", "articles").toAbsolutePath().normalize();
+            Path filePath = Paths.get(System.getProperty("user.dir"), fileUrl.replace("/", File.separator)).toAbsolutePath().normalize();
+
+            if (!filePath.startsWith(basePath)) {
+                return Result.error("文件路径无效");
+            }
+
+            File file = filePath.toFile();
             if (!file.exists()) {
                 return Result.error("文章文件不存在");
             }
@@ -2835,7 +2848,8 @@ public class TitleLibraryController {
     }
 
     private String buildArticleEmailHtml(TitleLibrary titleLib) {
-        return "<html><body><p>您好，您的文章《" + titleLib.getTitle() + "》已生成，附件为 DOCX 文件，请查收。</p></body></html>";
+        String title = HtmlUtils.htmlEscape(titleLib.getTitle());
+        return "<html><body><p>您好，您的文章《" + title + "》已生成，附件为 DOCX 文件，请查收。</p></body></html>";
     }
 
     @PostMapping("/batch-send-email")

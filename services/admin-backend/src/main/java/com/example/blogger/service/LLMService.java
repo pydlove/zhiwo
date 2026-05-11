@@ -5,32 +5,36 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.http.*;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.example.blogger.mapper.ConfigMapper;
 import com.example.blogger.entity.Config;
 
 import java.util.HashMap;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class LLMService {
 
-    @Autowired
-    private ConfigMapper configMapper;
+    private static final String KIMI_API_URL = "https://api.moonshot.cn/v1/chat/completions";
+    private static final String MINIMAX_API_URL = "https://api.minimax.chat/v1/chat/completions";
 
+    private static final int CONNECT_TIMEOUT_MS = 30000;
+    private static final int READ_TIMEOUT_MS = 300000;
+
+    private final ConfigMapper configMapper;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
-    private static final int TIMEOUT_MS = 300000; // 5分钟
+    private Map<String, String> configCache = null;
 
-    public LLMService() {
+    @Autowired
+    public LLMService(ConfigMapper configMapper) {
+        this.configMapper = configMapper;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(30000);
-        factory.setReadTimeout(TIMEOUT_MS);
+        factory.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        factory.setReadTimeout(READ_TIMEOUT_MS);
         this.restTemplate = new RestTemplate(factory);
         this.objectMapper = new ObjectMapper();
     }
@@ -68,7 +72,6 @@ public class LLMService {
             model = "moonshot-v1-8k";
         }
 
-        String url = "https://api.moonshot.cn/v1/chat/completions";
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("Authorization", "Bearer " + apiKey);
@@ -80,7 +83,7 @@ public class LLMService {
         });
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-        ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
+        ResponseEntity<String> response = restTemplate.exchange(KIMI_API_URL, HttpMethod.POST, entity, String.class);
 
         try {
             JsonNode root = objectMapper.readTree(response.getBody());
@@ -107,7 +110,6 @@ public class LLMService {
             model = "MiniMax-M2.7";
         }
 
-        String url = "https://api.minimax.chat/v1/chat/completions";
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("Authorization", "Bearer " + apiKey);
@@ -119,7 +121,7 @@ public class LLMService {
         });
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-        ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
+        ResponseEntity<String> response = restTemplate.exchange(MINIMAX_API_URL, HttpMethod.POST, entity, String.class);
 
         try {
             JsonNode root = objectMapper.readTree(response.getBody());
@@ -134,12 +136,13 @@ public class LLMService {
     }
 
     private String getConfigValue(String key) {
-        List<Config> configs = configMapper.findAll();
-        for (Config c : configs) {
-            if (key.equals(c.getConfigKey())) {
-                return c.getConfigValue();
+        if (configCache == null) {
+            List<Config> configs = configMapper.findAll();
+            configCache = new HashMap<>();
+            for (Config c : configs) {
+                configCache.put(c.getConfigKey(), c.getConfigValue());
             }
         }
-        return null;
+        return configCache.get(key);
     }
 }

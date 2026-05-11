@@ -1,9 +1,6 @@
 package com.example.blogger.service;
 
-import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.openai.OpenAiChatModel;
-import org.springframework.ai.openai.OpenAiChatOptions;
-import org.springframework.ai.openai.api.OpenAiApi;
+import dev.langchain4j.model.openai.OpenAiChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -22,7 +19,7 @@ import java.util.Map;
 @Service
 public class LLMService {
 
-    private static final String KIMI_API_URL = "https://api.kimi.com/coding";
+    private static final String KIMI_BASE_URL = "https://api.kimi.com/coding";
     private static final String MINIMAX_API_URL = "https://api.minimax.chat/v1/chat/completions";
 
     private static final int CONNECT_TIMEOUT_MS = 30000;
@@ -58,7 +55,7 @@ public class LLMService {
     }
 
     /**
-     * 调用 Kimi K2.6 API (Spring AI OpenAI 兼容模式)
+     * 调用 Kimi K2.6 API (LangChain4j OpenAI 兼容模式)
      */
     private String callKimiAPI(String prompt) {
         String apiKey = getConfigValue("apiKey");
@@ -76,17 +73,14 @@ public class LLMService {
         }
 
         try {
-            // 使用 Spring AI OpenAI 兼容模式调用 Kimi
-            OpenAiApi openAiApi = new OpenAiApi(KIMI_API_URL, apiKey);
-            OpenAiChatModel chatModel = new OpenAiChatModel(
-                openAiApi,
-                OpenAiChatOptions.builder()
-                    .model(model)
+            OpenAiChatModel chatModel = OpenAiChatModel.builder()
+                    .baseUrl(KIMI_BASE_URL)
+                    .apiKey(apiKey)
+                    .modelName(model)
                     .temperature(0.7)
-                    .build()
-            );
+                    .build();
 
-            return chatModel.call(prompt);
+            return chatModel.generate(prompt);
         } catch (Exception e) {
             System.err.println("[LLMService] Kimi API 调用异常: " + e.getClass().getName() + ": " + e.getMessage());
             if (e.getCause() != null) {

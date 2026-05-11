@@ -2797,6 +2797,47 @@ public class TitleLibraryController {
         }
     }
 
+    /**
+     * 发送文章邮件（带 DOCX 附件）
+     */
+    @PostMapping("/{id}/send-article-email")
+    public Result<Void> sendArticleEmail(@PathVariable String id, @RequestBody Map<String, String> body) {
+        TitleLibrary titleLib = titleLibraryService.getById(id);
+        if (titleLib == null) {
+            return Result.error("标题不存在");
+        }
+        String fileUrl = titleLib.getGeneratedFileUrl();
+        if (fileUrl == null || fileUrl.isEmpty()) {
+            return Result.error("该标题尚未生成文章");
+        }
+
+        String toEmail = body.get("email");
+        if (toEmail == null || toEmail.isEmpty()) {
+            return Result.error("邮箱地址不能为空");
+        }
+
+        try {
+            // 读取文件
+            String realPath = System.getProperty("user.dir") + fileUrl.replace("/", File.separator);
+            File file = new File(realPath);
+            if (!file.exists()) {
+                return Result.error("文章文件不存在");
+            }
+
+            // 发送邮件
+            String content = buildArticleEmailHtml(titleLib);
+            emailService.sendHtmlEmailWithAttachment(toEmail, "您的创作文章", content, file, titleLib.getGeneratedFileName());
+
+            return Result.ok(null);
+        } catch (Exception e) {
+            return Result.error("发送邮件失败: " + e.getMessage());
+        }
+    }
+
+    private String buildArticleEmailHtml(TitleLibrary titleLib) {
+        return "<html><body><p>您好，您的文章《" + titleLib.getTitle() + "》已生成，附件为 DOCX 文件，请查收。</p></body></html>";
+    }
+
     @PostMapping("/batch-send-email")
     public Result<Map<String, Object>> batchSendEmail(@RequestBody Map<String, Object> body) {
         try {

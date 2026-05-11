@@ -6,6 +6,7 @@ public class SubscriptionPost {
     private String id;
     private String userId;
     private String trackId;
+    private String titleLibraryId;
     private String title;
     private String description;
     private String fileUrl;
@@ -22,6 +23,8 @@ public class SubscriptionPost {
     public void setUserId(String userId) { this.userId = userId; }
     public String getTrackId() { return trackId; }
     public void setTrackId(String trackId) { this.trackId = trackId; }
+    public String getTitleLibraryId() { return titleLibraryId; }
+    public void setTitleLibraryId(String titleLibraryId) { this.titleLibraryId = titleLibraryId; }
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
     public String getDescription() { return description; }

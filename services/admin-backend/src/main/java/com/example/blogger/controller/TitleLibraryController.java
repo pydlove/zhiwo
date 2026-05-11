@@ -13,7 +13,11 @@ import com.example.blogger.service.SubscriptionPostService;
 import com.example.blogger.service.TitleLibraryService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.apache.poi.ss.usermodel.*;
+import com.example.blogger.service.LLMService;
+import com.example.blogger.util.DocxGenerator;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
@@ -59,6 +63,21 @@ public class TitleLibraryController {
     private final BannedWordMapper bannedWordMapper;
     private final com.example.blogger.service.TitleReviewService titleReviewService;
     private final ArticleFeedbackMapper articleFeedbackMapper;
+    private final ServerConfigMapper serverConfigMapper;
+    private final org.springframework.web.client.RestTemplate restTemplate;
+    private final ConfigMapper configMapper;
+
+    @Autowired
+    private LLMService llmService;
+
+    @Autowired
+    private DocxGenerator docxGenerator;
+
+    @Value("${app.script.replace-periods-path}")
+    private String replacePeriodsScriptPath;
+
+    @Value("${app.script.auto-insert-images-path:}")
+    private String autoInsertImagesScriptPath;
 
     // Async generate task storage (for titles)
     private final ConcurrentHashMap<String, Map<String, Object>> generateTasks = new ConcurrentHashMap<>();
@@ -95,7 +114,10 @@ public class TitleLibraryController {
                                   SubscriptionPostMapper subscriptionPostMapper,
                                   BannedWordMapper bannedWordMapper,
                                   com.example.blogger.service.TitleReviewService titleReviewService,
-                                  ArticleFeedbackMapper articleFeedbackMapper) {
+                                  ArticleFeedbackMapper articleFeedbackMapper,
+                                  ServerConfigMapper serverConfigMapper,
+                                  ConfigMapper configMapper,
+                                  org.springframework.web.client.RestTemplate restTemplate) {
         this.titleLibraryService = titleLibraryService;
         this.trackMapper = trackMapper;
         this.userMapper = userMapper;
@@ -111,6 +133,9 @@ public class TitleLibraryController {
         this.bannedWordMapper = bannedWordMapper;
         this.titleReviewService = titleReviewService;
         this.articleFeedbackMapper = articleFeedbackMapper;
+        this.serverConfigMapper = serverConfigMapper;
+        this.configMapper = configMapper;
+        this.restTemplate = restTemplate;
     }
 
     @PostConstruct
@@ -1128,6 +1153,241 @@ public class TitleLibraryController {
         }
     }
 
+    @PostMapping("/import-articles-from-dir")
+    public Result<Map<String, Object>> importArticlesFromDir(@RequestBody Map<String, String> req) {
+        String dirPath = req.get("dirPath");
+        if (dirPath == null || dirPath.isEmpty()) {
+            return Result.error("请填写目录路径");
+        }
+        File dir = new File(dirPath);
+        if (!dir.exists() || !dir.isDirectory()) {
+            return Result.error("目录不存在或不是有效目录: " + dirPath);
+        }
+
+        // 递归收集所有 .doc/.docx 文件
+        List<File> allFiles = new ArrayList<>();
+        collectFiles(dir, allFiles);
+        File[] files = allFiles.toArray(new File[0]);
+        if (files == null || files.length == 0) {
+            return Result.error("该目录下未找到 .doc/.docx 文件");
+        }
+
+        List<TitleLibrary> allTitles = titleLibraryService.list();
+        String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
+        File articlesDirFile = new File(articlesDir);
+        if (!articlesDirFile.exists()) {
+            articlesDirFile.mkdirs();
+        }
+
+        int success = 0;
+        int skip = 0;
+        List<Map<String, String>> errors = new ArrayList<>();
+        List<Map<String, String>> details = new ArrayList<>();
+
+        for (File file : files) {
+            Map<String, Object> singleResult = processSingleArticleFile(file, allTitles, articlesDir);
+            String status = (String) singleResult.get("status");
+            if ("success".equals(status)) {
+                success++;
+                details.add(Map.of(
+                    "file", (String) singleResult.get("file"),
+                    "title", (String) singleResult.get("title"),
+                    "user", (String) singleResult.getOrDefault("user", "")
+                ));
+            } else {
+                skip++;
+                errors.add(Map.of(
+                    "file", (String) singleResult.get("file"),
+                    "reason", (String) singleResult.get("reason")
+                ));
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", success);
+        result.put("skip", skip);
+        result.put("errors", errors);
+        result.put("details", details);
+        return Result.ok(result);
+    }
+
+    private void collectFiles(File dir, List<File> result) {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File f : files) {
+            if (f.isDirectory()) {
+                collectFiles(f, result);
+            } else {
+                String lower = f.getName().toLowerCase();
+                if (lower.endsWith(".doc") || lower.endsWith(".docx")) {
+                    result.add(f);
+                }
+            }
+        }
+    }
+
+    /**
+     * 解析服务器配置，优先使用默认配置
+     */
+    private ServerConfig resolveServerConfig(String serverConfigId) {
+        // 1. 如果传了具体配置ID，直接使用
+        if (serverConfigId != null && !serverConfigId.isEmpty()) {
+            ServerConfig config = serverConfigMapper.findById(serverConfigId);
+            if (config != null && (config.getIsActive() == null || Integer.valueOf(1).equals(config.getIsActive()))) {
+                log.info("[resolveServerConfig] 使用指定配置: id={}, name={}", config.getId(), config.getName());
+                return config;
+            }
+            log.warn("[resolveServerConfig] 指定配置不存在或未启用: id={}", serverConfigId);
+        }
+        // 2. 查找默认配置
+        ServerConfig defaultConfig = serverConfigMapper.findDefault();
+        if (defaultConfig != null) {
+            log.info("[resolveServerConfig] 使用默认配置: id={}, name={}", defaultConfig.getId(), defaultConfig.getName());
+            return defaultConfig;
+        }
+        // 3. 返回第一个启用配置
+        List<ServerConfig> activeConfigs = serverConfigMapper.findAllActive();
+        if (activeConfigs != null && !activeConfigs.isEmpty()) {
+            log.info("[resolveServerConfig] 使用第一个启用配置: id={}, name={}", activeConfigs.get(0).getId(), activeConfigs.get(0).getName());
+            return activeConfigs.get(0);
+        }
+        log.info("[resolveServerConfig] 没有可用的服务器配置，将本地处理");
+        return null;
+    }
+
+    /**
+     * 获取目标服务的基础地址
+     */
+    private String getBaseUrl(ServerConfig config) {
+        String host = config.getHost();
+        Integer port = config.getPort();
+        String scheme = (port == 443 || port == 8443) ? "https" : "http";
+        if (host.startsWith("http://") || host.startsWith("https://")) {
+            scheme = host.startsWith("https") ? "https" : "http";
+            host = host.replaceFirst("^https?://", "");
+        }
+        int p = (port == null || port == 80 || port == 443) ? (port == 443 || port == 8443 ? 8443 : 8080) : port;
+        return scheme + "://" + host + ":" + p;
+    }
+
+    private Map<String, Object> processSingleArticleFile(File file, List<TitleLibrary> allTitles, String articlesDir) {
+        String originalName = file.getName();
+        String baseName = originalName;
+        int lastSlash = Math.max(baseName.lastIndexOf('/'), baseName.lastIndexOf('\\'));
+        if (lastSlash >= 0) {
+            baseName = baseName.substring(lastSlash + 1);
+        }
+
+        String ext = "";
+        int lastDot = baseName.lastIndexOf('.');
+        if (lastDot > 0) {
+            ext = baseName.substring(lastDot + 1).toLowerCase();
+            baseName = baseName.substring(0, lastDot);
+        }
+        if (!"doc".equals(ext) && !"docx".equals(ext)) {
+            return Map.of("status", "skip", "file", originalName, "reason", "不是 .doc/.docx 文件");
+        }
+
+        String cleanName = baseName.replaceAll("^\\d+[-_.\\s]*", "").trim().toLowerCase();
+        if (cleanName.isEmpty()) {
+            cleanName = baseName.trim().toLowerCase();
+        }
+
+        TitleLibrary matchedTitle = null;
+        double bestScore = 0;
+        for (TitleLibrary tl : allTitles) {
+            String title = tl.getTitle();
+            if (title == null || title.isEmpty()) continue;
+            String cleanTitle = title.trim().toLowerCase();
+            double score = calculateMatchScore(cleanName, cleanTitle);
+            if (score > bestScore) {
+                bestScore = score;
+                matchedTitle = tl;
+            }
+        }
+
+        if (matchedTitle == null || bestScore < 0.3) {
+            return Map.of("status", "skip", "file", originalName, "reason", "未找到匹配的标题记录（最佳相似度：" + String.format("%.2f", bestScore) + "）");
+        }
+
+        TitleRecommendation rec = titleRecommendationMapper.findLatestByTitleId(matchedTitle.getId());
+        if (rec == null) {
+            return Map.of("status", "skip", "file", originalName, "reason", "标题「" + matchedTitle.getTitle() + "」没有关联的推荐记录");
+        }
+
+        String safeBase = baseName.replaceAll("[\\\\/:*?\"<>|\"\"]", "_").trim();
+        if (safeBase.isEmpty()) {
+            safeBase = matchedTitle.getTitle() != null ? matchedTitle.getTitle().replaceAll("[\\\\/:*?\"<>|\"\"]", "_").trim() : "article";
+        }
+        String fileName = safeBase + "." + ext;
+        String filePath = articlesDir + File.separator + fileName;
+
+        // Copy file to articles dir
+        try {
+            java.nio.file.Files.copy(file.toPath(), new File(filePath).toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception e) {
+            return Map.of("status", "skip", "file", originalName, "reason", "文件复制失败：" + e.getMessage());
+        }
+
+        // Extract text
+        String extractedText = "";
+        try (InputStream is = new FileInputStream(filePath)) {
+            if ("docx".equals(ext)) {
+                XWPFDocument document = new XWPFDocument(is);
+                StringBuilder sb = new StringBuilder();
+                for (XWPFParagraph para : document.getParagraphs()) {
+                    sb.append(para.getText()).append("\n");
+                }
+                extractedText = sb.toString();
+                document.close();
+            } else if ("doc".equals(ext)) {
+                HWPFDocument document = new HWPFDocument(is);
+                WordExtractor extractor = new WordExtractor(document);
+                extractedText = extractor.getText();
+                extractor.close();
+            }
+        } catch (Exception ex) {
+            System.err.println("[ImportArticleFromDir] 文本提取失败: " + originalName);
+            ex.printStackTrace();
+        }
+
+        // Replace periods
+        String processedText = extractedText;
+        if (!extractedText.isEmpty()) {
+            processedText = extractedText.replaceAll("。(?![\\r\\n])", "，");
+        }
+
+        // Create or update SubscriptionPost
+        String fileUrl = "/uploads/articles/" + fileName;
+        SubscriptionPost post;
+        if (rec.getSubscriptionPostId() != null && !rec.getSubscriptionPostId().isEmpty()) {
+            post = subscriptionPostService.getById(rec.getSubscriptionPostId());
+            if (post == null) {
+                post = new SubscriptionPost();
+            }
+        } else {
+            post = new SubscriptionPost();
+        }
+        post.setUserId(rec.getUserId());
+        post.setTrackId(rec.getTrackId());
+        post.setTitle(matchedTitle.getTitle());
+        post.setDescription(processedText);
+        post.setFileUrl(fileUrl);
+        post.setFileName(fileName);
+        post.setStatus("已上架");
+        post.setUsed(0);
+        subscriptionPostService.save(post);
+
+        titleRecommendationMapper.updateSubscriptionPostId(rec.getId(), post.getId());
+
+        return Map.of(
+            "status", "success",
+            "file", originalName,
+            "title", matchedTitle.getTitle(),
+            "user", rec.getUserName() != null ? rec.getUserName() : ""
+        );
+    }
+
     /**
      * Calculate match score between filename and title.
      * Returns value between 0 and 1, higher is better match.
@@ -1573,15 +1833,14 @@ public class TitleLibraryController {
             }
 
             Set<String> matchedCombosThisRun = new HashSet<>();
-            Set<String> matchedTitleIdsThisRun = new HashSet<>(); // 防止同一标题被重复匹配
+            Set<String> matchedTitleIdsThisRun = new HashSet<>();
             Random random = new Random();
             List<Map<String, Object>> proposedMatches = new ArrayList<>();
 
+            // 按赛道分组收集所有候选匹配对，再统一打乱随机抽取
+            List<Map<String, Object>> allCandidates = new ArrayList<>();
             for (TitleLibrary title : titles) {
-                // 跳过本次运行中已匹配过的标题
                 if (matchedTitleIdsThisRun.contains(title.getId())) continue;
-
-                List<User> eligible = new ArrayList<>();
                 for (User user : users) {
                     String comboKey = user.getId() + ":" + title.getTrackId();
                     if (existingCombos.contains(comboKey) || matchedCombosThisRun.contains(comboKey)) continue;
@@ -1598,16 +1857,30 @@ public class TitleLibraryController {
                             }
                         }
                     }
-                    if (trackMatched) eligible.add(user);
+                    if (!trackMatched) continue;
+
+                    Map<String, Object> cand = new HashMap<>();
+                    cand.put("title", title);
+                    cand.put("user", user);
+                    allCandidates.add(cand);
                 }
+            }
 
-                if (eligible.isEmpty()) continue;
+            // 打乱所有候选匹配对
+            Collections.shuffle(allCandidates, random);
 
-                User selected = eligible.get(random.nextInt(eligible.size()));
-                String matchedCombo = selected.getId() + ":" + title.getTrackId();
-                matchedCombosThisRun.add(matchedCombo);
-                existingCombos.add(matchedCombo);
-                matchedTitleIdsThisRun.add(title.getId()); // 标记该标题已匹配，防止同一次预览中重复出现
+            Set<String> usedTitleIds = new HashSet<>();
+            Set<String> usedCombos = new HashSet<>();
+            for (Map<String, Object> cand : allCandidates) {
+                TitleLibrary title = (TitleLibrary) cand.get("title");
+                User user = (User) cand.get("user");
+
+                if (usedTitleIds.contains(title.getId())) continue;
+                String combo = user.getId() + ":" + title.getTrackId();
+                if (usedCombos.contains(combo)) continue;
+
+                usedTitleIds.add(title.getId());
+                usedCombos.add(combo);
 
                 Map<String, Object> item = new HashMap<>();
                 item.put("titleId", title.getId());
@@ -1615,10 +1888,10 @@ public class TitleLibraryController {
                 item.put("platform", title.getPlatform());
                 item.put("trackId", title.getTrackId());
                 item.put("trackName", trackNameMap.getOrDefault(title.getTrackId(), title.getTrackId()));
-                item.put("userId", selected.getId());
-                item.put("username", selected.getUsername());
-                item.put("userEmail", selected.getEmail());
-                item.put("editedTitle", title.getTitle()); // 初始为原标题
+                item.put("userId", user.getId());
+                item.put("username", user.getUsername());
+                item.put("userEmail", user.getEmail());
+                item.put("editedTitle", title.getTitle());
                 proposedMatches.add(item);
             }
 
@@ -1839,6 +2112,52 @@ public class TitleLibraryController {
         return Result.ok(result);
     }
 
+    @PostMapping("/batch-ai-passed")
+    public Result<Map<String, Object>> batchAiPassed(@RequestBody Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
+        List<String> titleIds = (List<String>) body.get("titleIds");
+        if (titleIds == null || titleIds.isEmpty()) {
+            return Result.error("请选择要标记的标题");
+        }
+        int success = 0;
+        int failed = 0;
+        for (String id : titleIds) {
+            try {
+                titleLibraryService.updateIsAiPassed(id, 1);
+                success++;
+            } catch (Exception e) {
+                failed++;
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", success);
+        result.put("failed", failed);
+        return Result.ok(result);
+    }
+
+    @PostMapping("/batch-copied")
+    public Result<Map<String, Object>> batchCopied(@RequestBody Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
+        List<String> titleIds = (List<String>) body.get("titleIds");
+        if (titleIds == null || titleIds.isEmpty()) {
+            return Result.error("请选择要标记的标题");
+        }
+        int success = 0;
+        int failed = 0;
+        for (String id : titleIds) {
+            try {
+                titleLibraryService.updateIsCopied(id, 1);
+                success++;
+            } catch (Exception e) {
+                failed++;
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", success);
+        result.put("failed", failed);
+        return Result.ok(result);
+    }
+
     /**
      * 查询指定用户历史上绑定的所有标题记录（带相似度）
      */
@@ -1907,7 +2226,7 @@ public class TitleLibraryController {
     }
 
     /**
-     * 去除AI味：调用本地 python replace_periods.py 脚本处理指定路径的文件
+     * 去除AI味：调用本地 python 脚本处理指定路径的文件
      */
     @PostMapping("/remove-ai-flavor")
     public Result<Map<String, Object>> removeAiFlavor(@RequestBody Map<String, Object> params) {
@@ -1915,9 +2234,40 @@ public class TitleLibraryController {
         if (path.isEmpty()) {
             return Result.error("路径不能为空");
         }
+        if (replacePeriodsScriptPath == null || replacePeriodsScriptPath.isEmpty()) {
+            log.error("[removeAiFlavor] 脚本路径未配置，请检查 app.script.replace-periods-path");
+            return Result.error("脚本路径未配置，请联系管理员");
+        }
+        File scriptFile = new File(replacePeriodsScriptPath);
+        if (!scriptFile.exists()) {
+            log.error("[removeAiFlavor] 脚本文件不存在: {}", replacePeriodsScriptPath);
+            return Result.error("脚本文件不存在: " + replacePeriodsScriptPath);
+        }
 
         try {
-            ProcessBuilder pb = new ProcessBuilder("python", "replace_periods.py", path);
+            // 构建命令：python script.py <path> [--custom-rules <json>]
+            List<String> command = new ArrayList<>();
+            command.add("python");
+            command.add(replacePeriodsScriptPath);
+            command.add(path);
+
+            // 处理自定义规则
+            Object rulesObj = params.get("rules");
+            if (rulesObj != null) {
+                String rulesJson = null;
+                if (rulesObj instanceof List) {
+                    rulesJson = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(rulesObj);
+                } else if (rulesObj instanceof String) {
+                    rulesJson = (String) rulesObj;
+                }
+                if (rulesJson != null && !rulesJson.isEmpty()) {
+                    command.add("--custom-rules");
+                    command.add(rulesJson);
+                }
+            }
+
+            log.info("[removeAiFlavor] 执行脚本: {}", command);
+            ProcessBuilder pb = new ProcessBuilder(command);
             pb.redirectErrorStream(true);
             Process process = pb.start();
 
@@ -1940,9 +2290,60 @@ public class TitleLibraryController {
             Map<String, Object> result = new HashMap<>();
             result.put("exitCode", exitCode);
             result.put("stdout", stdout.toString().trim());
+            log.info("[removeAiFlavor] 脚本执行完成 exitCode={}", exitCode);
             return Result.ok(result);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("[removeAiFlavor] 执行失败", e);
+            return Result.error("执行失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 自动插入图片：调用本地 python 脚本处理指定目录的文档
+     */
+    @PostMapping("/auto-insert-images")
+    public Result<Map<String, Object>> autoInsertImages(@RequestBody Map<String, Object> params) {
+        String fileDir = params.get("fileDir") != null ? params.get("fileDir").toString() : "";
+        String imageLibDir = params.get("imageLibDir") != null ? params.get("imageLibDir").toString() : "";
+        int count = 1;
+        if (params.get("count") != null) {
+            try { count = Integer.parseInt(params.get("count").toString()); } catch (Exception ignored) {}
+        }
+        if (fileDir.isEmpty()) return Result.error("文件目录不能为空");
+        if (imageLibDir.isEmpty()) return Result.error("图片库目录不能为空");
+        if (count < 1) return Result.error("图片数量必须 >= 1");
+
+        if (autoInsertImagesScriptPath == null || autoInsertImagesScriptPath.isEmpty()) {
+            log.error("[autoInsertImages] 脚本路径未配置，请检查 app.script.auto-insert-images-path");
+            return Result.error("脚本路径未配置，请联系管理员");
+        }
+        File scriptFile = new File(autoInsertImagesScriptPath);
+        if (!scriptFile.exists()) {
+            log.error("[autoInsertImages] 脚本文件不存在: {}", autoInsertImagesScriptPath);
+            return Result.error("脚本文件不存在: " + autoInsertImagesScriptPath);
+        }
+
+        try {
+            log.info("[autoInsertImages] 执行脚本: python {} {} {} {}", autoInsertImagesScriptPath, fileDir, imageLibDir, count);
+            ProcessBuilder pb = new ProcessBuilder("python", autoInsertImagesScriptPath, fileDir, imageLibDir, String.valueOf(count));
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            StringBuilder stdout = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) stdout.append(line).append("\n");
+            }
+            process.waitFor();
+
+            int exitCode = process.exitValue();
+            Map<String, Object> result = new HashMap<>();
+            result.put("exitCode", exitCode);
+            result.put("stdout", stdout.toString().trim());
+            log.info("[autoInsertImages] 脚本执行完成 exitCode={}", exitCode);
+            return Result.ok(result);
+        } catch (Exception e) {
+            log.error("[autoInsertImages] 执行失败", e);
             return Result.error("执行失败：" + e.getMessage());
         }
     }
@@ -2107,38 +2508,36 @@ public class TitleLibraryController {
             return Result.error("标题不存在");
         }
         try {
-            // Build prompt for single title
-            String promptText = buildSingleArticlePrompt(titleLib);
+            // Step 1: Build prompt from rowPromptTemplate
+            String promptTemplate = buildPromptFromTemplate(titleLib);
 
-            // Call Claude
-            String content = callClaudeForContent(promptText, new File(System.getProperty("user.home")));
+            // Step 2: Call LLMService to generate content
+            String content = llmService.generateContent(promptTemplate);
             if (content == null || content.isEmpty()) {
                 return Result.error("文章生成失败，AI 返回内容为空");
             }
 
-            // Wrap with style CSS
-            String styleCss = buildDefaultStyleCss();
-            String fullHtml = wrapContentWithStyle(titleLib.getTitle(), content, styleCss);
-
-            // Save HTML file
+            // Step 3: Generate DOCX with Apache POI
             String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
             File dir = new File(articlesDir);
             if (!dir.exists()) {
                 dir.mkdirs();
             }
-            String fileName = "article_single_" + id + "_" + System.currentTimeMillis() + ".html";
+            String fileName = "article_" + id + "_" + System.currentTimeMillis() + ".docx";
             String filePath = articlesDir + File.separator + fileName;
-            try (FileWriter fw = new FileWriter(filePath, StandardCharsets.UTF_8)) {
-                fw.write(fullHtml);
-            }
+            docxGenerator.generateDocx(titleLib.getTitle(), content, filePath);
 
-            // Save subscription post (without user binding)
+            // Step 4: Update TitleLibrary with file association
+            String fileUrl = "/uploads/articles/" + fileName;
+            titleLibraryService.updateGeneratedFile(id, fileUrl, fileName);
+
+            // Step 5: Save to SubscriptionPost
             SubscriptionPost post = new SubscriptionPost();
-            post.setUserId(null);
+            post.setTitleLibraryId(id);
             post.setTrackId(titleLib.getTrackId());
             post.setTitle(titleLib.getTitle());
             post.setDescription(content);
-            post.setFileUrl("/uploads/articles/" + fileName);
+            post.setFileUrl(fileUrl);
             post.setFileName(fileName);
             post.setStatus("已上架");
             post.setUsed(0);
@@ -2146,7 +2545,8 @@ public class TitleLibraryController {
 
             Map<String, Object> result = new HashMap<>();
             result.put("postId", post.getId());
-            result.put("fileUrl", post.getFileUrl());
+            result.put("fileUrl", fileUrl);
+            result.put("fileName", fileName);
             result.put("title", titleLib.getTitle());
             return Result.ok(result);
         } catch (Exception e) {
@@ -2216,6 +2616,53 @@ public class TitleLibraryController {
         }
 
         return promptText;
+    }
+
+    /**
+     * 使用 rowPromptTemplate 模板填充变量后构建 prompt
+     */
+    private String buildPromptFromTemplate(TitleLibrary titleLib) {
+        // Read row prompt template from config
+        String template = getRowPromptTemplate();
+        if (template == null || template.isEmpty()) {
+            // Fallback: use the old buildSingleArticlePrompt
+            return buildSingleArticlePrompt(titleLib);
+        }
+
+        String result = template;
+
+        // Inject stylePrompt
+        String stylePrompt = "";
+        Style defaultStyle = styleMapper.findDefault();
+        if (defaultStyle != null) {
+            stylePrompt = defaultStyle.getScene() != null ? defaultStyle.getScene() : "";
+        }
+        result = result.replace("${stylePrompt}", stylePrompt);
+
+        // Inject field variables
+        result = result.replace("${title}", nvl(titleLib.getTitle()));
+        result = result.replace("${description}", nvl(titleLib.getDescription()));
+        result = result.replace("${platform}", nvl(titleLib.getPlatform()));
+        result = result.replace("${trackId}", nvl(titleLib.getTrackId()));
+        result = result.replace("${useCount}", titleLib.getUseCount() != null ? titleLib.getUseCount().toString() : "");
+        result = result.replace("${isUsed}", titleLib.getIsUsed() != null ? titleLib.getIsUsed().toString() : "");
+        result = result.replace("${pushDate}", titleLib.getPushDate() != null ? titleLib.getPushDate().toString() : "");
+
+        return result;
+    }
+
+    private String getRowPromptTemplate() {
+        List<Config> configs = configMapper.findAll();
+        for (Config c : configs) {
+            if ("row_prompt_template".equals(c.getConfigKey())) {
+                return c.getConfigValue();
+            }
+        }
+        return "";
+    }
+
+    private String nvl(String s) {
+        return s != null ? s : "";
     }
 
     /**

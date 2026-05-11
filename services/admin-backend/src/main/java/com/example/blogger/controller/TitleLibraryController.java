@@ -66,12 +66,8 @@ public class TitleLibraryController {
     private final ServerConfigMapper serverConfigMapper;
     private final org.springframework.web.client.RestTemplate restTemplate;
     private final ConfigMapper configMapper;
-
-    @Autowired
-    private LLMService llmService;
-
-    @Autowired
-    private DocxGenerator docxGenerator;
+    private final LLMService llmService;
+    private final DocxGenerator docxGenerator;
 
     @Value("${app.script.replace-periods-path}")
     private String replacePeriodsScriptPath;
@@ -117,7 +113,9 @@ public class TitleLibraryController {
                                   ArticleFeedbackMapper articleFeedbackMapper,
                                   ServerConfigMapper serverConfigMapper,
                                   ConfigMapper configMapper,
-                                  org.springframework.web.client.RestTemplate restTemplate) {
+                                  org.springframework.web.client.RestTemplate restTemplate,
+                                  LLMService llmService,
+                                  DocxGenerator docxGenerator) {
         this.titleLibraryService = titleLibraryService;
         this.trackMapper = trackMapper;
         this.userMapper = userMapper;
@@ -136,6 +134,8 @@ public class TitleLibraryController {
         this.serverConfigMapper = serverConfigMapper;
         this.configMapper = configMapper;
         this.restTemplate = restTemplate;
+        this.llmService = llmService;
+        this.docxGenerator = docxGenerator;
     }
 
     @PostConstruct
@@ -2647,6 +2647,12 @@ public class TitleLibraryController {
         result = result.replace("${useCount}", titleLib.getUseCount() != null ? titleLib.getUseCount().toString() : "");
         result = result.replace("${isUsed}", titleLib.getIsUsed() != null ? titleLib.getIsUsed().toString() : "");
         result = result.replace("${pushDate}", titleLib.getPushDate() != null ? titleLib.getPushDate().toString() : "");
+
+        // Append track feedback (same as old method)
+        String feedback = loadTrackFeedback(titleLib.getTrackId(), titleLib.getPlatform());
+        if (feedback != null && !feedback.isEmpty()) {
+            result += "\n\n【历史反馈 - 生成时需避免】\n" + feedback;
+        }
 
         return result;
     }

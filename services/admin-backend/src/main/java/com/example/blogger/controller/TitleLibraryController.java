@@ -345,6 +345,37 @@ public class TitleLibraryController {
         }
     }
 
+    @PostConstruct
+    public void migrateTitleLibraryGeneratedFields() {
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.getMetaData().getColumns(null, null, "tu_title_library", "generated_file_url")) {
+            if (!rs.next()) {
+                conn.createStatement().execute("ALTER TABLE tu_title_library ADD COLUMN generated_file_url VARCHAR(255) DEFAULT NULL");
+                System.out.println("Migration applied: added generated_file_url column to tu_title_library");
+            }
+        } catch (SQLException e) {
+            System.err.println("Migration check failed for generated_file_url: " + e.getMessage());
+        }
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.getMetaData().getColumns(null, null, "tu_title_library", "generated_file_name")) {
+            if (!rs.next()) {
+                conn.createStatement().execute("ALTER TABLE tu_title_library ADD COLUMN generated_file_name VARCHAR(255) DEFAULT NULL");
+                System.out.println("Migration applied: added generated_file_name column to tu_title_library");
+            }
+        } catch (SQLException e) {
+            System.err.println("Migration check failed for generated_file_name: " + e.getMessage());
+        }
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.getMetaData().getColumns(null, null, "tu_title_library", "generated_at")) {
+            if (!rs.next()) {
+                conn.createStatement().execute("ALTER TABLE tu_title_library ADD COLUMN generated_at DATETIME DEFAULT NULL");
+                System.out.println("Migration applied: added generated_at column to tu_title_library");
+            }
+        } catch (SQLException e) {
+            System.err.println("Migration check failed for generated_at: " + e.getMessage());
+        }
+    }
+
     /**
      * 获取用户当前激活的赛道ID集合（按订阅时间先后，只保留前 trackLimit 个）
      * trackLimit <= 0 视为无限制，使用所有订阅赛道

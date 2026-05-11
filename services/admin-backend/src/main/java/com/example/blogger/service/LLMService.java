@@ -3,6 +3,7 @@ package com.example.blogger.service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.http.*;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -86,7 +87,16 @@ public class LLMService {
         });
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-        ResponseEntity<String> response = restTemplate.exchange(KIMI_API_URL, HttpMethod.POST, entity, String.class);
+        ResponseEntity<String> response;
+        try {
+            response = restTemplate.exchange(KIMI_API_URL, HttpMethod.POST, entity, String.class);
+        } catch (HttpClientErrorException e) {
+            System.err.println("[LLMService] Kimi API 请求失败: " + e.getStatusCode());
+            System.err.println("[LLMService] 响应头: " + e.getResponseHeaders());
+            System.err.println("[LLMService] 响应体: " + e.getResponseBodyAsString());
+            System.err.println("[LLMService] 请求体: " + body);
+            throw new RuntimeException("Kimi API 认证失败 (" + e.getStatusCode() + "): " + e.getResponseBodyAsString(), e);
+        }
 
         try {
             JsonNode root = objectMapper.readTree(response.getBody());

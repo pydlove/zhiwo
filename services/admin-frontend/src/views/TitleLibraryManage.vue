@@ -396,7 +396,7 @@ const columns = [
               type: 'link',
               size: 'small',
               style: 'padding: 0 4px;',
-              loading: sendArticleEmailLoading.value,
+              loading: sendArticleEmailLoadingId.value === record.id,
               onClick: () => sendArticleEmailToUser(record),
             }, () => '发送文章邮件')
           : null,
@@ -598,7 +598,7 @@ async function handleUnbind() {
 }
 
 const sendEmailLoadingId = ref(null)
-const sendArticleEmailLoading = ref(false)
+const sendArticleEmailLoadingId = ref(null)
 
 // 文章反馈相关
 const feedbackList = ref([])
@@ -675,13 +675,13 @@ async function sendArticleEmailToUser(record) {
     return
   }
   try {
-    sendArticleEmailLoading.value = true
+    sendArticleEmailLoadingId.value = record.id
     await sendArticleEmail(record.id, user.email)
     message.success('文章邮件发送成功')
   } catch (e) {
     message.error('发送邮件失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
   } finally {
-    sendArticleEmailLoading.value = false
+    sendArticleEmailLoadingId.value = null
   }
 }
 

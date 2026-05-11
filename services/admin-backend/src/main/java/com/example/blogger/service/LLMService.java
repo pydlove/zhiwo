@@ -1,13 +1,17 @@
 package com.example.blogger.service;
 
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.http.*;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestTemplate;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.blogger.mapper.ConfigMapper;
 import com.example.blogger.entity.Config;
 
@@ -18,25 +22,18 @@ import java.util.Map;
 @Service
 public class LLMService {
 
-    private static final String KIMI_API_URL = "https://api.kimi.com/coding/v1/chat/completions";
+    private static final String KIMI_API_URL = "https://api.kimi.com/coding";
     private static final String MINIMAX_API_URL = "https://api.minimax.chat/v1/chat/completions";
 
     private static final int CONNECT_TIMEOUT_MS = 30000;
     private static final int READ_TIMEOUT_MS = 300000;
 
     private final ConfigMapper configMapper;
-    private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
-
-    private Map<String, String> configCache = null;
 
     @Autowired
     public LLMService(ConfigMapper configMapper) {
         this.configMapper = configMapper;
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(CONNECT_TIMEOUT_MS);
-        factory.setReadTimeout(READ_TIMEOUT_MS);
-        this.restTemplate = new RestTemplate(factory);
         this.objectMapper = new ObjectMapper();
     }
 
@@ -61,14 +58,16 @@ public class LLMService {
     }
 
     /**
-     * 调用 Kimi K2.6 API
+     * 调用 Kimi K2.6 API (Spring AI OpenAI 兼容模式)
      */
     private String callKimiAPI(String prompt) {
         String apiKey = getConfigValue("apiKey");
         String model = getConfigValue("model");
         if (apiKey != null) apiKey = apiKey.trim();
+
         System.out.println("[LLMService] Kimi API Key length: " + (apiKey != null ? apiKey.length() : 0));
         System.out.println("[LLMService] Kimi model: " + model);
+
         if (apiKey == null || apiKey.isEmpty()) {
             throw new RuntimeException("Kimi API Key 未配置，请在系统配置中设置");
         }
@@ -76,36 +75,23 @@ public class LLMService {
             model = "moonshot-v1-8k";
         }
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("Authorization", "Bearer " + apiKey);
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("model", model);
-        body.put("messages", new Object[]{
-            Map.of("role", "user", "content", prompt)
-        });
-
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-        ResponseEntity<String> response;
         try {
-            response = restTemplate.exchange(KIMI_API_URL, HttpMethod.POST, entity, String.class);
-        } catch (HttpClientErrorException e) {
-            System.err.println("[LLMService] Kimi API 请求失败: " + e.getStatusCode());
-            System.err.println("[LLMService] 响应头: " + e.getResponseHeaders());
-            System.err.println("[LLMService] 响应体: " + e.getResponseBodyAsString());
-            System.err.println("[LLMService] 请求体: " + body);
-            throw new RuntimeException("Kimi API 认证失败 (" + e.getStatusCode() + "): " + e.getResponseBodyAsString(), e);
-        }
+            // 使用 Spring AI OpenAI 兼容模式调用 Kimi
+            OpenAiApi openAiApi = new OpenAiApi(KIMI_API_URL, apiKey);
+            OpenAiChatModel chatModel = new OpenAiChatModel(
+                openAiApi,
+                OpenAiChatOptions.builder()
+                    .model(model)
+                    .temperature(0.7)
+                    .build()
+            );
 
-        try {
-            JsonNode root = objectMapper.readTree(response.getBody());
-            JsonNode choices = root.get("choices");
-            if (choices != null && choices.isArray() && choices.size() > 0) {
-                return choices.get(0).get("message").get("content").asText();
-            }
-            throw new RuntimeException("Kimi API 返回格式异常: " + response.getBody());
+            return chatModel.call(prompt);
         } catch (Exception e) {
+            System.err.println("[LLMService] Kimi API 调用异常: " + e.getClass().getName() + ": " + e.getMessage());
+            if (e.getCause() != null) {
+                System.err.println("[LLMService] 根因: " + e.getCause().getClass().getName() + ": " + e.getCause().getMessage());
+            }
             throw new RuntimeException("Kimi API 调用失败: " + e.getMessage(), e);
         }
     }
@@ -123,6 +109,11 @@ public class LLMService {
             model = "MiniMax-M2.7";
         }
 
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        factory.setReadTimeout(READ_TIMEOUT_MS);
+        RestTemplate restTemplate = new RestTemplate(factory);
+
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("Authorization", "Bearer " + apiKey);
@@ -134,7 +125,14 @@ public class LLMService {
         });
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-        ResponseEntity<String> response = restTemplate.exchange(MINIMAX_API_URL, HttpMethod.POST, entity, String.class);
+        ResponseEntity<String> response;
+        try {
+            response = restTemplate.exchange(MINIMAX_API_URL, HttpMethod.POST, entity, String.class);
+        } catch (HttpClientErrorException e) {
+            System.err.println("[LLMService] MiniMax API 请求失败: " + e.getStatusCode());
+            System.err.println("[LLMService] 响应体: " + e.getResponseBodyAsString());
+            throw new RuntimeException("MiniMax API 认证失败 (" + e.getStatusCode() + "): " + e.getResponseBodyAsString(), e);
+        }
 
         try {
             JsonNode root = objectMapper.readTree(response.getBody());
@@ -150,10 +148,11 @@ public class LLMService {
 
     private String getConfigValue(String key) {
         List<Config> configs = configMapper.findAll();
-        configCache = new HashMap<>();
         for (Config c : configs) {
-            configCache.put(c.getConfigKey(), c.getConfigValue());
+            if (key.equals(c.getConfigKey())) {
+                return c.getConfigValue();
+            }
         }
-        return configCache.get(key);
+        return null;
     }
 }

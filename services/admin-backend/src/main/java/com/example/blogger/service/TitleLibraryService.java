@@ -183,6 +183,18 @@ public class TitleLibraryService {
         titleLibraryMapper.updateIsUsed(id, isUsed);
     }
 
+    public void updateIsAiPassed(String id, Integer isAiPassed) {
+        titleLibraryMapper.updateIsAiPassed(id, isAiPassed);
+    }
+
+    public void updateIsCopied(String id, Integer isCopied) {
+        titleLibraryMapper.updateIsCopied(id, isCopied);
+    }
+
+    public void updateGeneratedFile(String id, String fileUrl, String fileName) {
+        titleLibraryMapper.updateGeneratedFile(id, fileUrl, fileName, LocalDateTime.now());
+    }
+
     public void updatePushDate(String id, java.time.LocalDate pushDate) {
         titleLibraryMapper.updatePushDate(id, pushDate);
     }

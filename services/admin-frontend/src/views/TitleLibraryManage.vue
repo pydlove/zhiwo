@@ -15,7 +15,7 @@ const router = useRouter()
 const activeTab = ref(localStorage.getItem('titleLibrary_activeTab') || 'all')
 
 // 兼容旧版 localStorage
-if (activeTab.value === 'full') activeTab.value = 'all'
+if (activeTab.value === 'full' || activeTab.value === 'simple') activeTab.value = 'all'
 
 const tableData = ref([])
 const tracks = ref([])
@@ -43,88 +43,6 @@ async function handleMarkUsed(record) {
     message.error('操作失败')
   }
 }
-
-const simpleColumns = [
-  {
-    title: '标题内容',
-    key: 'title',
-    customRender: ({ record }) => {
-      const isUsed = record.isUsed === 1 || !!(record.subscriptionPostId)
-      return h('div', {
-        style: 'display: flex; align-items: center; gap: 8px;'
-      }, [
-        h(Button, {
-          type: 'link',
-          size: 'small',
-          style: 'padding: 0; flex-shrink: 0; font-size: 12px;',
-          onClick: () => {
-            navigator.clipboard.writeText(record.title).then(() => {
-              message.success('已复制')
-            }).catch(() => {
-              message.error('复制失败')
-            })
-          }
-        }, () => '复制'),
-        h(Button, {
-          type: 'link',
-          size: 'small',
-          style: 'padding: 0; flex-shrink: 0; font-size: 12px; color: ' + (record.isCopied ? '#52c41a' : ''),
-          onClick: () => copyRowPrompt(record)
-        }, () => record.isCopied ? '✓ 已复制' : '复制提示词'),
-        h(Button, {
-          type: isUsed ? 'default' : 'primary',
-          ghost: !isUsed,
-          size: 'small',
-          style: 'padding: 0 4px; flex-shrink: 0; font-size: 12px;',
-          onClick: () => handleMarkUsed(record)
-        }, () => isUsed ? '取消使用' : '使用了'),
-        h('span', {
-          style: `flex: 1; ${isUsed ? 'text-decoration: line-through; color: #999;' : ''}`
-        }, record.title)
-      ])
-    },
-  },
-  {
-    title: '是否使用',
-    key: 'isUsed',
-    width: 90,
-    align: 'center',
-    customRender: ({ record }) => {
-      const isUsed = record.isUsed === 1 || !!(record.subscriptionPostId)
-      return h(Tag, { color: isUsed ? 'green' : 'default' }, () => isUsed ? '已使用' : '未使用')
-    },
-  },
-  {
-    title: '生成状态',
-    key: 'generateStatus',
-    width: 90,
-    align: 'center',
-    customRender: ({ record }) => {
-      const status = record.generateStatus
-      if (status === 2) return h(Tag, { color: 'orange' }, () => '生成中')
-      if (status === 1) return h(Tag, { color: 'green' }, () => '已生成')
-      return h(Tag, { color: 'default' }, () => '未生成')
-    },
-  },
-  {
-    title: '平台/赛道',
-    key: 'platformTrack',
-    ellipsis: true,
-    width: 140,
-    customRender: ({ record }) => {
-      return h('span', {}, `${record.platform || '-'} / ${record.trackName || '-'}`)
-    },
-  },
-  {
-    title: '操作',
-    key: 'action',
-    width: 100,
-    align: 'center',
-    customRender: ({ record }) => {
-      return h(Button, { type: 'link', size: 'small', onClick: () => openSingleChangeTrack(record) }, () => '改赛道')
-    },
-  },
-]
 
 const selectedRowKeys = ref([])
 const selectedRows = ref([])
@@ -2441,50 +2359,6 @@ onMounted(() => {
           </Card>
         </div>
       </div>
-    </Tabs.TabPane>
-
-    <Tabs.TabPane key="simple" tab="简洁视图">
-      <Card title="标题库简洁视图" :bordered="false">
-        <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
-          <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
-          <Select show-search v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear>
-            <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value" :label="p.label">{{ p.label }}</Select.Option>
-          </Select>
-          <Select show-search v-model:value="searchTrack" placeholder="选择赛道" style="width: 160px;" allowClear :disabled="!searchPlatform">
-            <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
-          </Select>
-          <Select show-search v-model:value="searchIsUsed" placeholder="使用状态" style="width: 130px;" allowClear>
-            <Select.Option value="1">已使用</Select.Option>
-            <Select.Option value="0">未使用</Select.Option>
-          </Select>
-          <Button type="primary" @click="handleSearch">查询</Button>
-          <Button @click="handleReset">重置</Button>
-          <Button @click="openGenerateModal" style="margin-left: auto;">生成标题</Button>
-        </div>
-        <div v-if="selectedRowKeys.length > 0" style="margin-bottom: 12px;">
-          <Button type="primary" @click="openBatchChangeTrack">批量修改赛道（已选 {{ selectedRowKeys.length }} 项）</Button>
-        </div>
-        <Table
-          :columns="simpleColumns"
-          :data-source="paginatedData"
-          :pagination="false"
-          row-key="id"
-          :loading="loading"
-          :row-selection="rowSelection"
-          :scroll="{ x: 'max-content' }"
-        />
-        <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
-          <Pagination
-            v-model:current="currentPage"
-            v-model:pageSize="pageSize"
-            :total="totalCount"
-            show-size-changer
-            :page-size-options="['10', '20', '50']"
-            :show-total="total => `共 ${total} 条`"
-            @change="handlePageChange"
-          />
-        </div>
-      </Card>
     </Tabs.TabPane>
   </Tabs>
 

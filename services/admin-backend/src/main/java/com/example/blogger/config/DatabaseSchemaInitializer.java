@@ -67,7 +67,8 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
         try {
             DatabaseMetaData metaData = conn.getMetaData();
             boolean exists = false;
-            try (ResultSet rs = metaData.getTables(null, null, tableName, null)) {
+            String catalog = conn.getCatalog();
+            try (ResultSet rs = metaData.getTables(catalog, null, tableName, null)) {
                 exists = rs.next();
             }
             if (!exists) {
@@ -92,7 +93,8 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
         try {
             DatabaseMetaData metaData = conn.getMetaData();
             boolean exists = false;
-            try (ResultSet rs = metaData.getColumns(null, null, tableName, columnName)) {
+            String catalog = conn.getCatalog();
+            try (ResultSet rs = metaData.getColumns(catalog, null, tableName, columnName)) {
                 exists = rs.next();
             }
             if (!exists) {

@@ -38,6 +38,7 @@ public class LLMService {
      */
     public String getSelectedModelType() {
         String val = getConfigValue("selectedLLMModel");
+        log.info("[LLMService] 读取模型配置 selectedLLMModel={}, 解析结果={}", val, (val == null || val.isEmpty()) ? "kimi(默认)" : val);
         return (val == null || val.isEmpty()) ? "kimi" : val;
     }
 
@@ -46,6 +47,7 @@ public class LLMService {
      */
     public String generateContent(String prompt) {
         String modelType = getSelectedModelType();
+        log.info("[LLMService] 生成内容路由决策: modelType={}, 将使用{}", modelType, "minimax".equals(modelType) ? "MiniMax" : "Kimi");
         if ("minimax".equals(modelType)) {
             return callMinimaxAPI(prompt);
         } else {
@@ -126,6 +128,8 @@ public class LLMService {
     private String callMinimaxAPI(String prompt) {
         String apiKey = getConfigValue("miniMaxApiKey");
         String model = getConfigValue("miniMaxModel");
+        log.info("[LLMService] MiniMax API Key length: {}", (apiKey != null ? apiKey.length() : 0));
+        log.info("[LLMService] MiniMax model: {}", model);
         if (apiKey == null || apiKey.isEmpty()) {
             throw new RuntimeException("MiniMax API Key 未配置");
         }
@@ -140,6 +144,9 @@ public class LLMService {
                 Map.of("role", "user", "content", prompt)
             });
             String bodyJson = objectMapper.writeValueAsString(body);
+
+            log.info("[LLMService] MiniMax request URL: {}", MINIMAX_API_URL);
+            log.info("[LLMService] MiniMax request body: {}", bodyJson);
 
             java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
                     .uri(java.net.URI.create(MINIMAX_API_URL))
@@ -178,6 +185,13 @@ public class LLMService {
 
     private String getConfigValue(String key) {
         List<Config> configs = configMapper.findAll();
+        if ("selectedLLMModel".equals(key) && log.isDebugEnabled()) {
+            StringBuilder keys = new StringBuilder();
+            for (Config c : configs) {
+                keys.append(c.getConfigKey()).append("=").append(c.getConfigValue()).append("; ");
+            }
+            log.debug("[LLMService] 当前所有配置: {}", keys);
+        }
         for (Config c : configs) {
             if (key.equals(c.getConfigKey())) {
                 return c.getConfigValue();

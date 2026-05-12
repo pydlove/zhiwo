@@ -1,0 +1,418 @@
+<script setup>
+import { ref, onMounted, computed, h } from 'vue'
+import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination } from 'ant-design-vue'
+import { listTitles, markTitleUsed, batchChangeTrack, generateTitles } from '../api/titleLibrary.js'
+import { listTracks } from '../api/track.js'
+
+// ---- 数据状态 ----
+const tableData = ref([])
+const tracks = ref([])
+const loading = ref(false)
+const currentPage = ref(1)
+const pageSize = ref(20)
+const totalCount = ref(0)
+
+// ---- 搜索状态 ----
+const searchKeyword = ref('')
+const searchPlatform = ref('')
+const searchTrack = ref('')
+const searchIsUsed = ref('')
+
+const platformOptions = [
+  { label: '公众号', value: '公众号' },
+  { label: '今日头条', value: '今日头条' },
+  { label: '百家号', value: '百家号' },
+]
+
+const filteredTracksForSearch = computed(() => {
+  if (!searchPlatform.value) {
+    return tracks.value
+  }
+  return tracks.value.filter(t => {
+    if (!t.platforms) return false
+    const trackPlatforms = t.platforms.split(',')
+    return trackPlatforms.includes(searchPlatform.value)
+  })
+})
+
+// ---- 表格选择 ----
+const selectedRowKeys = ref([])
+const selectedRows = ref([])
+const rowSelection = {
+  onChange: (keys, rows) => {
+    selectedRowKeys.value = keys
+    selectedRows.value = rows
+  },
+}
+
+// ---- 加载数据 ----
+async function loadData() {
+  loading.value = true
+  try {
+    const params = {}
+    if (searchKeyword.value) params.keyword = searchKeyword.value.trim()
+    if (searchPlatform.value) params.platform = searchPlatform.value
+    if (searchTrack.value) params.trackId = searchTrack.value
+    if (searchIsUsed.value !== '' && searchIsUsed.value !== undefined) params.isUsed = searchIsUsed.value
+    params.page = currentPage.value
+    params.pageSize = pageSize.value
+
+    const result = await listTitles(params)
+    if (result && Array.isArray(result.list)) {
+      tableData.value = result.list
+      totalCount.value = result.total || 0
+    } else {
+      tableData.value = result || []
+      totalCount.value = result?.length || 0
+    }
+  } catch (e) {
+    console.error('loadData error:', e)
+    message.error('加载失败: ' + (e?.message || '未知错误'))
+  } finally {
+    loading.value = false
+  }
+}
+
+function handleSearch() {
+  currentPage.value = 1
+  loadData()
+}
+
+function handlePageChange() {
+  loadData()
+}
+
+function handleReset() {
+  searchKeyword.value = ''
+  searchPlatform.value = ''
+  searchTrack.value = ''
+  searchIsUsed.value = ''
+  currentPage.value = 1
+  loadData()
+}
+
+// ---- 操作 ----
+async function handleMarkUsed(record) {
+  try {
+    const isUsed = record.isUsed === 1 || !!(record.subscriptionPostId)
+    await markTitleUsed(record.id)
+    message.success(isUsed ? '已取消使用' : '已标记使用')
+    loadData()
+  } catch (e) {
+    message.error('操作失败: ' + (e?.message || '未知错误'))
+  }
+}
+
+// ---- 改赛道 ----
+const changeTrackModalOpen = ref(false)
+const changeTrackForm = ref({ titleIds: [], trackId: '', singleRecord: null })
+const changeTrackLoading = ref(false)
+
+function openSingleChangeTrack(record) {
+  changeTrackForm.value = { titleIds: [record.id], trackId: record.trackId || '', singleRecord: record }
+  changeTrackModalOpen.value = true
+}
+
+function openBatchChangeTrack() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择要修改赛道的标题')
+    return
+  }
+  changeTrackForm.value = { titleIds: selectedRowKeys.value, trackId: '', singleRecord: null }
+  changeTrackModalOpen.value = true
+}
+
+async function handleChangeTrackConfirm() {
+  if (!changeTrackForm.value.trackId) {
+    message.warning('请选择赛道')
+    return
+  }
+  changeTrackLoading.value = true
+  try {
+    await batchChangeTrack(changeTrackForm.value.titleIds, changeTrackForm.value.trackId)
+    message.success('修改赛道成功')
+    changeTrackModalOpen.value = false
+    selectedRowKeys.value = []
+    selectedRows.value = []
+    loadData()
+  } catch (e) {
+    message.error('修改赛道失败: ' + (e?.message || '未知错误'))
+  } finally {
+    changeTrackLoading.value = false
+  }
+}
+
+// ---- 生成标题 ----
+const generateModalOpen = ref(false)
+const generateCount = ref(3)
+const generatePlatforms = ref([])
+const generateTrackIds = ref([])
+const generateInstruction = ref('')
+const generating = ref(false)
+
+const GENERATE_CONFIG_KEY = 'titleLibrarySimple_generateConfig'
+const savedGenerateConfig = JSON.parse(localStorage.getItem(GENERATE_CONFIG_KEY) || 'null')
+if (savedGenerateConfig) {
+  generateCount.value = savedGenerateConfig.count || 3
+  generatePlatforms.value = savedGenerateConfig.platforms || []
+  generateTrackIds.value = savedGenerateConfig.trackIds || []
+  generateInstruction.value = savedGenerateConfig.instruction || ''
+}
+
+const filteredTracksForGenerate = computed(() => {
+  if (!generatePlatforms.value || generatePlatforms.value.length === 0) {
+    return tracks.value
+  }
+  return tracks.value.filter(t => {
+    if (!t.platforms) return false
+    const trackPlatforms = t.platforms.split(',')
+    return generatePlatforms.value.some(p => trackPlatforms.includes(p))
+  })
+})
+
+function onPlatformChange() {
+  if (!generatePlatforms.value || generatePlatforms.value.length === 0) {
+    return
+  }
+  generateTrackIds.value = generateTrackIds.value.filter(trackId => {
+    const track = tracks.value.find(t => t.id === trackId)
+    if (!track || !track.platforms) return false
+    const trackPlatforms = track.platforms.split(',')
+    return generatePlatforms.value.some(p => trackPlatforms.includes(p))
+  })
+}
+
+function saveGenerateConfig() {
+  localStorage.setItem(GENERATE_CONFIG_KEY, JSON.stringify({
+    count: generateCount.value,
+    platforms: generatePlatforms.value,
+    trackIds: generateTrackIds.value,
+    instruction: generateInstruction.value,
+  }))
+}
+
+function openGenerateModal() {
+  generateModalOpen.value = true
+}
+
+async function handleGenerate() {
+  if (!generateCount.value || generateCount.value < 1) {
+    message.warning('请输入有效的生成数量')
+    return
+  }
+  generating.value = true
+  try {
+    await generateTitles({
+      count: parseInt(generateCount.value),
+      platforms: generatePlatforms.value,
+      trackIds: generateTrackIds.value,
+      instruction: generateInstruction.value.trim(),
+    })
+    generateModalOpen.value = false
+    saveGenerateConfig()
+    message.success('生成任务已提交')
+  } catch (e) {
+    message.error('提交失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
+  } finally {
+    generating.value = false
+  }
+}
+
+// ---- 表格列 ----
+const columns = [
+  {
+    title: '标题内容',
+    key: 'title',
+    customRender: ({ record }) => {
+      const isUsed = record.isUsed === 1 || !!(record.subscriptionPostId)
+      return h('div', {
+        style: 'display: flex; align-items: center; gap: 8px;'
+      }, [
+        h(Button, {
+          type: 'link',
+          size: 'small',
+          style: 'padding: 0; flex-shrink: 0; font-size: 12px;',
+          onClick: () => {
+            navigator.clipboard.writeText(record.title).then(() => {
+              message.success('已复制')
+            }).catch(() => {
+              message.error('复制失败')
+            })
+          }
+        }, () => '复制'),
+        h(Button, {
+          type: isUsed ? 'default' : 'primary',
+          ghost: !isUsed,
+          size: 'small',
+          style: 'padding: 0 4px; flex-shrink: 0; font-size: 12px;',
+          onClick: () => handleMarkUsed(record)
+        }, () => isUsed ? '取消使用' : '使用了'),
+        h('span', {
+          style: `flex: 1; ${isUsed ? 'text-decoration: line-through; color: #999;' : ''}`
+        }, record.title)
+      ])
+    },
+  },
+  {
+    title: '是否使用',
+    key: 'isUsed',
+    width: 90,
+    align: 'center',
+    customRender: ({ record }) => {
+      const isUsed = record.isUsed === 1 || !!(record.subscriptionPostId)
+      return h(Tag, { color: isUsed ? 'green' : 'default' }, () => isUsed ? '已使用' : '未使用')
+    },
+  },
+  {
+    title: '生成状态',
+    key: 'generateStatus',
+    width: 90,
+    align: 'center',
+    customRender: ({ record }) => {
+      const status = record.generateStatus
+      if (status === 2) return h(Tag, { color: 'orange' }, () => '生成中')
+      if (status === 1) return h(Tag, { color: 'green' }, () => '已生成')
+      return h(Tag, { color: 'default' }, () => '未生成')
+    },
+  },
+  {
+    title: '平台/赛道',
+    key: 'platformTrack',
+    ellipsis: true,
+    width: 140,
+    customRender: ({ record }) => {
+      return h('span', {}, `${record.platform || '-'} / ${record.trackName || '-'}`)
+    },
+  },
+  {
+    title: '操作',
+    key: 'action',
+    width: 100,
+    align: 'center',
+    customRender: ({ record }) => {
+      return h(Button, { type: 'link', size: 'small', onClick: () => openSingleChangeTrack(record) }, () => '改赛道')
+    },
+  },
+]
+
+onMounted(() => {
+  loadData()
+  listTracks().then(res => {
+    tracks.value = res || []
+  }).catch(() => {})
+})
+</script>
+
+<template>
+  <div>
+    <Card title="标题库" :bordered="false">
+      <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+        <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
+        <Select show-search v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear>
+          <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value" :label="p.label">{{ p.label }}</Select.Option>
+        </Select>
+        <Select show-search v-model:value="searchTrack" placeholder="选择赛道" style="width: 160px;" allowClear :disabled="!searchPlatform">
+          <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
+        </Select>
+        <Select show-search v-model:value="searchIsUsed" placeholder="使用状态" style="width: 130px;" allowClear>
+          <Select.Option value="1">已使用</Select.Option>
+          <Select.Option value="0">未使用</Select.Option>
+        </Select>
+        <Button type="primary" @click="handleSearch">查询</Button>
+        <Button @click="handleReset">重置</Button>
+        <Button @click="openGenerateModal" style="margin-left: auto;">生成标题</Button>
+      </div>
+
+      <div v-if="selectedRowKeys.length > 0" style="margin-bottom: 12px;">
+        <Button type="primary" @click="openBatchChangeTrack">批量修改赛道（已选 {{ selectedRowKeys.length }} 项）</Button>
+      </div>
+
+      <Table
+        :columns="columns"
+        :data-source="tableData"
+        :pagination="false"
+        row-key="id"
+        :loading="loading"
+        :row-selection="rowSelection"
+        :scroll="{ x: 'max-content' }"
+      />
+      <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+        <Pagination
+          v-model:current="currentPage"
+          v-model:pageSize="pageSize"
+          :total="totalCount"
+          show-size-changer
+          :page-size-options="['10', '20', '50']"
+          :show-total="total => `共 ${total} 条`"
+          @change="handlePageChange"
+        />
+      </div>
+    </Card>
+
+    <!-- 修改赛道弹窗 -->
+    <Modal
+      v-model:open="changeTrackModalOpen"
+      :title="changeTrackForm.singleRecord ? '修改赛道' : '批量修改赛道'"
+      :confirm-loading="changeTrackLoading"
+      @ok="handleChangeTrackConfirm"
+    >
+      <Form layout="vertical" style="margin-top: 12px;">
+        <Form.Item label="选择赛道" required>
+          <Select show-search v-model:value="changeTrackForm.trackId" placeholder="请选择赛道">
+            <Select.Option v-for="t in tracks" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
+          </Select>
+        </Form.Item>
+        <div v-if="!changeTrackForm.singleRecord" style="color: #999; font-size: 12px;">
+          已选择 {{ changeTrackForm.titleIds.length }} 条标题
+        </div>
+      </Form>
+    </Modal>
+
+    <!-- 生成标题弹窗 -->
+    <Modal
+      v-model:open="generateModalOpen"
+      title="生成标题"
+      :mask-closable="false"
+      :confirm-loading="generating"
+      @ok="handleGenerate"
+    >
+      <Form layout="vertical" style="margin-top: 12px;">
+        <Form.Item label="选择平台">
+          <Select
+            show-search
+            v-model:value="generatePlatforms"
+            mode="multiple"
+            placeholder="不选则生成全部平台"
+            style="width: 100%;"
+            @change="onPlatformChange"
+          >
+            <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value" :label="p.label">{{ p.label }}</Select.Option>
+          </Select>
+        </Form.Item>
+        <Form.Item label="选择赛道">
+          <Select
+            show-search
+            v-model:value="generateTrackIds"
+            mode="multiple"
+            placeholder="不选则生成全部赛道"
+            style="width: 100%;"
+          >
+            <Select.Option v-for="t in filteredTracksForGenerate" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
+          </Select>
+        </Form.Item>
+        <Form.Item label="每个组合生成数量" required>
+          <Input v-model:value="generateCount" type="number" min="1" max="20" placeholder="例如：3" />
+        </Form.Item>
+        <Form.Item label="生成方向（可选）">
+          <Input.TextArea
+            v-model:value="generateInstruction"
+            placeholder="例如：更口语化、更具悬念、突出数字效果..."
+            :rows="2"
+            :maxlength="1000"
+            show-count
+          />
+        </Form.Item>
+      </Form>
+    </Modal>
+  </div>
+</template>

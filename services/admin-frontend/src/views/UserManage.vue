@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, h, watch } from 'vue'
-import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Checkbox, Upload, Switch, Tabs, DatePicker } from 'ant-design-vue'
+import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Checkbox, Upload, Switch, Tabs, DatePicker, Dropdown, Menu } from 'ant-design-vue'
 import { listUsers, getUserTracks, addUserTrack, removeUserTrack, exportUsers, importUsers, batchUpdateAdmin } from '../api/user.js'
 import { createOrder } from '../api/order.js'
 import { listSubscriptionPosts, saveSubscriptionPost } from '../api/subscriptionPost.js'
@@ -136,7 +136,36 @@ const columns = [
     },
   },
   { title: '最近登录', dataIndex: 'lastLogin', key: 'lastLogin', width: 145 },
-  { title: '操作', key: 'action', width: 440, fixed: 'right' },
+  {
+    title: '操作',
+    key: 'action',
+    width: 200,
+    fixed: 'right',
+    customRender: ({ record }) => {
+      const mainItems = [
+        h('a', { style: 'margin-right: 10px;', onClick: () => handleEdit(record) }, '编辑'),
+        h('a', { style: { color: record.status === 1 ? '#f5222d' : '#1890ff' }, onClick: () => toggleStatus(record) }, record.status === 1 ? '禁用' : '启用'),
+      ]
+
+      const moreMenuItems = [
+        h(Menu.Item, { key: 'rp', onClick: () => resetPassword(record) }, () => '重置密码'),
+        h(Menu.Item, { key: 'cp', onClick: () => copyAccountInfo(record) }, () => '复制信息'),
+        h(Menu.Item, { key: 'ti', onClick: () => openTrackInfoModal(record) }, () => '赛道信息'),
+        needsRecommend(record) ? h(Menu.Item, { key: 'rc', style: 'color: #fa8c16;', onClick: () => openRecommendModal(record) }, () => '推荐') : null,
+        h(Menu.Item, { key: 'nt', onClick: () => openNextTitleModal(record) }, () => '设定下一个标题'),
+        h(Menu.Item, { key: 'st', onClick: () => openStyleModal(record) }, () => '文章样式'),
+      ].filter(Boolean)
+
+      const moreDropdown = moreMenuItems.length
+        ? h(Dropdown, {}, {
+            default: () => h('a', { style: 'margin-left: 10px;' }, '更多'),
+            overlay: () => h(Menu, {}, () => moreMenuItems),
+          })
+        : null
+
+      return h('div', { style: 'display: flex; align-items: center; white-space: nowrap;' }, [...mainItems, moreDropdown])
+    },
+  },
 ]
 
 const addModalOpen = ref(false)
@@ -1175,18 +1204,6 @@ onMounted(() => {
             <template v-if="column.key === 'trackInfo'">
               <pre style="font-size: 12px; color: #666; margin: 0; font-family: inherit; white-space: pre-wrap; word-break: break-word;">{{ record.trackInfo || '-' }}</pre>
             </template>
-            <template v-if="column.key === 'action'">
-              <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
-              <a style="margin-right: 12px;" @click="resetPassword(record)">重置密码</a>
-              <a style="margin-right: 12px;" @click="copyAccountInfo(record)">复制信息</a>
-              <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
-              <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
-              <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
-              <a style="margin-right: 12px; color: #722ed1;" @click="openStyleModal(record)">文章样式</a>
-              <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
-                {{ record.status === 1 ? '禁用' : '启用' }}
-              </a>
-            </template>
           </template>
         </Table>
       </Tabs.TabPane>
@@ -1225,18 +1242,6 @@ onMounted(() => {
             </template>
             <template v-if="column.key === 'trackInfo'">
               <pre style="font-size: 12px; color: #666; margin: 0; font-family: inherit; white-space: pre-wrap; word-break: break-word;">{{ record.trackInfo || '-' }}</pre>
-            </template>
-            <template v-if="column.key === 'action'">
-              <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
-              <a style="margin-right: 12px;" @click="resetPassword(record)">重置密码</a>
-              <a style="margin-right: 12px;" @click="copyAccountInfo(record)">复制信息</a>
-              <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
-              <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
-              <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
-              <a style="margin-right: 12px; color: #722ed1;" @click="openStyleModal(record)">文章样式</a>
-              <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
-                {{ record.status === 1 ? '禁用' : '启用' }}
-              </a>
             </template>
           </template>
         </Table>
@@ -1277,18 +1282,6 @@ onMounted(() => {
             <template v-if="column.key === 'trackInfo'">
               <pre style="font-size: 12px; color: #666; margin: 0; font-family: inherit; white-space: pre-wrap; word-break: break-word;">{{ record.trackInfo || '-' }}</pre>
             </template>
-            <template v-if="column.key === 'action'">
-              <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
-              <a style="margin-right: 12px;" @click="resetPassword(record)">重置密码</a>
-              <a style="margin-right: 12px;" @click="copyAccountInfo(record)">复制信息</a>
-              <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
-              <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
-              <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
-              <a style="margin-right: 12px; color: #722ed1;" @click="openStyleModal(record)">文章样式</a>
-              <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
-                {{ record.status === 1 ? '禁用' : '启用' }}
-              </a>
-            </template>
           </template>
         </Table>
       </Tabs.TabPane>
@@ -1328,18 +1321,6 @@ onMounted(() => {
             <template v-if="column.key === 'trackInfo'">
               <span style="font-size: 12px; color: #666;">{{ record.trackInfo || '-' }}</span>
             </template>
-            <template v-if="column.key === 'action'">
-              <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
-              <a style="margin-right: 12px;" @click="resetPassword(record)">重置密码</a>
-              <a style="margin-right: 12px;" @click="copyAccountInfo(record)">复制信息</a>
-              <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
-              <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
-              <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
-              <a style="margin-right: 12px; color: #722ed1;" @click="openStyleModal(record)">文章样式</a>
-              <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
-                {{ record.status === 1 ? '禁用' : '启用' }}
-              </a>
-            </template>
           </template>
         </Table>
       </Tabs.TabPane>
@@ -1378,18 +1359,6 @@ onMounted(() => {
             </template>
             <template v-if="column.key === 'trackInfo'">
               <pre style="font-size: 12px; color: #666; margin: 0; font-family: inherit; white-space: pre-wrap; word-break: break-word;">{{ record.trackInfo || '-' }}</pre>
-            </template>
-            <template v-if="column.key === 'action'">
-              <a style="margin-right: 12px;" @click="handleEdit(record)">编辑</a>
-              <a style="margin-right: 12px;" @click="resetPassword(record)">重置密码</a>
-              <a style="margin-right: 12px;" @click="copyAccountInfo(record)">复制信息</a>
-              <a style="margin-right: 12px;" @click="openTrackInfoModal(record)">赛道信息</a>
-              <a v-if="needsRecommend(record)" style="margin-right: 12px; color: #fa8c16;" @click="openRecommendModal(record)">推荐</a>
-              <a style="margin-right: 12px; color: #1890ff;" @click="openNextTitleModal(record)">设定下一个标题</a>
-              <a style="margin-right: 12px; color: #722ed1;" @click="openStyleModal(record)">文章样式</a>
-              <a :style="{ color: record.status === 1 ? '#f5222d' : '#1890ff' }" @click="toggleStatus(record)">
-                {{ record.status === 1 ? '禁用' : '启用' }}
-              </a>
             </template>
           </template>
         </Table>

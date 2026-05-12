@@ -50,6 +50,7 @@ const allMenuItems = [
   { key: '/title-library', label: '标题库', perm: 'title-library' },
   { key: '/push-overview', label: '推送概览', perm: 'title-library' },
   { key: '/task-list', label: '生成文章任务', perm: 'task-list' },
+  { key: '/title-generate', label: '生成标题', perm: 'title-generate' },
   { key: '/banned-words', label: '违禁词管理', perm: 'config' },
   { key: '/orders', label: '收益管理', perm: 'config' },
   { key: '/expire-reminder', label: '到期提醒', perm: 'user' },
@@ -102,6 +103,7 @@ const menuGroups = [
       { key: '/title-library', label: '标题库', perm: 'title-library' },
       { key: '/push-overview', label: '推送概览', perm: 'title-library' },
       { key: '/task-list', label: '生成文章任务', perm: 'task-list' },
+      { key: '/title-generate', label: '生成标题', perm: 'title-generate' },
       { key: '/styles', label: '样式管理', perm: 'style' },
       { key: '/guides', label: '创作技巧', perm: 'guide' },
       { key: '/helps', label: '帮助文档', perm: 'help' },
@@ -200,6 +202,9 @@ async function handlePwdOk() {
       <div class="mac-menu-bar-left">
         <div class="mac-logo">
           <img :src="logoImage" style="width: 22px; height: 22px; object-fit: cover;">
+        </div>
+        <div>
+            <span class="mac-logo-text" style="color:#fff">知我创作</span>
         </div>
 
         <div class="mac-menus">

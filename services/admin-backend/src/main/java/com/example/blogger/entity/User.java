@@ -31,6 +31,7 @@ public class User {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private String styleConfig;
+    private String themeColor;
     private java.util.List<String> trackIds;
 
     public String getId() { return id; }
@@ -89,6 +90,10 @@ public class User {
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     public String getStyleConfig() { return styleConfig; }
     public void setStyleConfig(String styleConfig) { this.styleConfig = styleConfig; }
+
+    public String getThemeColor() { return themeColor; }
+    public void setThemeColor(String themeColor) { this.themeColor = themeColor; }
+
     public java.util.List<String> getTrackIds() { return trackIds; }
     public void setTrackIds(java.util.List<String> trackIds) { this.trackIds = trackIds; }
 }

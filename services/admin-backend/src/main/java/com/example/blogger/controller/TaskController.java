@@ -2,8 +2,11 @@ package com.example.blogger.controller;
 
 import com.example.blogger.entity.Result;
 import com.example.blogger.entity.TitleGenerationTask;
+import com.example.blogger.entity.TitleLibrary;
+import com.example.blogger.entity.User;
 import com.example.blogger.service.TitleGenerationTaskService;
 import com.example.blogger.service.TitleLibraryService;
+import com.example.blogger.service.UserService;
 import com.example.blogger.util.DocxGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +32,7 @@ public class TaskController {
 
     private final TitleGenerationTaskService taskService;
     private final TitleLibraryService titleLibraryService;
+    private final UserService userService;
     private final DocxGenerator docxGenerator;
 
     @Value("${app.script.replace-periods-path:}")
@@ -36,9 +40,11 @@ public class TaskController {
 
     public TaskController(TitleGenerationTaskService taskService,
                           TitleLibraryService titleLibraryService,
+                          UserService userService,
                           DocxGenerator docxGenerator) {
         this.taskService = taskService;
         this.titleLibraryService = titleLibraryService;
+        this.userService = userService;
         this.docxGenerator = docxGenerator;
     }
 
@@ -133,7 +139,21 @@ public class TaskController {
             }
             String filePath = articlesDir + File.separator + fileName;
 
-            docxGenerator.generateDocx(task.getTitle(), content, filePath);
+            // 获取用户主题色
+            String themeColor = null;
+            try {
+                TitleLibrary titleLib = titleLibraryService.getById(task.getTitleLibraryId());
+                if (titleLib != null && titleLib.getRecommendUserId() != null) {
+                    User user = userService.getById(titleLib.getRecommendUserId());
+                    if (user != null && user.getThemeColor() != null && !user.getThemeColor().isEmpty()) {
+                        themeColor = user.getThemeColor();
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("[TaskController] 获取用户主题色失败，使用默认颜色: {}", e.getMessage());
+            }
+
+            docxGenerator.generateDocx(task.getTitle(), content, filePath, themeColor);
             String fileUrl = "/uploads/articles/" + fileName;
             taskService.updateStatus(task.getId(), "completed", fileUrl);
             titleLibraryService.updateGeneratedFile(task.getTitleLibraryId(), fileUrl, fileName);

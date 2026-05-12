@@ -20,12 +20,24 @@ public class DocxGenerator {
     private static final Pattern S_PATTERN = Pattern.compile("<s>(.*?)</s>");
 
     /**
-     * 将文章内容写入 DOCX 文件
+     * 将文章内容写入 DOCX 文件（使用默认主题色）
      * @param title 文章标题
      * @param content 文章正文（支持 <h3> 章节标题 和 <s> 着重加强 标签）
      * @param filePath 输出文件路径
      */
     public void generateDocx(String title, String content, String filePath) throws Exception {
+        generateDocx(title, content, filePath, HIGHLIGHT_COLOR);
+    }
+
+    /**
+     * 将文章内容写入 DOCX 文件
+     * @param title 文章标题
+     * @param content 文章正文（支持 <h3> 章节标题 和 <s> 着重加强 标签）
+     * @param filePath 输出文件路径
+     * @param themeColor 主题色（十六进制，如 fa541c）
+     */
+    public void generateDocx(String title, String content, String filePath, String themeColor) throws Exception {
+        String color = (themeColor != null && !themeColor.isEmpty()) ? themeColor.replace("#", "") : HIGHLIGHT_COLOR;
         // title 参数保留用于兼容调用方，但不再写入文档正文
         try (FileOutputStream out = new FileOutputStream(filePath);
              XWPFDocument document = new XWPFDocument()) {
@@ -48,29 +60,29 @@ public class DocxGenerator {
                 Matcher h3Matcher = H3_PATTERN.matcher(trimmed);
                 if (h3Matcher.matches()) {
                     String h3Text = h3Matcher.group(1);
-                    addH3Paragraph(document, h3Text);
+                    addH3Paragraph(document, h3Text, color);
                     continue;
                 }
 
                 // 普通段落：可能包含 <s> 标签
-                addNormalParagraph(document, trimmed);
+                addNormalParagraph(document, trimmed, color);
             }
 
             document.write(out);
         }
     }
 
-    private void addH3Paragraph(XWPFDocument document, String text) {
+    private void addH3Paragraph(XWPFDocument document, String text, String color) {
         XWPFParagraph p = document.createParagraph();
         p.setAlignment(ParagraphAlignment.LEFT);
         XWPFRun run = p.createRun();
         run.setText(text);
         run.setFontSize(H3_FONT_SIZE);
-        run.setColor(HIGHLIGHT_COLOR);
+        run.setColor(color);
         run.setBold(true);
     }
 
-    private void addNormalParagraph(XWPFDocument document, String text) {
+    private void addNormalParagraph(XWPFDocument document, String text, String color) {
         XWPFParagraph p = document.createParagraph();
         p.setAlignment(ParagraphAlignment.BOTH);
 
@@ -96,7 +108,7 @@ public class DocxGenerator {
                 sRun.setText(sText);
                 sRun.setFontSize(NORMAL_FONT_SIZE);
                 sRun.setBold(true);
-                sRun.setColor(HIGHLIGHT_COLOR);
+                sRun.setColor(color);
             }
             lastEnd = sMatcher.end();
         }

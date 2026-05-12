@@ -869,11 +869,13 @@ const addTrackLoading = ref(false)
 const styleModalOpen = ref(false)
 const styleUser = ref({})
 const styleForm = ref('')
+const styleThemeColor = ref('#fa541c')
 const styleLoading = ref(false)
 
 function openStyleModal(record) {
   styleUser.value = record
   styleForm.value = record.styleConfig || ''
+  styleThemeColor.value = record.themeColor || '#fa541c'
   styleModalOpen.value = true
 }
 
@@ -881,14 +883,15 @@ async function saveStyle() {
   if (!styleUser.value.id) return
   styleLoading.value = true
   try {
-    const payload = { styleConfig: styleForm.value }
+    const payload = { styleConfig: styleForm.value, themeColor: styleThemeColor.value }
     await request.put('/users/' + styleUser.value.id, payload)
-    message.success('样式提示词已保存')
+    message.success('文章样式已保存')
     styleModalOpen.value = false
     // 更新本地数据
     const idx = data.value.findIndex(u => u.id === styleUser.value.id)
     if (idx !== -1) {
       data.value[idx].styleConfig = payload.styleConfig
+      data.value[idx].themeColor = payload.themeColor
     }
   } catch (e) {
     message.error('保存失败')
@@ -1862,6 +1865,21 @@ onMounted(() => {
     :width="640"
   >
     <Form layout="vertical" style="margin-top: 12px;">
+      <Form.Item label="文章主题色">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <input
+            v-model="styleThemeColor"
+            type="color"
+            style="width: 48px; height: 32px; border: 1px solid #d9d9d9; border-radius: 4px; cursor: pointer; padding: 2px;"
+          />
+          <Input
+            v-model:value="styleThemeColor"
+            style="width: 120px;"
+            placeholder="#fa541c"
+          />
+          <span style="font-size: 12px; color: #888;">用于文章中的着重色、小标题颜色</span>
+        </div>
+      </Form.Item>
       <Form.Item label="样式提示词">
         <Input.TextArea
           v-model:value="styleForm"
@@ -1873,6 +1891,7 @@ onMounted(() => {
         <div style="font-weight: 600; margin-bottom: 8px;">使用说明</div>
         <div>在此处填写该用户的专属样式描述，支持任意自然语言。</div>
         <div style="margin-top: 4px;">在「标题库」的提示词模板中使用 <span style="font-family: monospace;">${stylePrompt}</span> 变量即可引用此处内容。</div>
+        <div style="margin-top: 4px;">主题色会应用到生成 DOCX 文件的标题和高亮文字上。</div>
       </div>
     </Form>
   </Modal>

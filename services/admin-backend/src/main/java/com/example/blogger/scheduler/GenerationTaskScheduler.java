@@ -2,10 +2,13 @@ package com.example.blogger.scheduler;
 
 import com.example.blogger.entity.TitleGenerationTask;
 import com.example.blogger.mapper.TitleGenerationTaskMapper;
+import com.example.blogger.entity.TitleLibrary;
+import com.example.blogger.entity.User;
 import com.example.blogger.service.LLMService;
 import com.example.blogger.service.TaskInterruptManager;
 import com.example.blogger.service.TitleGenerationTaskService;
 import com.example.blogger.service.TitleLibraryService;
+import com.example.blogger.service.UserService;
 import com.example.blogger.util.DocxGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +40,7 @@ public class GenerationTaskScheduler {
     private final LLMService llmService;
     private final DocxGenerator docxGenerator;
     private final TitleLibraryService titleLibraryService;
+    private final UserService userService;
     private final TaskInterruptManager interruptManager;
 
     @Value("${app.script.replace-periods-path:}")
@@ -49,12 +53,14 @@ public class GenerationTaskScheduler {
                                    LLMService llmService,
                                    DocxGenerator docxGenerator,
                                    TitleLibraryService titleLibraryService,
+                                   UserService userService,
                                    TaskInterruptManager interruptManager) {
         this.taskMapper = taskMapper;
         this.taskService = taskService;
         this.llmService = llmService;
         this.docxGenerator = docxGenerator;
         this.titleLibraryService = titleLibraryService;
+        this.userService = userService;
         this.interruptManager = interruptManager;
     }
 
@@ -126,7 +132,22 @@ public class GenerationTaskScheduler {
 
                 log.info("[GenerationTaskScheduler] 生成 DOCX: {}", filePath);
                 taskService.updateProgress(task.getId(), 3, "写入文件中...");
-                docxGenerator.generateDocx(task.getTitle(), content, filePath);
+
+                // 获取用户主题色
+                String themeColor = null;
+                try {
+                    TitleLibrary titleLib = titleLibraryService.getById(task.getTitleLibraryId());
+                    if (titleLib != null && titleLib.getRecommendUserId() != null) {
+                        User user = userService.getById(titleLib.getRecommendUserId());
+                        if (user != null && user.getThemeColor() != null && !user.getThemeColor().isEmpty()) {
+                            themeColor = user.getThemeColor();
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("[GenerationTaskScheduler] 获取用户主题色失败，使用默认颜色: {}", e.getMessage());
+                }
+
+                docxGenerator.generateDocx(task.getTitle(), content, filePath, themeColor);
                 log.info("[GenerationTaskScheduler] DOCX 生成成功");
                 taskService.updateProgress(task.getId(), 3, "文件写入完成");
 

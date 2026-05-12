@@ -203,6 +203,7 @@ public class UserController {
         if (user.getInvitedBy() != null) existing.setInvitedBy(user.getInvitedBy());
         if (user.getAdminId() != null) existing.setAdminId(user.getAdminId());
         if (user.getStyleConfig() != null) existing.setStyleConfig(user.getStyleConfig());
+        if (user.getThemeColor() != null) existing.setThemeColor(user.getThemeColor());
         // Detect account opening: userType changed to 1 (开户)
         boolean wasOpened = existing.getUserType() != null && existing.getUserType() == 1;
         if (user.getUserType() != null) existing.setUserType(user.getUserType());

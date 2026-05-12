@@ -211,9 +211,19 @@ export function deleteArticleFeedback(id) {
   return request.delete('/title-library/feedback/' + id)
 }
 
-// 单标题生成文章
+// 单标题生成文章（同步直接生成，已废弃，请使用 createGenerationTask）
 export function generatePostSingle(id) {
   return request.post('/title-library/' + id + '/generate-post')
+}
+
+// 创建异步生成任务（插入任务表，由定时任务消费）
+export function createGenerationTask(id) {
+  return request.post('/title-library/' + id + '/create-generation-task')
+}
+
+// 查询标题生成任务状态
+export function getTitleTaskStatus(id) {
+  return request.get('/title-library/' + id + '/task-status')
 }
 
 // 获取文章内容（用于预览反馈）

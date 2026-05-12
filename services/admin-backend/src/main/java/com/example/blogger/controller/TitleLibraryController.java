@@ -71,6 +71,7 @@ public class TitleLibraryController {
     private final ConfigMapper configMapper;
     private final LLMService llmService;
     private final DocxGenerator docxGenerator;
+    private final com.example.blogger.service.TitleGenerationTaskService titleGenerationTaskService;
 
     @Value("${app.script.replace-periods-path}")
     private String replacePeriodsScriptPath;
@@ -118,7 +119,8 @@ public class TitleLibraryController {
                                   ConfigMapper configMapper,
                                   org.springframework.web.client.RestTemplate restTemplate,
                                   LLMService llmService,
-                                  DocxGenerator docxGenerator) {
+                                  DocxGenerator docxGenerator,
+                                  com.example.blogger.service.TitleGenerationTaskService titleGenerationTaskService) {
         this.titleLibraryService = titleLibraryService;
         this.trackMapper = trackMapper;
         this.userMapper = userMapper;
@@ -139,6 +141,7 @@ public class TitleLibraryController {
         this.restTemplate = restTemplate;
         this.llmService = llmService;
         this.docxGenerator = docxGenerator;
+        this.titleGenerationTaskService = titleGenerationTaskService;
     }
 
     @PostConstruct
@@ -373,6 +376,35 @@ public class TitleLibraryController {
             }
         } catch (SQLException e) {
             System.err.println("Migration check failed for generated_at: " + e.getMessage());
+        }
+    }
+
+    @PostConstruct
+    public void migrateTitleGenerationTaskTable() {
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.getMetaData().getTables(null, null, "tu_title_generation_task", null)) {
+            if (!rs.next()) {
+                conn.createStatement().execute(
+                    "CREATE TABLE IF NOT EXISTS tu_title_generation_task (" +
+                    "  id VARCHAR(64) PRIMARY KEY," +
+                    "  title_library_id VARCHAR(64) NOT NULL COMMENT '关联的标题库ID'," +
+                    "  title VARCHAR(500) COMMENT '标题内容'," +
+                    "  prompt TEXT COMMENT '使用的提示词'," +
+                    "  status VARCHAR(20) DEFAULT 'pending' COMMENT '状态: pending/processing/completed/failed'," +
+                    "  result_file_url VARCHAR(500) COMMENT '生成的文件URL'," +
+                    "  result_file_name VARCHAR(255) COMMENT '生成的文件名'," +
+                    "  error_message TEXT COMMENT '错误信息'," +
+                    "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP," +
+                    "  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP," +
+                    "  processed_at DATETIME," +
+                    "  INDEX idx_title_library_id (title_library_id)," +
+                    "  INDEX idx_status (status)" +
+                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='标题生成任务表'"
+                );
+                System.out.println("Migration applied: created tu_title_generation_task table");
+            }
+        } catch (SQLException e) {
+            System.err.println("Migration check failed for tu_title_generation_task: " + e.getMessage());
         }
     }
 
@@ -2533,58 +2565,188 @@ public class TitleLibraryController {
     // ==================== 单标题生成文章 ====================
 
     /**
-     * 为指定标题生成文章（不依赖匹配流程，直接生成并保存）
+     * 测试 Kimi API 连通性（直接调用 LLMService，不创建任务）
      */
-    @PostMapping("/{id}/generate-post")
-    public Result<Map<String, Object>> generatePostSingle(@PathVariable String id) {
+    @GetMapping("/test-kimi")
+    public Result<Map<String, Object>> testKimiApi(@RequestParam(value = "prompt", defaultValue = "hello") String prompt) {
+        try {
+            String content = llmService.generateContent(prompt);
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("contentLength", content.length());
+            result.put("contentPreview", content.substring(0, Math.min(200, content.length())));
+            return Result.ok(result);
+        } catch (Exception e) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", false);
+            result.put("error", e.getMessage());
+            return Result.ok(result);
+        }
+    }
+
+    // /**
+    //  * 为指定标题生成文章（直接调用配置的大模型生成）—— 已废弃，请使用 create-generation-task
+    //  */
+    // @PostMapping("/{id}/generate-post")
+    // public Result<Map<String, Object>> generatePostSingle(@PathVariable String id) {
+    //     TitleLibrary titleLib = titleLibraryService.getById(id);
+    //     if (titleLib == null) {
+    //         return Result.error("标题不存在");
+    //     }
+    //     try {
+    //         // Step 1: Build prompt from copy-prompt template (system auto-get)
+    //         String prompt = buildPromptFromTemplate(titleLib);
+    //
+    //         // Step 2: Call LLM to generate content
+    //         log.info("[GeneratePost] Calling LLM for title: {}", titleLib.getTitle());
+    //         String content = llmService.generateContent(prompt);
+    //         log.info("[GeneratePost] LLM returned content length: {}", content.length());
+    //
+    //         // Step 3: Generate DOCX file (文件名使用标题名)
+    //         String safeTitle = titleLib.getTitle() != null ? titleLib.getTitle() : "untitled";
+    //         safeTitle = safeTitle.replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9\\s]", "").trim();
+    //         safeTitle = safeTitle.replaceAll("\\s+", "，");
+    //         if (safeTitle.isEmpty()) {
+    //             safeTitle = "article_" + id;
+    //         }
+    //         String fileName = safeTitle + ".docx";
+    //         String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
+    //         File dir = new File(articlesDir);
+    //         if (!dir.exists()) {
+    //             dir.mkdirs();
+    //         }
+    //         String filePath = articlesDir + File.separator + fileName;
+    //         log.info("[GeneratePost] Generating DOCX: {}", filePath);
+    //         docxGenerator.generateDocx(titleLib.getTitle(), content, filePath);
+    //         log.info("[GeneratePost] DOCX generated successfully");
+    //
+    //         // Step 4: Update record
+    //         String fileUrl = "/uploads/articles/" + fileName;
+    //         log.info("[GeneratePost] Updating DB record: id={}, fileUrl={}, fileName={}", id, fileUrl, fileName);
+    //         titleLibraryService.updateGeneratedFile(id, fileUrl, fileName);
+    //         log.info("[GeneratePost] DB updated successfully");
+    //
+    //         Map<String, Object> result = new HashMap<>();
+    //         result.put("fileUrl", fileUrl);
+    //         result.put("fileName", fileName);
+    //         result.put("title", titleLib.getTitle());
+    //         return Result.ok(result);
+    //     } catch (Exception e) {
+    //         log.error("[GeneratePost] Failed: {}", e.getMessage(), e);
+    //         return Result.error("生成文章失败: " + e.getMessage());
+    //     }
+    // }
+
+    /**
+     * 为指定标题创建异步生成任务（插入任务表，由定时任务消费）
+     */
+    @PostMapping("/{id}/create-generation-task")
+    public Result<Map<String, Object>> createGenerationTask(@PathVariable String id) {
         TitleLibrary titleLib = titleLibraryService.getById(id);
         if (titleLib == null) {
             return Result.error("标题不存在");
         }
         try {
-            // Step 1: Build prompt from rowPromptTemplate
-            String promptTemplate = buildPromptFromTemplate(titleLib);
+            // Step 1: Build prompt from PromptTemplate (strictly user-defined template)
+            String prompt = buildPromptFromPromptTemplate(titleLib);
+            log.info("[CreateTask] Built prompt for title: {}, prompt length: {}", titleLib.getTitle(), prompt.length());
 
-            // Step 2: Call LLMService to generate content
-            String content = llmService.generateContent(promptTemplate);
-            if (content == null || content.isEmpty()) {
-                return Result.error("文章生成失败，AI 返回内容为空");
+            // Step 2: Create task record (允许重复提交，生成新的任务)
+            com.example.blogger.entity.TitleGenerationTask task = titleGenerationTaskService.createTask(id, titleLib.getTitle(), prompt);
+
+            // 标记标题为生成中
+            titleLibraryService.updateGenerateStatus(id, 2);
+
+            log.info("[CreateTask] Task created: id={}, titleLibraryId={}, title={}", task.getId(), id, titleLib.getTitle());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("taskId", task.getId());
+            result.put("status", "pending");
+            result.put("message", "生成任务已创建，系统将在后台自动处理");
+            return Result.ok(result);
+        } catch (Exception e) {
+            log.error("[CreateTask] Failed: {}", e.getMessage(), e);
+            return Result.error("创建生成任务失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 查询标题生成任务状态
+     */
+    @GetMapping("/{id}/task-status")
+    public Result<Map<String, Object>> getTaskStatus(@PathVariable String id) {
+        List<com.example.blogger.entity.TitleGenerationTask> tasks = titleGenerationTaskService.findByTitleLibraryId(id);
+        if (tasks.isEmpty()) {
+            return Result.ok(Map.of("hasTask", false));
+        }
+        // Return the latest task
+        var latestTask = tasks.get(0);
+        Map<String, Object> result = new HashMap<>();
+        result.put("hasTask", true);
+        result.put("taskId", latestTask.getId());
+        result.put("status", latestTask.getStatus());
+        result.put("fileUrl", latestTask.getResultFileUrl());
+        result.put("fileName", latestTask.getResultFileName());
+        result.put("errorMessage", latestTask.getErrorMessage());
+        result.put("createdAt", latestTask.getCreatedAt());
+        result.put("progressStep", latestTask.getProgressStep());
+        result.put("progressMessage", latestTask.getProgressMessage());
+        return Result.ok(result);
+    }
+
+    /**
+     * 上传生成的文章文件（由本地环境调用）
+     */
+    @PostMapping("/upload-article")
+    public Result<Map<String, Object>> uploadArticleFile(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("taskId") String taskId) {
+        try {
+            var task = titleGenerationTaskService.findById(taskId);
+            if (task == null) {
+                return Result.error("任务不存在");
             }
 
-            // Step 3: Generate DOCX with Apache POI
+            // Save file to uploads/articles/
             String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
             File dir = new File(articlesDir);
             if (!dir.exists()) {
                 dir.mkdirs();
             }
-            String fileName = "article_" + id + "_" + System.currentTimeMillis() + ".docx";
+
+            String originalName = file.getOriginalFilename();
+            String fileName = originalName != null ? originalName : ("article_" + taskId + ".docx");
             String filePath = articlesDir + File.separator + fileName;
-            docxGenerator.generateDocx(titleLib.getTitle(), content, filePath);
+            file.transferTo(new File(filePath));
 
-            // Step 4: Update TitleLibrary with file association
             String fileUrl = "/uploads/articles/" + fileName;
-            titleLibraryService.updateGeneratedFile(id, fileUrl, fileName);
 
-            // Step 5: Save to SubscriptionPost
-            SubscriptionPost post = new SubscriptionPost();
-            post.setTitleLibraryId(id);
-            post.setTrackId(titleLib.getTrackId());
-            post.setTitle(titleLib.getTitle());
-            post.setDescription(content);
-            post.setFileUrl(fileUrl);
-            post.setFileName(fileName);
-            post.setStatus("已上架");
-            post.setUsed(0);
-            subscriptionPostService.save(post);
+            // Update TitleLibrary
+            titleLibraryService.updateGeneratedFile(task.getTitleLibraryId(), fileUrl, fileName);
+
+            // Update task
+            titleGenerationTaskService.updateStatus(taskId, "completed", fileUrl);
+
+            // Create SubscriptionPost for preview/download
+            TitleLibrary titleLib = titleLibraryService.getById(task.getTitleLibraryId());
+            if (titleLib != null) {
+                SubscriptionPost post = new SubscriptionPost();
+                post.setTitleLibraryId(task.getTitleLibraryId());
+                post.setTrackId(titleLib.getTrackId());
+                post.setTitle(titleLib.getTitle());
+                post.setFileUrl(fileUrl);
+                post.setFileName(fileName);
+                post.setStatus("已上架");
+                post.setUsed(0);
+                subscriptionPostService.save(post);
+            }
 
             Map<String, Object> result = new HashMap<>();
-            result.put("postId", post.getId());
             result.put("fileUrl", fileUrl);
             result.put("fileName", fileName);
-            result.put("title", titleLib.getTitle());
             return Result.ok(result);
         } catch (Exception e) {
-            return Result.error("生成文章失败: " + e.getMessage());
+            return Result.error("上传文件失败: " + e.getMessage());
         }
     }
 
@@ -2621,11 +2783,38 @@ public class TitleLibraryController {
 
         String promptText;
         if (promptTemplate != null && promptTemplate.getContent() != null && !promptTemplate.getContent().isEmpty()) {
-            promptText = promptTemplate.getContent()
-                    .replace("{title}", titleLib.getTitle() != null ? titleLib.getTitle() : "")
-                    .replace("{description}", titleLib.getDescription() != null ? titleLib.getDescription() : "")
+            String templateContent = promptTemplate.getContent();
+
+            // Build stylePrompt (same as buildPromptFromTemplate)
+            String stylePrompt = "";
+            if (defaultStyle != null) {
+                stylePrompt = defaultStyle.getScene() != null ? defaultStyle.getScene() : "";
+            }
+
+            promptText = templateContent
+                    // Support both {var} and ${var} formats
+                    .replace("{title}", nvl(titleLib.getTitle()))
+                    .replace("${title}", nvl(titleLib.getTitle()))
+                    .replace("{description}", nvl(titleLib.getDescription()))
+                    .replace("${description}", nvl(titleLib.getDescription()))
                     .replace("{styleDesc}", styleDesc)
-                    .replace("{styleRef}", "");
+                    .replace("${styleDesc}", styleDesc)
+                    .replace("{styleRef}", "")
+                    .replace("${styleRef}", "")
+                    .replace("{stylePrompt}", stylePrompt)
+                    .replace("${stylePrompt}", stylePrompt)
+                    .replace("{platform}", nvl(titleLib.getPlatform()))
+                    .replace("${platform}", nvl(titleLib.getPlatform()))
+                    .replace("{trackId}", nvl(titleLib.getTrackId()))
+                    .replace("${trackId}", nvl(titleLib.getTrackId()))
+                    .replace("{useCount}", titleLib.getUseCount() != null ? titleLib.getUseCount().toString() : "")
+                    .replace("${useCount}", titleLib.getUseCount() != null ? titleLib.getUseCount().toString() : "")
+                    .replace("{isUsed}", titleLib.getIsUsed() != null ? titleLib.getIsUsed().toString() : "")
+                    .replace("${isUsed}", titleLib.getIsUsed() != null ? titleLib.getIsUsed().toString() : "")
+                    .replace("{pushDate}", titleLib.getPushDate() != null ? titleLib.getPushDate().toString() : "")
+                    .replace("${pushDate}", titleLib.getPushDate() != null ? titleLib.getPushDate().toString() : "")
+                    .replace("{recommendUserName}", nvl(titleLib.getRecommendUserName()))
+                    .replace("${recommendUserName}", nvl(titleLib.getRecommendUserName()));
         } else {
             StringBuilder prompt = new StringBuilder();
             prompt.append("请根据以下标题和描述，生成一篇完整的公众号风格文章。\n\n");
@@ -2681,8 +2870,84 @@ public class TitleLibraryController {
         result = result.replace("${useCount}", titleLib.getUseCount() != null ? titleLib.getUseCount().toString() : "");
         result = result.replace("${isUsed}", titleLib.getIsUsed() != null ? titleLib.getIsUsed().toString() : "");
         result = result.replace("${pushDate}", titleLib.getPushDate() != null ? titleLib.getPushDate().toString() : "");
+        result = result.replace("${recommendUserName}", nvl(titleLib.getRecommendUserName()));
 
         // Append track feedback (same as old method)
+        String feedback = loadTrackFeedback(titleLib.getTrackId(), titleLib.getPlatform());
+        if (feedback != null && !feedback.isEmpty()) {
+            result += "\n\n【历史反馈 - 生成时需避免】\n" + feedback;
+        }
+
+        return result;
+    }
+
+    /**
+     * 从 PromptTemplate 表读取 row_prompt 模板并替换变量
+     * 严格使用用户配置的模板，不擅自拟定提示词
+     */
+    private String buildPromptFromPromptTemplate(TitleLibrary titleLib) {
+        com.example.blogger.entity.PromptTemplate promptTemplate = promptTemplateMapper.findDefaultByType("row_prompt");
+        if (promptTemplate == null) {
+            promptTemplate = promptTemplateMapper.findLatestByType("row_prompt");
+        }
+
+        if (promptTemplate == null || promptTemplate.getContent() == null || promptTemplate.getContent().isEmpty()) {
+            throw new RuntimeException("未配置 row_prompt 类型的提示词模板，请先在提示词模板页面配置");
+        }
+
+        String templateContent = promptTemplate.getContent();
+
+        // Build styleDesc and stylePrompt from default style
+        String styleDesc = "";
+        String stylePrompt = "";
+        Style defaultStyle = styleMapper.findDefault();
+        if (defaultStyle != null) {
+            stylePrompt = defaultStyle.getScene() != null ? defaultStyle.getScene() : "";
+            if (defaultStyle.getStyleJson() != null && !defaultStyle.getStyleJson().isEmpty()) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    JsonNode styleNode = mapper.readTree(defaultStyle.getStyleJson());
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("字体：").append(styleNode.path("fontFamily").asText("默认")).append("；");
+                    sb.append("正文字号：").append(styleNode.path("fontSize").asText("16px")).append("；");
+                    sb.append("行高：").append(styleNode.path("lineHeight").asText("1.8")).append("；");
+                    sb.append("段落间距：").append(styleNode.path("paragraphSpacing").asText("1em")).append("；");
+                    sb.append("标题颜色：").append(styleNode.path("titleColor").asText("#333")).append("；");
+                    sb.append("正文颜色：").append(styleNode.path("textColor").asText("#333")).append("；");
+                    styleDesc = sb.toString();
+                } catch (Exception e) {
+                    // ignore parse error
+                }
+            }
+        }
+
+        // Replace variables: support both {var} and ${var} formats
+        // If variable not present in template, replace() does nothing (keeps original text)
+        String result = templateContent
+                .replace("{title}", nvl(titleLib.getTitle()))
+                .replace("${title}", nvl(titleLib.getTitle()))
+                .replace("{description}", nvl(titleLib.getDescription()))
+                .replace("${description}", nvl(titleLib.getDescription()))
+                .replace("{styleDesc}", styleDesc)
+                .replace("${styleDesc}", styleDesc)
+                .replace("{styleRef}", "")
+                .replace("${styleRef}", "")
+                .replace("{stylePrompt}", stylePrompt)
+                .replace("${stylePrompt}", stylePrompt)
+                .replace("{platform}", nvl(titleLib.getPlatform()))
+                .replace("${platform}", nvl(titleLib.getPlatform()))
+                .replace("{trackId}", nvl(titleLib.getTrackId()))
+                .replace("${trackId}", nvl(titleLib.getTrackId()))
+                .replace("{useCount}", titleLib.getUseCount() != null ? titleLib.getUseCount().toString() : "")
+                .replace("${useCount}", titleLib.getUseCount() != null ? titleLib.getUseCount().toString() : "")
+                .replace("{isUsed}", titleLib.getIsUsed() != null ? titleLib.getIsUsed().toString() : "")
+                .replace("${isUsed}", titleLib.getIsUsed() != null ? titleLib.getIsUsed().toString() : "")
+                .replace("{pushDate}", titleLib.getPushDate() != null ? titleLib.getPushDate().toString() : "")
+                .replace("${pushDate}", titleLib.getPushDate() != null ? titleLib.getPushDate().toString() : "")
+                .replace("{recommendUserName}", nvl(titleLib.getRecommendUserName()))
+                .replace("${recommendUserName}", nvl(titleLib.getRecommendUserName()));
+
+        // Inject track feedback
         String feedback = loadTrackFeedback(titleLib.getTrackId(), titleLib.getPlatform());
         if (feedback != null && !feedback.isEmpty()) {
             result += "\n\n【历史反馈 - 生成时需避免】\n" + feedback;

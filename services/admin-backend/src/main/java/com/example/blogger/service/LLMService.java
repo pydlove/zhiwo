@@ -1,12 +1,9 @@
 package com.example.blogger.service;
 
-import dev.langchain4j.model.openai.OpenAiChatModel;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.*;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestTemplate;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.blogger.mapper.ConfigMapper;
@@ -18,6 +15,8 @@ import java.util.Map;
 
 @Service
 public class LLMService {
+
+    private static final Logger log = LoggerFactory.getLogger(LLMService.class);
 
     private static final String KIMI_BASE_URL = "https://api.kimi.com/coding";
     private static final String MINIMAX_API_URL = "https://api.minimax.chat/v1/chat/completions";
@@ -55,15 +54,15 @@ public class LLMService {
     }
 
     /**
-     * 调用 Kimi K2.6 API (LangChain4j OpenAI 兼容模式)
+     * 调用 Kimi K2.6 API (java.net.http.HttpClient 精确复刻 CLI 请求)
      */
     private String callKimiAPI(String prompt) {
         String apiKey = getConfigValue("apiKey");
         String model = getConfigValue("model");
         if (apiKey != null) apiKey = apiKey.trim();
 
-        System.out.println("[LLMService] Kimi API Key length: " + (apiKey != null ? apiKey.length() : 0));
-        System.out.println("[LLMService] Kimi model: " + model);
+        log.info("[LLMService] Kimi API Key length: {}", (apiKey != null ? apiKey.length() : 0));
+        log.info("[LLMService] Kimi model: {}", model);
 
         if (apiKey == null || apiKey.isEmpty()) {
             throw new RuntimeException("Kimi API Key 未配置，请在系统配置中设置");
@@ -73,25 +72,56 @@ public class LLMService {
         }
 
         try {
-            OpenAiChatModel chatModel = OpenAiChatModel.builder()
-                    .baseUrl(KIMI_BASE_URL)
-                    .apiKey(apiKey)
-                    .modelName(model)
-                    .temperature(0.7)
+            // Build request body as raw JSON string
+            String escapedPrompt;
+            try {
+                escapedPrompt = objectMapper.writeValueAsString(prompt);
+            } catch (Exception e) {
+                escapedPrompt = "\"" + prompt.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\"";
+            }
+            String bodyJson = "{\"model\":\"" + model + "\",\"messages\":[{\"role\":\"user\",\"content\":" + escapedPrompt + "}],\"temperature\":0.7,\"stream\":false,\"max_tokens\":8192}";
+
+            log.info("[LLMService] Kimi request URL: {}", KIMI_BASE_URL + "/v1/chat/completions");
+            log.info("[LLMService] Kimi request body: {}", bodyJson);
+
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(KIMI_BASE_URL + "/v1/chat/completions"))
+                    .timeout(java.time.Duration.ofMillis(READ_TIMEOUT_MS))
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("User-Agent", "claude-cli/2.1.110 (external, cli)")
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(bodyJson, java.nio.charset.StandardCharsets.UTF_8))
                     .build();
 
-            return chatModel.generate(prompt);
-        } catch (Exception e) {
-            System.err.println("[LLMService] Kimi API 调用异常: " + e.getClass().getName() + ": " + e.getMessage());
-            if (e.getCause() != null) {
-                System.err.println("[LLMService] 根因: " + e.getCause().getClass().getName() + ": " + e.getCause().getMessage());
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofMillis(CONNECT_TIMEOUT_MS))
+                    .version(java.net.http.HttpClient.Version.HTTP_1_1)
+                    .build();
+
+            java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) {
+                log.error("[LLMService] Kimi API 请求失败: {}", response.statusCode());
+                log.error("[LLMService] 响应体: {}", response.body());
+                throw new RuntimeException("Kimi API 认证失败 (" + response.statusCode() + "): " + response.body());
             }
+
+            JsonNode root = objectMapper.readTree(response.body());
+            JsonNode choices = root.get("choices");
+            if (choices != null && choices.isArray() && choices.size() > 0) {
+                return choices.get(0).get("message").get("content").asText();
+            }
+            throw new RuntimeException("Kimi API 返回格式异常: " + response.body());
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
             throw new RuntimeException("Kimi API 调用失败: " + e.getMessage(), e);
         }
     }
 
     /**
-     * 调用 MiniMax M2.7 API
+     * 调用 MiniMax M2.7 API (java.net.http.HttpClient 同步模式)
      */
     private String callMinimaxAPI(String prompt) {
         String apiKey = getConfigValue("miniMaxApiKey");
@@ -103,38 +133,44 @@ public class LLMService {
             model = "MiniMax-M2.7";
         }
 
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(CONNECT_TIMEOUT_MS);
-        factory.setReadTimeout(READ_TIMEOUT_MS);
-        RestTemplate restTemplate = new RestTemplate(factory);
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("Authorization", "Bearer " + apiKey);
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("model", model);
-        body.put("messages", new Object[]{
-            Map.of("role", "user", "content", prompt)
-        });
-
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-        ResponseEntity<String> response;
         try {
-            response = restTemplate.exchange(MINIMAX_API_URL, HttpMethod.POST, entity, String.class);
-        } catch (HttpClientErrorException e) {
-            System.err.println("[LLMService] MiniMax API 请求失败: " + e.getStatusCode());
-            System.err.println("[LLMService] 响应体: " + e.getResponseBodyAsString());
-            throw new RuntimeException("MiniMax API 认证失败 (" + e.getStatusCode() + "): " + e.getResponseBodyAsString(), e);
-        }
+            Map<String, Object> body = new HashMap<>();
+            body.put("model", model);
+            body.put("messages", new Object[]{
+                Map.of("role", "user", "content", prompt)
+            });
+            String bodyJson = objectMapper.writeValueAsString(body);
 
-        try {
-            JsonNode root = objectMapper.readTree(response.getBody());
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(MINIMAX_API_URL))
+                    .timeout(java.time.Duration.ofMillis(READ_TIMEOUT_MS))
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(bodyJson, java.nio.charset.StandardCharsets.UTF_8))
+                    .build();
+
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofMillis(CONNECT_TIMEOUT_MS))
+                    .version(java.net.http.HttpClient.Version.HTTP_1_1)
+                    .build();
+
+            java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) {
+                log.error("[LLMService] MiniMax API 请求失败: {}", response.statusCode());
+                log.error("[LLMService] 响应体: {}", response.body());
+                throw new RuntimeException("MiniMax API 请求失败 (" + response.statusCode() + "): " + response.body());
+            }
+
+            JsonNode root = objectMapper.readTree(response.body());
             JsonNode choices = root.get("choices");
             if (choices != null && choices.isArray() && choices.size() > 0) {
                 return choices.get(0).get("message").get("content").asText();
             }
-            throw new RuntimeException("MiniMax API 返回格式异常: " + response.getBody());
+            throw new RuntimeException("MiniMax API 返回格式异常: " + response.body());
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
             throw new RuntimeException("MiniMax API 调用失败: " + e.getMessage(), e);
         }

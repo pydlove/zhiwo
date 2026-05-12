@@ -1,13 +1,16 @@
 <script setup>
 import { ref, onMounted, computed, h, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
-import { Card, Input, Select, Button, Table, Tag, Modal, Form, Popconfirm, message, Pagination, Descriptions, DatePicker, Tabs, Spin, InputNumber, Checkbox, CheckboxGroup } from 'ant-design-vue'
-import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, matchCheck, matchPreview, matchConfirm, matchOne, unbindRecommendation, batchUnbindRecommendations, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed, batchChangeTrack, clearRecommendationsByDate, getUserHistory, saveArticleFeedback, listArticleFeedback, deleteArticleFeedback, generatePostSingle, getPostContent, removeAiFlavor, batchAiPassed, batchCopied, autoInsertImages, sendArticleEmail } from '../api/titleLibrary.js'
+import { Card, Input, Select, Button, Table, Tag, Modal, Form, Popconfirm, message, Pagination, Descriptions, DatePicker, Tabs, Spin, InputNumber, Checkbox, CheckboxGroup, Dropdown, Menu } from 'ant-design-vue'
+import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, matchCheck, matchPreview, matchConfirm, matchOne, unbindRecommendation, batchUnbindRecommendations, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed, batchChangeTrack, clearRecommendationsByDate, getUserHistory, saveArticleFeedback, listArticleFeedback, deleteArticleFeedback, generatePostSingle, createGenerationTask, getPostContent, removeAiFlavor, batchAiPassed, batchCopied, autoInsertImages, sendArticleEmail } from '../api/titleLibrary.js'
 import { listAiFlavorRules } from '../api/aiFlavorRule.js'
 import { listTracks } from '../api/track.js'
 import { listUsers } from '../api/user.js'
 import request from '../api/request.js'
 import { renderAsync } from 'docx-preview'
+
+const router = useRouter()
 
 const activeTab = ref(localStorage.getItem('titleLibrary_activeTab') || 'all')
 
@@ -76,7 +79,7 @@ const simpleColumns = [
           onClick: () => handleMarkUsed(record)
         }, () => isUsed ? '取消使用' : '使用了'),
         h('span', {
-          style: `flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; ${isUsed ? 'text-decoration: line-through; color: #999;' : ''}`
+          style: `flex: 1; ${isUsed ? 'text-decoration: line-through; color: #999;' : ''}`
         }, record.title)
       ])
     },
@@ -89,6 +92,18 @@ const simpleColumns = [
     customRender: ({ record }) => {
       const isUsed = record.isUsed === 1 || !!(record.subscriptionPostId)
       return h(Tag, { color: isUsed ? 'green' : 'default' }, () => isUsed ? '已使用' : '未使用')
+    },
+  },
+  {
+    title: '生成状态',
+    key: 'generateStatus',
+    width: 90,
+    align: 'center',
+    customRender: ({ record }) => {
+      const status = record.generateStatus
+      if (status === 2) return h(Tag, { color: 'orange' }, () => '生成中')
+      if (status === 1) return h(Tag, { color: 'green' }, () => '已生成')
+      return h(Tag, { color: 'default' }, () => '未生成')
     },
   },
   {
@@ -291,10 +306,8 @@ const columns = [
   {
     title: '标题内容',
     key: 'title',
-    ellipsis: true,
-    width: 260,
     customRender: ({ record }) => {
-      const btnStyle = 'padding: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block;'
+      const btnStyle = 'padding: 0; display: inline-block;'
       const nodes = []
       if (record.subscriptionPostFileUrl) {
         nodes.push(
@@ -356,6 +369,18 @@ const columns = [
     },
   },
   {
+    title: '生成状态',
+    key: 'generateStatus',
+    width: 90,
+    align: 'center',
+    customRender: ({ record }) => {
+      const status = record.generateStatus
+      if (status === 2) return h(Tag, { color: 'orange' }, () => '生成中')
+      if (status === 1) return h(Tag, { color: 'green' }, () => '已生成')
+      return h(Tag, { color: 'default' }, () => '未生成')
+    },
+  },
+  {
     title: 'AI味检测',
     key: 'isAiPassed',
     width: 90,
@@ -369,61 +394,65 @@ const columns = [
   {
     title: '操作',
     key: 'action',
-    width: 220,
+    width: 180,
     align: 'center',
     customRender: ({ record }) => {
       const hasFile = !!(record.generatedFileUrl || record.subscriptionPostFileUrl)
-      const btns = [
+
+      const mainBtns = [
         h(Button, { type: 'link', size: 'small', onClick: () => handleEdit(record) }, () => '编辑'),
         hasFile
-          ? h(Button, {
-              type: 'link',
-              size: 'small',
-              style: 'padding: 0 4px;',
-              onClick: () => downloadArticle(record),
-            }, () => '下载文章')
+          ? h(Button, { type: 'link', size: 'small', style: 'padding: 0 4px;', onClick: () => downloadArticle(record) }, () => '下载')
           : null,
         hasFile
-          ? h(Button, {
-              type: 'link',
-              size: 'small',
-              style: 'padding: 0 4px;',
-              onClick: () => handlePreviewGeneratedArticle(record),
-            }, () => '预览文章')
+          ? h(Button, { type: 'link', size: 'small', style: 'padding: 0 4px;', onClick: () => handlePreviewGeneratedArticle(record) }, () => '预览')
           : null,
-        hasFile && record.recommendUserId
-          ? h(Button, {
-              type: 'link',
-              size: 'small',
-              style: 'padding: 0 4px;',
-              loading: sendArticleEmailLoadingId.value === record.id,
-              onClick: () => sendArticleEmailToUser(record),
-            }, () => '发送文章邮件')
-          : null,
-        record.subscriptionPostId && !hasFile
-          ? h(Button, {
-              type: 'link',
-              size: 'small',
-              style: 'padding: 0 4px;',
-              loading: sendEmailLoadingId.value === record.id,
-              onClick: () => handleSendEmail(record),
-            }, () => '发邮件')
-          : null,
-        !record.subscriptionPostId && !hasFile
-          ? h(Button, {
-              type: 'link',
-              size: 'small',
-              style: 'padding: 0 4px;',
-              loading: generatingPostId.value === record.id,
-              onClick: () => handleGeneratePost(record),
-            }, () => '生成文章')
-          : null,
-        record.isAiPassed
-          ? h(Button, { type: 'link', size: 'small', style: 'color: #52c41a; padding: 0 4px;', disabled: true }, () => '✓ AI已过')
-          : h(Button, { type: 'link', size: 'small', style: 'padding: 0 4px;', onClick: () => handleAiPassedOne(record) }, () => 'AI味通过'),
-        h(Button, { type: 'link', danger: true, size: 'small', onClick: () => handleDelete(record) }, () => '删除'),
+        h(Button, {
+          type: 'link',
+          size: 'small',
+          style: 'padding: 0 4px;',
+          loading: generatingPostId.value === record.id,
+          onClick: () => handleGeneratePost(record),
+        }, () => '生成'),
       ].filter(Boolean)
-      return h('div', { style: 'display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 4px;' }, btns)
+
+      // 更多下拉：发邮件、AI味通过、删除
+      const moreMenuItems = []
+      if (hasFile && record.recommendUserId) {
+        moreMenuItems.push(
+          h(Menu.Item, { onClick: () => sendArticleEmailToUser(record) }, () =>
+            h('span', {}, sendArticleEmailLoadingId.value === record.id ? '发送中...' : '发送文章邮件')
+          )
+        )
+      }
+      if (record.subscriptionPostId && !hasFile) {
+        moreMenuItems.push(
+          h(Menu.Item, { onClick: () => handleSendEmail(record) }, () =>
+            h('span', {}, sendEmailLoadingId.value === record.id ? '发送中...' : '发邮件')
+          )
+        )
+      }
+      if (moreMenuItems.length > 0) {
+        moreMenuItems.push(h(Menu.Divider))
+      }
+      moreMenuItems.push(
+        h(Menu.Item, {
+          onClick: () => record.isAiPassed ? null : handleAiPassedOne(record),
+          disabled: record.isAiPassed,
+        }, () => record.isAiPassed ? '✓ AI味已通过' : '标记AI味通过')
+      )
+      moreMenuItems.push(h(Menu.Divider))
+      moreMenuItems.push(
+        h(Menu.Item, { danger: true, onClick: () => handleDelete(record) }, () => '删除')
+      )
+
+      const moreDropdown = h(Dropdown, {}, {
+        default: () => h(Button, { type: 'link', size: 'small', style: 'padding: 0 4px;' }, () => '更多'),
+        overlay: () => h(Menu, {}, () => moreMenuItems),
+      })
+
+      mainBtns.push(moreDropdown)
+      return h('div', { style: 'display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 2px;' }, mainBtns)
     },
   },
 ]
@@ -608,6 +637,35 @@ const feedbackSaving = ref(false)
 
 // 单标题生成文章
 const generatingPostId = ref(null)
+const batchGenerating = ref(false)
+
+async function handleBatchGenerate() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择要生成的标题')
+    return
+  }
+  batchGenerating.value = true
+  let success = 0
+  let failed = 0
+  const total = selectedRowKeys.value.length
+  for (const id of selectedRowKeys.value) {
+    try {
+      await createGenerationTask(id)
+      success++
+    } catch (e) {
+      failed++
+    }
+  }
+  batchGenerating.value = false
+  if (failed === 0) {
+    message.success(`全部 ${total} 条标题的生成任务已创建，系统将在后台自动处理`)
+  } else {
+    message.warning(`生成任务创建完成：成功 ${success} 条，失败 ${failed} 条`)
+  }
+  selectedRowKeys.value = []
+  selectedRows.value = []
+  await loadData()
+}
 
 async function handleSendEmail(record) {
   sendEmailLoadingId.value = record.id
@@ -621,18 +679,15 @@ async function handleSendEmail(record) {
   }
 }
 
-// 生成单篇文章
+// 创建异步生成任务（插入任务表，由定时任务后台处理）
 async function handleGeneratePost(record) {
   generatingPostId.value = record.id
   try {
-    const result = await generatePostSingle(record.id)
-    message.success('文章生成成功')
-    // Refresh the row to update subscriptionPostId
-    loadData()
-    // Open preview
-    handlePreviewPost({ ...record, subscriptionPostId: result.postId, subscriptionPostTitle: record.title, subscriptionPostFileUrl: result.fileUrl })
+    const result = await createGenerationTask(record.id)
+    message.success(result.message || '生成任务已创建，系统将在后台自动处理')
+    await loadData()
   } catch (e) {
-    message.error(e?.response?.data?.msg || e?.message || '生成失败')
+    message.error(e?.response?.data?.msg || e?.message || '创建生成任务失败')
   } finally {
     generatingPostId.value = null
   }
@@ -652,7 +707,6 @@ function downloadArticle(record) {
 function handlePreviewGeneratedArticle(record) {
   const previewRecord = {
     ...record,
-    subscriptionPostId: record.subscriptionPostId,
     subscriptionPostTitle: record.title,
     subscriptionPostFileUrl: record.generatedFileUrl || record.subscriptionPostFileUrl
   }
@@ -1562,11 +1616,11 @@ function doCopyPrompt(incrementField) {
   })
 }
 
-// 行级复制提示词模板
-const ROW_PROMPT_TEMPLATE_KEY = 'rowPromptTemplate'
-const rowPromptTemplate = ref(localStorage.getItem(ROW_PROMPT_TEMPLATE_KEY) || '')
+// 行级提示词模板（保存到 tu_prompt_template 表）
+const rowPromptTemplate = ref('')
 const rowPromptModalOpen = ref(false)
 const rowPromptTextAreaRef = ref(null)
+const rowPromptType = 'row_prompt'
 
 const availableFields = [
   { key: 'title', label: '标题' },
@@ -1587,11 +1641,24 @@ const availableFields = [
 
 function openRowPromptModal() {
   rowPromptModalOpen.value = true
+  getDefaultPromptTemplate(rowPromptType).then(res => {
+    rowPromptTemplate.value = res?.content || ''
+  }).catch(() => {
+    rowPromptTemplate.value = ''
+  })
 }
 
 function saveRowPromptTemplate() {
-  localStorage.setItem(ROW_PROMPT_TEMPLATE_KEY, rowPromptTemplate.value)
-  message.success('模板已保存')
+  savePromptTemplate({
+    name: '行级提示词模板',
+    content: rowPromptTemplate.value,
+    type: rowPromptType,
+    isDefault: 1
+  }).then(() => {
+    message.success('模板已保存')
+  }).catch(() => {
+    message.error('保存失败')
+  })
 }
 
 function insertFieldToTemplate(fieldKey) {
@@ -1915,24 +1982,19 @@ async function handlePreviewPost(record) {
   previewModalOpen.value = true
   previewLoading.value = true
 
-  // Load feedback for this track/platform
-  await loadFeedback(record.trackId, record.platform)
-
-  const postId = record.subscriptionPostId
-  if (!postId) {
+  const fileUrl = record.subscriptionPostFileUrl || record.generatedFileUrl
+  if (!fileUrl) {
     previewLoading.value = false
     return
   }
 
-  const url = getPostFileUrl(postId)
-
   try {
     const type = previewFileType.value
     if (type === 'text') {
-      const res = await fetch(url)
+      const res = await fetch(fileUrl)
       previewHtmlContent.value = await res.text()
     } else if (type === 'docx') {
-      const res = await fetch(url)
+      const res = await fetch(fileUrl)
       const blob = await res.blob()
       if (blob.size === 0) {
         throw new Error('文件内容为空')
@@ -1954,7 +2016,6 @@ async function handlePreviewPost(record) {
       }
       return
     } else {
-      // pdf / doc / other 用 iframe
       previewHtmlContent.value = ''
     }
   } catch (e) {
@@ -2226,7 +2287,11 @@ onMounted(() => {
         <!-- 左侧主内容 -->
         <div style="width: 100%; min-width: 0;">
           <Card :title="'标题库 — ' + t.label" :bordered="false">
-            <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+            <template #extra>
+              <Button @click="router.push('/task-list')">任务列表</Button>
+            </template>
+            <!-- 第一行：搜索筛选 -->
+            <div style="display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
               <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
               <Select show-search v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear @change="handleSearch">
                 <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value" :label="p.label">{{ p.label }}</Select.Option>
@@ -2242,23 +2307,43 @@ onMounted(() => {
               <DatePicker v-model:value="searchPushDate" placeholder="推荐日期" style="width: 140px;" />
               <Button type="primary" @click="handleSearch">查询</Button>
               <Button @click="handleReset">重置</Button>
-              <Button style="margin-left: auto;" @click="openImportModal">导入标题</Button>
-              <Button @click="handleExportTitleList">导出标题</Button>
+            </div>
+
+            <!-- 第二行：高频操作 -->
+            <div style="display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
+              <Button type="primary" @click="handleAdd">+ 新增标题</Button>
               <Button type="primary" ghost :loading="matching" @click="openMatchModal">匹配推荐</Button>
               <Button @click="openGenerateModal">生成标题</Button>
-              <Button type="primary" ghost :disabled="selectedRowKeys.length === 0" @click="handleBatchSendEmail">批量发邮件</Button>
-              <Button danger :disabled="selectedRowKeys.length === 0" @click="handleBatchUnbind">批量解绑</Button>
-              <Button type="primary" ghost :disabled="selectedRowKeys.length === 0" @click="handleBatchAiPassed">检测AI味通过</Button>
-              <Button @click="openExportRuleModal">导出</Button>
-              <Button @click="openImportArticleModal">导入文章</Button>
-              <Select show-search v-model:value="selectedTargetUserId" placeholder="选择目标用户（用于样式）" style="width: 180px;" allowClear>
-                <Select.Option v-for="u in allUsers" :key="u.id" :value="u.id" :label="u.username">{{ u.username }}</Select.Option>
-              </Select>
-              <Button @click="openCopyPromptModal">复制提示词</Button>
-              <Button @click="openRowPromptModal">提示词模板</Button>
-              <Button @click="openRemoveAiFlavorModal">去除AI味</Button>
-              <Button @click="openAutoInsertImagesModal">插入图片</Button>
-              <Button type="primary" @click="handleAdd">+ 新增标题</Button>
+
+              <div style="margin-left: auto; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                <Select show-search v-model:value="selectedTargetUserId" placeholder="选择目标用户（用于样式）" style="width: 180px;" allowClear>
+                  <Select.Option v-for="u in allUsers" :key="u.id" :value="u.id" :label="u.username">{{ u.username }}</Select.Option>
+                </Select>
+                <Dropdown>
+                  <Button>更多 ▼</Button>
+                  <template #overlay>
+                    <Menu>
+                      <Menu.Item @click="openImportModal">导入标题</Menu.Item>
+                      <Menu.Item @click="handleExportTitleList">导出标题</Menu.Item>
+                      <Menu.Item @click="openImportArticleModal">导入文章</Menu.Item>
+                      <Menu.Item @click="openExportRuleModal">导出</Menu.Item>
+                      <Menu.Divider />
+                      <Menu.Item @click="openRowPromptModal">提示词模板</Menu.Item>
+                      <Menu.Item @click="openRemoveAiFlavorModal">去除AI味</Menu.Item>
+                    </Menu>
+                  </template>
+                </Dropdown>
+              </div>
+            </div>
+
+            <!-- 批量操作栏：选中行时浮现 -->
+            <div v-if="selectedRowKeys.length > 0" style="background: #f0f5ff; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+              <span style="font-size: 13px;">已选择 <strong style="color: #1890ff;">{{ selectedRowKeys.length }}</strong> 项</span>
+              <Button size="small" type="primary" :loading="batchGenerating" @click="handleBatchGenerate">批量生成</Button>
+              <Button size="small" type="primary" ghost @click="handleBatchSendEmail">批量发邮件</Button>
+              <Button size="small" danger @click="handleBatchUnbind">批量解绑</Button>
+              <Button size="small" type="primary" ghost @click="handleBatchAiPassed">检测AI味通过</Button>
+              <Button size="small" type="link" @click="selectedRowKeys = []">取消选择</Button>
             </div>
 
             <Table :columns="columns" :data-source="paginatedData" :pagination="false" row-key="id" :loading="loading" :row-selection="rowSelection" :scroll="{ x: 'max-content' }" @change="handleTableChange" />
@@ -2765,68 +2850,22 @@ onMounted(() => {
       <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">{{ previewRecord.subscriptionPostTitle }}</div>
       <div style="border: 1px solid #f0f0f0; border-radius: 6px; background: #fafafa; min-height: 360px; max-height: 500px; overflow: auto;">
         <div v-if="previewLoading" style="padding: 24px; text-align: center; color: #999;">正在加载预览...</div>
-        <!-- Text -->
         <pre
           v-else-if="previewHtmlContent"
           style="padding: 16px; margin: 0; font-family: monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; background: #fafafa; border: 0;"
         >{{ previewHtmlContent }}</pre>
-        <!-- DOCX -->
         <div
           v-else-if="previewFileType === 'docx'"
           ref="docxContainerRef"
           style="padding: 24px; background: #fff; border: 0; line-height: 1.8; font-size: 14px;"
         />
-        <!-- PDF / DOC / Other -->
-        <iframe
-          v-else-if="previewRecord.subscriptionPostFileUrl"
-          :src="getPostFileUrl(previewRecord.subscriptionPostId)"
-          style="width: 100%; height: 500px; border: 0;"
-        />
-        <div v-else style="padding: 24px; color: #999; text-align: center;">暂无文件</div>
-      </div>
-
-      <!-- 文章反馈区域 -->
-      <div style="margin-top: 16px; border-top: 1px solid #f0f0f0; padding-top: 16px;">
-        <div style="font-size: 13px; font-weight: 600; margin-bottom: 10px; color: #333;">
-          段落反馈
-          <span style="font-weight: normal; color: #999; margin-left: 8px; font-size: 12px;">
-            （对这篇文章提出修改意见，下次生成同赛道文章时会自动避免）
-          </span>
-        </div>
-
-        <!-- 反馈历史列表 -->
-        <div v-if="feedbackLoading" style="color: #999; font-size: 12px; padding: 8px 0;">加载中...</div>
-        <div v-else-if="feedbackList.length > 0" style="margin-bottom: 12px;">
-          <div
-            v-for="fb in feedbackList"
-            :key="fb.id"
-            style="display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; background: #fff7e6; border-radius: 4px; margin-bottom: 6px; font-size: 12px;"
-          >
-            <span style="color: #fa8c16; flex-shrink: 0;">●</span>
-            <span style="flex: 1; word-break: break-all; color: #333; line-height: 1.5;">{{ fb.content }}</span>
-            <span style="color: #999; flex-shrink: 0; font-size: 11px; white-space: nowrap;">{{ fb.createdAt ? fb.createdAt.slice(0, 16) : '' }}</span>
-            <Button type="link" danger size="small" style="padding: 0; flex-shrink: 0;" @click="handleDeleteFeedback(fb.id, previewRecord.trackId, previewRecord.platform)">删除</Button>
-          </div>
-        </div>
-        <div v-else style="color: #999; font-size: 12px; margin-bottom: 10px;">暂无反馈</div>
-
-        <!-- 新增反馈输入 -->
-        <div style="display: flex; gap: 8px; align-items: flex-start;">
-          <Input.TextArea
-            v-model:value="feedbackInput"
-            placeholder="输入对这篇文章的修改意见，例如：第二段太啰嗦，需要精简..."
-            :rows="2"
-            :maxlength="500"
-            style="flex: 1;"
+        <div v-else-if="previewRecord.generatedFileUrl">
+          <iframe
+            :src="previewRecord.generatedFileUrl"
+            style="width: 100%; height: 500px; border: 0;"
           />
-          <Button
-            type="primary"
-            size="small"
-            style="flex-shrink: 0; height: 52px;"
-            :loading="feedbackSaving"
-            @click="handleSaveFeedback(previewRecord.trackId, previewRecord.platform)"
-          >提交反馈</Button>
         </div>
+        <div v-else style="padding: 24px; color: #999; text-align: center;">暂无文件</div>
       </div>
     </div>
   </Modal>

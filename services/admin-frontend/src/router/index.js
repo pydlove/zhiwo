@@ -17,6 +17,7 @@ const routes = [
       { path: 'guides', name: 'GuideManage', component: () => import('../views/GuideManage.vue'), meta: { title: '创作技巧', perm: 'guide' } },
       { path: 'helps', name: 'HelpManage', component: () => import('../views/HelpManage.vue'), meta: { title: '帮助文档', perm: 'help' } },
       { path: 'styles', name: 'StyleManage', component: () => import('../views/StyleManage.vue'), meta: { title: '样式管理', perm: 'style' } },
+      { path: 'model-config', name: 'ModelConfigManage', component: () => import('../views/ModelConfigManage.vue'), meta: { title: '模型配置', perm: 'config' } },
       { path: 'config', name: 'ConfigManage', component: () => import('../views/ConfigManage.vue'), meta: { title: '系统配置', perm: 'config' } },
       { path: 'subscription-posts', name: 'SubscriptionPostManage', component: () => import('../views/SubscriptionPostManage.vue'), meta: { title: '订阅文章', perm: 'subscription-post' } },
       { path: 'membership-plans', name: 'MembershipPlanManage', component: () => import('../views/MembershipPlanManage.vue'), meta: { title: '会员权益', perm: 'membership-plan' } },
@@ -26,6 +27,7 @@ const routes = [
       { path: 'orders', name: 'OrderManage', component: () => import('../views/OrderManage.vue'), meta: { title: '收益管理', perm: 'config' } },
       { path: 'expire-reminder', name: 'ExpireReminder', component: () => import('../views/ExpireReminder.vue'), meta: { title: '到期提醒', perm: 'user' } },
       { path: 'process', name: 'ProcessManage', component: () => import('../views/ProcessManage.vue'), meta: { title: '流程管理', perm: 'title-library' } },
+      { path: 'task-list', name: 'TaskListManage', component: () => import('../views/TaskListManage.vue'), meta: { title: '任务列表', perm: 'task-list' } },
       { path: 'customer-dialogues', name: 'CustomerDialogueManage', component: () => import('../views/CustomerDialogueManage.vue'), meta: { title: '客服对话', perm: 'config' } },
       { path: 'ai-flavor-rules', name: 'AiFlavorRuleManage', component: () => import('../views/AiFlavorRuleManage.vue'), meta: { title: 'AI去除规则', perm: 'config' } },
       // FIXME: AI 检测功能暂时禁用

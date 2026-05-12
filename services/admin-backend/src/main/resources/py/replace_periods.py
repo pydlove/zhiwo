@@ -233,9 +233,30 @@ def main():
         except Exception as e:
             print(f"警告: 自定义规则JSON解析失败，将使用内置规则: {e}")
 
-    target_dir = os.path.abspath(args.directory)
-    if not os.path.isdir(target_dir):
-        print(f"错误: '{target_dir}' 不是有效的目录")
+    input_path = os.path.abspath(args.directory)
+
+    # 支持传入单个文件或目录
+    if os.path.isfile(input_path):
+        # 处理单个文件
+        if not input_path.lower().endswith('.docx'):
+            print(f"错误: '{input_path}' 不是 .docx 文件")
+            sys.exit(1)
+
+        out_path = os.path.abspath(args.output) if args.output else input_path
+
+        if args.dry_run:
+            print(f"[试运行] 将处理: {input_path}")
+        else:
+            print(f"处理中: {input_path} ...", end=' ')
+            if process_document(input_path, out_path, custom_rules):
+                print("完成")
+            else:
+                print("失败")
+        return
+    elif os.path.isdir(input_path):
+        target_dir = input_path
+    else:
+        print(f"错误: '{input_path}' 不是有效的文件或目录")
         sys.exit(1)
 
     output_dir = None

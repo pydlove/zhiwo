@@ -12,7 +12,8 @@ public interface TitleLibraryMapper {
 
     @Select("SELECT t.*, tr.name as trackName, " +
             "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.subscription_post_id as subscriptionPostId, " +
-            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl " +
+            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl, " +
+            "t.generated_file_url as generatedFileUrl, t.generated_file_name as generatedFileName, t.generated_at as generatedAt, t.generate_status as generateStatus " +
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
             "LEFT JOIN (" +
@@ -34,7 +35,8 @@ public interface TitleLibraryMapper {
 
     @Select("SELECT t.*, tr.name as trackName, " +
             "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.subscription_post_id as subscriptionPostId, " +
-            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl " +
+            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl, " +
+            "t.generated_file_url as generatedFileUrl, t.generated_file_name as generatedFileName, t.generated_at as generatedAt, t.generate_status as generateStatus " +
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
             "LEFT JOIN (" +
@@ -57,7 +59,8 @@ public interface TitleLibraryMapper {
 
     @Select("<script>SELECT t.*, tr.name as trackName, " +
             "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.subscription_post_id as subscriptionPostId, " +
-            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl " +
+            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl, " +
+            "t.generated_file_url as generatedFileUrl, t.generated_file_name as generatedFileName, t.generated_at as generatedAt, t.generate_status as generateStatus " +
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
             "LEFT JOIN (" +
@@ -109,7 +112,8 @@ public interface TitleLibraryMapper {
 
     @Select("<script>SELECT t.*, tr.name as trackName, " +
             "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.subscription_post_id as subscriptionPostId, " +
-            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl " +
+            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl, " +
+            "t.generated_file_url as generatedFileUrl, t.generated_file_name as generatedFileName, t.generated_at as generatedAt, t.generate_status as generateStatus " +
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
             "LEFT JOIN (" +
@@ -196,7 +200,8 @@ public interface TitleLibraryMapper {
 
     @Select("SELECT t.*, t.track_id as trackId, tr.name as trackName, " +
             "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.subscription_post_id as subscriptionPostId, " +
-            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl " +
+            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl, " +
+            "t.generated_file_url as generatedFileUrl, t.generated_file_name as generatedFileName, t.generated_at as generatedAt, t.generate_status as generateStatus " +
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
             "LEFT JOIN (" +
@@ -240,8 +245,11 @@ public interface TitleLibraryMapper {
     @Update("UPDATE tu_title_library SET push_date=#{pushDate} WHERE id=#{id}")
     int updatePushDate(@Param("id") String id, @Param("pushDate") java.time.LocalDate pushDate);
 
-    @Update("UPDATE tu_title_library SET generated_file_url = #{generatedFileUrl}, generated_file_name = #{generatedFileName}, generated_at = #{generatedAt} WHERE id = #{id}")
+    @Update("UPDATE tu_title_library SET generated_file_url = #{generatedFileUrl}, generated_file_name = #{generatedFileName}, generated_at = #{generatedAt}, generate_status = 1 WHERE id = #{id}")
     int updateGeneratedFile(@Param("id") String id, @Param("generatedFileUrl") String generatedFileUrl, @Param("generatedFileName") String generatedFileName, @Param("generatedAt") LocalDateTime generatedAt);
+
+    @Update("UPDATE tu_title_library SET generate_status = #{generateStatus} WHERE id = #{id}")
+    int updateGenerateStatus(@Param("id") String id, @Param("generateStatus") Integer generateStatus);
 
     @Update("UPDATE tu_title_library SET is_deleted = 1 WHERE id = #{id}")
     int delete(String id);

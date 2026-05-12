@@ -1,11 +1,17 @@
 package com.example.blogger.util;
 
+import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.openai.OpenAiChatModel;
 import org.springframework.http.*;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.HashMap;
 import java.util.Map;
+
+import static dev.langchain4j.data.message.UserMessage.userMessage;
 
 /**
  * Kimi API 测试工具
@@ -15,56 +21,25 @@ import java.util.Map;
 public class KimiApiTest {
 
     public static void main(String[] args) {
-        if (args.length < 2) {
-            System.out.println("用法: java com.example.blogger.util.KimiApiTest <baseUrl> <apiKey> [model]");
-            System.out.println("示例: java com.example.blogger.util.KimiApiTest https://api.kimi.com/coding sk-xxxxxx moonshot-v1-8k");
-            System.exit(1);
-        }
+        ChatLanguageModel model = OpenAiChatModel.builder()
+                .baseUrl("https://api.kimi.com/coding/v1") // 指向Moonshot API的地址
+                .apiKey("sk-kimi-PAVWMaLdRmhoGfVFrytNS94cgV3vJbGva0iOPq6ScdYnjvMQGUyuFLxv1MmErBDs")                // 替换为你的API Key
+                .modelName("kimi-k2.6")                // 指定要使用的具体模型
+                .logRequests(true)                     // 可选：在控制台打印请求详情
+                .logResponses(true)                    // 可选：在控制台打印响应详情
+                .build();
 
-        String baseUrl = args[0];
-        String apiKey = args[1];
-        String model = args.length > 2 ? args[2] : "moonshot-v1-8k";
+        // 1. 简单的对话
+        String answer = model.generate("你好，Kimi，请做一个简单的自我介绍。");
+        System.out.println(answer);
 
-        System.out.println("=== Kimi API 测试 ===");
-        System.out.println("Base URL: " + baseUrl);
-        System.out.println("API Key 长度: " + apiKey.length());
-        System.out.println("API Key 前缀: " + apiKey.substring(0, Math.min(10, apiKey.length())) + "...");
-        System.out.println("Model: " + model);
-        System.out.println();
+        // 2. 使用 ChatRequest 对象的更完整的调用方式（推荐）
+        ChatRequest chatRequest = ChatRequest.builder()
+                .messages(userMessage("请用一句话介绍你自己。"))
+                .build();
 
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(30000);
-        factory.setReadTimeout(300000);
-        RestTemplate restTemplate = new RestTemplate(factory);
+        ChatResponse chatResponse = model.chat(chatRequest);
+        System.out.println(chatResponse.aiMessage().text());
 
-        String url = baseUrl + "/v1/chat/completions";
-        System.out.println("请求 URL: " + url);
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("Authorization", "Bearer " + apiKey);
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("model", model);
-        body.put("messages", new Object[]{
-            Map.of("role", "user", "content", "你好，请用一句话介绍自己")
-        });
-
-        System.out.println("请求头: " + headers);
-        System.out.println("请求体: " + body);
-        System.out.println();
-
-        try {
-            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
-
-            System.out.println("状态码: " + response.getStatusCode());
-            System.out.println("响应体: " + response.getBody());
-        } catch (Exception e) {
-            System.err.println("请求失败: " + e.getClass().getName() + ": " + e.getMessage());
-            if (e.getMessage() != null && e.getMessage().contains("401")) {
-                System.err.println("\n❌ 401 认证失败 - API Key 无效或已过期");
-            }
-        }
     }
 }

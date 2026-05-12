@@ -4,15 +4,9 @@ import { Card, Input, Select, Button, Form, message } from 'ant-design-vue'
 import request from '../api/request.js'
 import { listTracks } from '../api/track.js'
 
-const apiKey = ref('sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
-const model = ref('moonshot-v1-8k')
-const miniMaxApiKey = ref('')
-const miniMaxModel = ref('MiniMax-M2.7')
-const selectedLLMModel = ref('kimi')
 const systemName = ref('知我公众号创作助手')
 const logoUrl = ref('')
 const qrCodeUrl = ref('')
-const loading = ref(false)
 
 const parseText = ref('')
 const parsePlatform = ref('公众号')
@@ -106,11 +100,6 @@ async function loadConfig() {
       systemName.value = data.systemName || '知我公众号创作助手'
       logoUrl.value = data.logoUrl || ''
       qrCodeUrl.value = data.qrCodeUrl || ''
-      if (data.apiKey) apiKey.value = data.apiKey
-      if (data.model) model.value = data.model
-      if (data.miniMaxApiKey) miniMaxApiKey.value = data.miniMaxApiKey
-      if (data.miniMaxModel) miniMaxModel.value = data.miniMaxModel
-      if (data.selectedLLMModel) selectedLLMModel.value = data.selectedLLMModel
       notifyEmailEnabled.value = data.notifyEmailEnabled === '1'
       if (data.notifyEmailAddress) notifyEmailAddress.value = data.notifyEmailAddress
       if (data.mainOperator) mainOperator.value = data.mainOperator
@@ -132,29 +121,37 @@ async function loadOperators() {
   }
 }
 
-async function handleSave() {
-  loading.value = true
+async function savePartial(fields) {
   try {
-    await request.post('/configs', {
-      apiKey: apiKey.value,
-      model: model.value,
-      miniMaxApiKey: miniMaxApiKey.value,
-      miniMaxModel: miniMaxModel.value,
-      selectedLLMModel: selectedLLMModel.value,
-      systemName: systemName.value,
-      logoUrl: logoUrl.value,
-      qrCodeUrl: qrCodeUrl.value,
-      notifyEmailEnabled: notifyEmailEnabled.value ? '1' : '0',
-      notifyEmailAddress: notifyEmailAddress.value,
-      mainOperator: mainOperator.value || '',
-      defaultArticleStyle: defaultArticleStyle.value,
-    })
-    message.success('配置已保存')
+    await request.post('/configs', fields)
+    message.success('保存成功')
   } catch (e) {
     message.error('保存失败')
-  } finally {
-    loading.value = false
+    throw e
   }
+}
+
+async function saveBrandConfig() {
+  await savePartial({
+    systemName: systemName.value,
+    logoUrl: logoUrl.value,
+    qrCodeUrl: qrCodeUrl.value,
+  })
+}
+
+async function saveStyleConfig() {
+  await savePartial({ defaultArticleStyle: defaultArticleStyle.value })
+}
+
+async function saveMainOperator() {
+  await savePartial({ mainOperator: mainOperator.value || '' })
+}
+
+async function saveNotifyConfig() {
+  await savePartial({
+    notifyEmailEnabled: notifyEmailEnabled.value ? '1' : '0',
+    notifyEmailAddress: notifyEmailAddress.value,
+  })
 }
 
 function handleLogoUpload(e) {
@@ -269,57 +266,6 @@ onMounted(() => {
   <div>
     <Card style="border-radius: 2px; margin-bottom: 24px;">
       <template #title>
-        <span style="font-size: 16px; font-weight: 500; color: #262626;">大模型选择</span>
-      </template>
-      <Form layout="vertical">
-        <Form.Item label="默认模型">
-          <Select v-model:value="selectedLLMModel" style="max-width: 480px; height: 36px;">
-            <Select.Option value="kimi">Kimi K2.6</Select.Option>
-            <Select.Option value="minimax">MiniMax M2.7</Select.Option>
-          </Select>
-          <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">生成文章时使用的默认大模型</div>
-        </Form.Item>
-      </Form>
-    </Card>
-
-    <Card style="border-radius: 2px; margin-bottom: 24px;">
-      <template #title>
-        <span style="font-size: 16px; font-weight: 500; color: #262626;">Kimi API 配置</span>
-      </template>
-      <Form layout="vertical">
-        <Form.Item label="API Key" required>
-          <Input.Password v-model:value="apiKey" placeholder="请输入 Kimi API Key" style="max-width: 480px;" />
-          <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">用于 AI 生成标题、大纲和全文，仅管理员可见</div>
-        </Form.Item>
-        <Form.Item label="模型选择">
-          <Select show-search v-model:value="model" style="max-width: 480px; height: 36px;">
-            <Select.Option value="moonshot-v1-8k">moonshot-v1-8k</Select.Option>
-            <Select.Option value="moonshot-v1-32k">moonshot-v1-32k</Select.Option>
-            <Select.Option value="moonshot-v1-128k">moonshot-v1-128k</Select.Option>
-            <Select.Option value="kimi-k2-6">kimi-k2-6</Select.Option>
-          </Select>
-        </Form.Item>
-      </Form>
-    </Card>
-
-    <Card style="border-radius: 2px; margin-bottom: 24px;">
-      <template #title>
-        <span style="font-size: 16px; font-weight: 500; color: #262626;">MiniMax API 配置</span>
-      </template>
-      <Form layout="vertical">
-        <Form.Item label="API Key" required>
-          <Input.Password v-model:value="miniMaxApiKey" placeholder="请输入 MiniMax API Key" style="max-width: 480px;" />
-        </Form.Item>
-        <Form.Item label="模型选择">
-          <Select show-search v-model:value="miniMaxModel" style="max-width: 480px; height: 36px;">
-            <Select.Option value="MiniMax-M2.7">MiniMax-M2.7</Select.Option>
-          </Select>
-        </Form.Item>
-      </Form>
-    </Card>
-
-    <Card style="border-radius: 2px; margin-bottom: 24px;">
-      <template #title>
         <span style="font-size: 16px; font-weight: 500; color: #262626;">用户端品牌配置</span>
       </template>
       <Form layout="vertical">
@@ -351,6 +297,9 @@ onMounted(() => {
           <span style="font-size: 16px; font-weight: 500; color: #262626;">{{ systemName }}</span>
         </div>
         <div style="font-size: 12px; color: #8c8c8c; margin-top: 8px;">上方为品牌效果预览</div>
+        <div style="margin-top: 16px;">
+          <Button type="primary" @click="saveBrandConfig">保存</Button>
+        </div>
       </Form>
     </Card>
 
@@ -397,6 +346,7 @@ onMounted(() => {
           <div>在「标题库」的提示词模板中使用 <code style="font-family: monospace;">${stylePrompt}</code> 变量即可引用此处内容。</div>
           <div style="margin-top: 4px;">管理员也可以在「用户管理」中为用户单独配置样式提示词，单独配置的优先级高于默认样式。</div>
         </div>
+        <Button type="primary" style="margin-top: 16px;" @click="saveStyleConfig">保存</Button>
       </Form>
     </Card>
 
@@ -411,6 +361,7 @@ onMounted(() => {
           </Select>
           <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">用户直接访问（不带 op 参数）时，默认展示该运营者的二维码和话术</div>
         </Form.Item>
+        <Button type="primary" @click="saveMainOperator">保存</Button>
       </Form>
     </Card>
 
@@ -440,6 +391,7 @@ onMounted(() => {
           主题：【开户通知】有新的用户提交了开户申请<br/>
           内容包含：微信名称、公众号名称、邮箱、申请时间
         </div>
+        <Button type="primary" style="margin-top: 16px;" @click="saveNotifyConfig">保存</Button>
       </Form>
     </Card>
 
@@ -508,9 +460,5 @@ onMounted(() => {
       </Form>
     </Card>
 
-    <div style="display: flex; gap: 12px; margin-top: 8px;">
-      <Button type="primary" :loading="loading" @click="handleSave">保存配置</Button>
-      <Button @click="loadConfig">重置</Button>
-    </div>
   </div>
 </template>

@@ -80,7 +80,7 @@ const columns = [
     title: '替换后',
     dataIndex: 'ruleTo',
     width: 250,
-    customRender: ({ text }) => text || <span style="color: #999;">（删除）</span>,
+    customRender: ({ text }) => text || h('span', { style: 'color: #999;' }, '（删除）'),
   },
   {
     title: '操作',

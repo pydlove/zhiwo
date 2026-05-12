@@ -19,6 +19,7 @@ public class TitleLibrary {
     private String generatedFileUrl;
     private String generatedFileName;
     private LocalDateTime generatedAt;
+    private Integer generateStatus; // 0=未生成 1=生成成功
 
     // display fields
     private String trackName;
@@ -82,4 +83,7 @@ public class TitleLibrary {
     public void setGeneratedFileName(String generatedFileName) { this.generatedFileName = generatedFileName; }
     public LocalDateTime getGeneratedAt() { return generatedAt; }
     public void setGeneratedAt(LocalDateTime generatedAt) { this.generatedAt = generatedAt; }
+
+    public Integer getGenerateStatus() { return generateStatus; }
+    public void setGenerateStatus(Integer generateStatus) { this.generateStatus = generateStatus; }
 }

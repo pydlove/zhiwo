@@ -196,6 +196,10 @@ public class TitleLibraryService {
         titleLibraryMapper.updateGeneratedFile(id, fileUrl, fileName, LocalDateTime.now());
     }
 
+    public void updateGenerateStatus(String id, Integer generateStatus) {
+        titleLibraryMapper.updateGenerateStatus(id, generateStatus);
+    }
+
     public void updatePushDate(String id, java.time.LocalDate pushDate) {
         titleLibraryMapper.updatePushDate(id, pushDate);
     }

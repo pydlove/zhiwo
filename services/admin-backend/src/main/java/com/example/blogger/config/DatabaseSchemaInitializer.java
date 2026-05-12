@@ -58,6 +58,18 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
                 "  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'," +
                 "  processed_at DATETIME DEFAULT NULL COMMENT '完成时间'" +
                 ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='V2标题生成任务表'");
+
+            ensureTable(conn, "tu_llm_config",
+                "CREATE TABLE IF NOT EXISTS tu_llm_config (" +
+                "  id INT AUTO_INCREMENT PRIMARY KEY," +
+                "  provider VARCHAR(20) NOT NULL COMMENT '提供商: kimi/minimax'," +
+                "  api_key VARCHAR(255) DEFAULT NULL COMMENT 'API Key'," +
+                "  model VARCHAR(50) DEFAULT NULL COMMENT '模型名称'," +
+                "  is_active TINYINT DEFAULT 0 COMMENT '是否当前选中: 0=否 1=是'," +
+                "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
+                "  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP," +
+                "  UNIQUE KEY uk_provider (provider)" +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='大模型配置表'");
         } catch (Exception e) {
             log.error("[DatabaseSchemaInitializer] 数据库连接失败: {}", e.getMessage(), e);
         }

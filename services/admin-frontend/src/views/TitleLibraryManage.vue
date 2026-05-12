@@ -2184,20 +2184,6 @@ onMounted(() => {
 </script>
 
 <template>
-  <!-- 全局生成进度条：放在 Tabs 外面，确保任何 tab 下都可见 -->
-  <div v-if="generating" style="background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-      <div style="font-size: 13px; color: #096dd9;">
-        <strong>正在生成标题</strong> — {{ generateStatusMsg }}
-      </div>
-      <Button type="link" danger size="small" style="padding: 0;" @click="handleCancelGenerate">取消生成</Button>
-    </div>
-    <div style="width: 100%; background: #d9d9d9; border-radius: 4px; height: 8px;">
-      <div :style="{ width: generateProgress + '%', background: '#1890ff', height: '8px', borderRadius: '4px', transition: 'width 0.5s' }" />
-    </div>
-    <div style="font-size: 12px; color: #096dd9; margin-top: 4px; text-align: right;">{{ generateProgress }}%</div>
-  </div>
-
   <div v-if="generatingPost" style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
       <div style="font-size: 13px; color: #389e0d;">
@@ -2243,7 +2229,6 @@ onMounted(() => {
             <div style="display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
               <Button type="primary" @click="handleAdd">+ 新增标题</Button>
               <Button type="primary" ghost :loading="matching" @click="openMatchModal">匹配推荐</Button>
-              <Button @click="openGenerateModal">生成标题</Button>
 
               <div style="margin-left: auto; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
                 <Select show-search v-model:value="selectedTargetUserId" placeholder="选择目标用户（用于样式）" style="width: 180px;" allowClear>
@@ -2669,49 +2654,6 @@ onMounted(() => {
       <Form.Item label="Excel 文件" required>
         <input type="file" accept=".xlsx,.xls" @change="onImportFileChange">
         <div style="font-size: 12px; color: #999; margin-top: 4px;">支持 .xlsx / .xls</div>
-      </Form.Item>
-    </Form>
-  </Modal>
-
-  <Modal v-model:open="generateModalOpen" title="生成标题" :mask-closable="false" :confirm-loading="generating" @ok="handleGenerate">
-    <Form layout="vertical" style="margin-top: 12px;">
-      <div style="background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
-        <div style="font-size: 13px; color: #096dd9; margin-bottom: 8px;">
-          <strong>生成说明</strong>
-        </div>
-        <div style="font-size: 12px; color: #096dd9; line-height: 1.8;">
-          1. 选择平台和赛道，不选则生成全部<br>
-          2. 数量指每个平台下每个赛道生成的标题数<br>
-          3. 系统会按平台分批调用 Claude Code 生成<br>
-          4. 生成结果包含标题、平台、赛道名称和 SEO 描述
-        </div>
-      </div>
-      <Form.Item label="选择平台">
-        <Select show-search v-model:value="generatePlatforms" mode="multiple" placeholder="不选则生成全部平台" style="width: 100%;" @change="onPlatformChange">
-          <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value" :label="p.label">{{ p.label }}</Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item label="选择赛道">
-        <Select show-search v-model:value="generateTrackIds" mode="multiple" placeholder="不选则生成全部赛道" style="width: 100%;">
-          <Select.Option v-for="t in filteredTracksForGenerate" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item label="每个组合生成数量" required>
-        <Input v-model:value="generateCount" type="number" min="1" max="20" placeholder="例如：3" />
-      </Form.Item>
-      <Form.Item label="输出文件路径">
-        <Input v-model:value="generateOutputPath" placeholder="不填则默认保存到项目 export 目录" />
-        <div style="font-size: 12px; color: #999; margin-top: 4px;">留空默认保存到项目根目录/export/下，带时间戳文件名</div>
-      </Form.Item>
-      <Form.Item label="生成方向（可选）">
-        <Input.TextArea
-          v-model:value="generateInstruction"
-          placeholder="例如：更口语化、更具悬念、突出数字效果、适合抖音风格、偏新闻报道类..."
-          :rows="2"
-          :maxlength="1000"
-          show-count
-        />
-        <div style="font-size: 12px; color: #999; margin-top: 4px;">不填则使用默认策略生成</div>
       </Form.Item>
     </Form>
   </Modal>

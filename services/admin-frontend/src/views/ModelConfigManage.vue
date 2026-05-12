@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { Card, Input, Select, Button, Form, message } from 'ant-design-vue'
-import request from '../api/request.js'
+import { getLLMConfig, saveLLMConfig } from '../api/llmConfig.js'
 
 const apiKey = ref('sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
 const model = ref('moonshot-v1-8k')
@@ -11,45 +11,41 @@ const selectedLLMModel = ref('kimi')
 
 async function loadConfig() {
   try {
-    const data = await request.get('/configs')
+    const data = await getLLMConfig()
     if (data) {
-      if (data.apiKey) apiKey.value = data.apiKey
-      if (data.model) model.value = data.model
-      if (data.miniMaxApiKey) miniMaxApiKey.value = data.miniMaxApiKey
-      if (data.miniMaxModel) miniMaxModel.value = data.miniMaxModel
-      if (data.selectedLLMModel) selectedLLMModel.value = data.selectedLLMModel
+      selectedLLMModel.value = data.selectedProvider || 'kimi'
+      if (data.kimi) {
+        if (data.kimi.apiKey) apiKey.value = data.kimi.apiKey
+        if (data.kimi.model) model.value = data.kimi.model
+      }
+      if (data.minimax) {
+        if (data.minimax.apiKey) miniMaxApiKey.value = data.minimax.apiKey
+        if (data.minimax.model) miniMaxModel.value = data.minimax.model
+      }
     }
   } catch (e) {
     // ignore
   }
 }
 
-async function savePartial(fields) {
+async function saveLLMModel() {
   try {
-    await request.post('/configs', fields)
+    await saveLLMConfig({
+      selectedProvider: selectedLLMModel.value,
+      kimi: {
+        apiKey: apiKey.value,
+        model: model.value,
+      },
+      minimax: {
+        apiKey: miniMaxApiKey.value,
+        model: miniMaxModel.value,
+      },
+    })
     message.success('保存成功')
   } catch (e) {
     message.error('保存失败')
     throw e
   }
-}
-
-async function saveLLMModel() {
-  await savePartial({ selectedLLMModel: selectedLLMModel.value })
-}
-
-async function saveKimiConfig() {
-  await savePartial({
-    apiKey: apiKey.value,
-    model: model.value,
-  })
-}
-
-async function saveMiniMaxConfig() {
-  await savePartial({
-    miniMaxApiKey: miniMaxApiKey.value,
-    miniMaxModel: miniMaxModel.value,
-  })
 }
 
 onMounted(() => {
@@ -71,7 +67,6 @@ onMounted(() => {
           </Select>
           <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">生成文章时使用的默认大模型</div>
         </Form.Item>
-        <Button type="primary" @click="saveLLMModel">保存</Button>
       </Form>
     </Card>
 
@@ -92,7 +87,6 @@ onMounted(() => {
             <Select.Option value="kimi-k2-6">kimi-k2-6</Select.Option>
           </Select>
         </Form.Item>
-        <Button type="primary" @click="saveKimiConfig">保存</Button>
       </Form>
     </Card>
 
@@ -109,8 +103,9 @@ onMounted(() => {
             <Select.Option value="MiniMax-M2.7">MiniMax-M2.7</Select.Option>
           </Select>
         </Form.Item>
-        <Button type="primary" @click="saveMiniMaxConfig">保存</Button>
       </Form>
     </Card>
+
+    <Button type="primary" @click="saveLLMModel">保存</Button>
   </div>
 </template>

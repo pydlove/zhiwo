@@ -6,11 +6,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.example.blogger.mapper.ConfigMapper;
-import com.example.blogger.entity.Config;
+import com.example.blogger.entity.LLMConfig;
+import com.example.blogger.mapper.LLMConfigMapper;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @Service
@@ -24,12 +23,12 @@ public class LLMService {
     private static final int CONNECT_TIMEOUT_MS = 30000;
     private static final int READ_TIMEOUT_MS = 300000;
 
-    private final ConfigMapper configMapper;
+    private final LLMConfigMapper llmConfigMapper;
     private final ObjectMapper objectMapper;
 
     @Autowired
-    public LLMService(ConfigMapper configMapper) {
-        this.configMapper = configMapper;
+    public LLMService(LLMConfigMapper llmConfigMapper) {
+        this.llmConfigMapper = llmConfigMapper;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -37,9 +36,10 @@ public class LLMService {
      * 获取当前配置的默认模型类型
      */
     public String getSelectedModelType() {
-        String val = getConfigValue("selectedLLMModel");
-        log.info("[LLMService] 读取模型配置 selectedLLMModel={}, 解析结果={}", val, (val == null || val.isEmpty()) ? "kimi(默认)" : val);
-        return (val == null || val.isEmpty()) ? "kimi" : val;
+        LLMConfig active = llmConfigMapper.findActive();
+        String provider = (active != null && active.getProvider() != null) ? active.getProvider() : "kimi";
+        log.info("[LLMService] 读取模型配置 activeProvider={}, 解析结果={}", provider, provider);
+        return provider;
     }
 
     /**
@@ -59,8 +59,9 @@ public class LLMService {
      * 调用 Kimi K2.6 API (java.net.http.HttpClient 精确复刻 CLI 请求)
      */
     private String callKimiAPI(String prompt) {
-        String apiKey = getConfigValue("apiKey");
-        String model = getConfigValue("model");
+        LLMConfig config = llmConfigMapper.findByProvider("kimi");
+        String apiKey = config != null ? config.getApiKey() : null;
+        String model = config != null ? config.getModel() : null;
         if (apiKey != null) apiKey = apiKey.trim();
 
         log.info("[LLMService] Kimi API Key length: {}", (apiKey != null ? apiKey.length() : 0));
@@ -126,8 +127,9 @@ public class LLMService {
      * 调用 MiniMax M2.7 API (java.net.http.HttpClient 同步模式)
      */
     private String callMinimaxAPI(String prompt) {
-        String apiKey = getConfigValue("miniMaxApiKey");
-        String model = getConfigValue("miniMaxModel");
+        LLMConfig config = llmConfigMapper.findByProvider("minimax");
+        String apiKey = config != null ? config.getApiKey() : null;
+        String model = config != null ? config.getModel() : null;
         log.info("[LLMService] MiniMax API Key length: {}", (apiKey != null ? apiKey.length() : 0));
         log.info("[LLMService] MiniMax model: {}", model);
         if (apiKey == null || apiKey.isEmpty()) {
@@ -181,22 +183,5 @@ public class LLMService {
         } catch (Exception e) {
             throw new RuntimeException("MiniMax API 调用失败: " + e.getMessage(), e);
         }
-    }
-
-    private String getConfigValue(String key) {
-        List<Config> configs = configMapper.findAll();
-        if ("selectedLLMModel".equals(key) && log.isDebugEnabled()) {
-            StringBuilder keys = new StringBuilder();
-            for (Config c : configs) {
-                keys.append(c.getConfigKey()).append("=").append(c.getConfigValue()).append("; ");
-            }
-            log.debug("[LLMService] 当前所有配置: {}", keys);
-        }
-        for (Config c : configs) {
-            if (key.equals(c.getConfigKey())) {
-                return c.getConfigValue();
-            }
-        }
-        return null;
     }
 }

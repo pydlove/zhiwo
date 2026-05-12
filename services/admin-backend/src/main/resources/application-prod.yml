@@ -35,13 +35,18 @@ mybatis:
   configuration:
     map-underscore-to-camel-case: true
 
+# 生产环境禁用本地 Claude CLI 处理器
+local:
+  task-processor:
+    enabled: false
+
 # 生产环境只显示"推送上来"Tab
 app:
   visible-tabs:
     process-manage: pushed-up
   script:
-    # 生产环境脚本路径，部署时请将脚本放到服务器对应位置并修改此配置
-    replace-periods-path: ${REPLACE_PERIODS_SCRIPT_PATH:/opt/scripts/replace_periods.py}
+    # 生产环境脚本路径，deploy.sh 会自动上传到 /root/app/gzh/scripts/py/
+    replace-periods-path: ${REPLACE_PERIODS_SCRIPT_PATH:/root/app/gzh/scripts/py/replace_periods.py}
 
 jasypt:
   encryptor:

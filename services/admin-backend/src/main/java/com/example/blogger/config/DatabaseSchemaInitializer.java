@@ -26,81 +26,42 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         try (Connection conn = dataSource.getConnection()) {
+            ensureColumn(conn, "tu_title_generation_task", "progress_step",
+                "ALTER TABLE tu_title_generation_task ADD COLUMN progress_step INT DEFAULT 0 COMMENT '进度步骤：0=排队 1=构建提示词 2=大模型生成 3=写入文件 4=完成'");
+
+            ensureColumn(conn, "tu_title_generation_task", "progress_message",
+                "ALTER TABLE tu_title_generation_task ADD COLUMN progress_message VARCHAR(200) DEFAULT '' COMMENT '当前进度描述'");
+
+            ensureColumn(conn, "tu_title_library", "generate_status",
+                "ALTER TABLE tu_title_library ADD COLUMN generate_status INT DEFAULT 0 COMMENT '生成状态：0=未生成 1=生成成功 2=生成中'");
+
+            ensureColumn(conn, "tu_title_generation_task", "generated_content",
+                "ALTER TABLE tu_title_generation_task ADD COLUMN generated_content LONGTEXT COMMENT '大模型生成的原始内容'");
+
+            ensureColumn(conn, "tu_user", "theme_color",
+                "ALTER TABLE tu_user ADD COLUMN theme_color VARCHAR(20) DEFAULT '#fa541c' COMMENT '文章主题色'");
+        } catch (Exception e) {
+            log.error("[DatabaseSchemaInitializer] 数据库连接失败: {}", e.getMessage(), e);
+        }
+    }
+
+    private void ensureColumn(Connection conn, String tableName, String columnName, String alterSql) {
+        try {
             DatabaseMetaData metaData = conn.getMetaData();
-
-            // 检查 progress_step 列是否存在
-            boolean hasProgressStep = false;
-            boolean hasProgressMessage = false;
-
-            try (ResultSet rs = metaData.getColumns(null, null, "tu_title_generation_task", "progress_step")) {
-                hasProgressStep = rs.next();
+            boolean exists = false;
+            try (ResultSet rs = metaData.getColumns(null, null, tableName, columnName)) {
+                exists = rs.next();
             }
-            try (ResultSet rs = metaData.getColumns(null, null, "tu_title_generation_task", "progress_message")) {
-                hasProgressMessage = rs.next();
-            }
-
-            if (!hasProgressStep || !hasProgressMessage) {
+            if (!exists) {
                 try (Statement stmt = conn.createStatement()) {
-                    if (!hasProgressStep) {
-                        stmt.executeUpdate(
-                            "ALTER TABLE tu_title_generation_task ADD COLUMN progress_step INT DEFAULT 0 COMMENT '进度步骤：0=排队 1=构建提示词 2=大模型生成 3=写入文件 4=完成'"
-                        );
-                        log.info("[DatabaseSchemaInitializer] 已自动添加字段: progress_step");
-                    }
-                    if (!hasProgressMessage) {
-                        stmt.executeUpdate(
-                            "ALTER TABLE tu_title_generation_task ADD COLUMN progress_message VARCHAR(200) DEFAULT '' COMMENT '当前进度描述'"
-                        );
-                        log.info("[DatabaseSchemaInitializer] 已自动添加字段: progress_message");
-                    }
+                    stmt.executeUpdate(alterSql);
+                    log.info("[DatabaseSchemaInitializer] 已自动添加字段: {}.{}", tableName, columnName);
                 }
             } else {
-                log.debug("[DatabaseSchemaInitializer] tu_title_generation_task 表字段已存在，跳过迁移");
-            }
-
-            // 检查 tu_title_library 表是否缺少 generate_status 字段
-            boolean hasGenerateStatus = false;
-            try (ResultSet rs = metaData.getColumns(null, null, "tu_title_library", "generate_status")) {
-                hasGenerateStatus = rs.next();
-            }
-            if (!hasGenerateStatus) {
-                try (Statement stmt = conn.createStatement()) {
-                    stmt.executeUpdate(
-                        "ALTER TABLE tu_title_library ADD COLUMN generate_status INT DEFAULT 0 COMMENT '生成状态：0=未生成 1=生成成功 2=生成中'"
-                    );
-                    log.info("[DatabaseSchemaInitializer] 已自动添加字段: generate_status");
-                }
-            }
-
-            // 检查 generated_content 列是否存在
-            boolean hasGeneratedContent = false;
-            try (ResultSet rs = metaData.getColumns(null, null, "tu_title_generation_task", "generated_content")) {
-                hasGeneratedContent = rs.next();
-            }
-            if (!hasGeneratedContent) {
-                try (Statement stmt = conn.createStatement()) {
-                    stmt.executeUpdate(
-                        "ALTER TABLE tu_title_generation_task ADD COLUMN generated_content LONGTEXT COMMENT '大模型生成的原始内容'"
-                    );
-                    log.info("[DatabaseSchemaInitializer] 已自动添加字段: generated_content");
-                }
-            }
-
-            // 检查 tu_user 表是否缺少 theme_color 字段
-            boolean hasThemeColor = false;
-            try (ResultSet rs = metaData.getColumns(null, null, "tu_user", "theme_color")) {
-                hasThemeColor = rs.next();
-            }
-            if (!hasThemeColor) {
-                try (Statement stmt = conn.createStatement()) {
-                    stmt.executeUpdate(
-                        "ALTER TABLE tu_user ADD COLUMN theme_color VARCHAR(20) DEFAULT '#fa541c' COMMENT '文章主题色'"
-                    );
-                    log.info("[DatabaseSchemaInitializer] 已自动添加字段: theme_color");
-                }
+                log.debug("[DatabaseSchemaInitializer] {}.{} 已存在，跳过迁移", tableName, columnName);
             }
         } catch (Exception e) {
-            log.error("[DatabaseSchemaInitializer] 数据库字段迁移失败: {}", e.getMessage(), e);
+            log.error("[DatabaseSchemaInitializer] 添加字段 {}.{} 失败: {}", tableName, columnName, e.getMessage());
         }
     }
 }

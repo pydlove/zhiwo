@@ -25,20 +25,24 @@ public class UserService {
 
     @PostConstruct
     public void initInviteCodes() {
-        List<User> users = userMapper.findAll();
-        int generated = 0;
-        for (User user : users) {
-            if (user.getInviteCode() == null || user.getInviteCode().isEmpty()) {
-                String code;
-                do {
-                    code = generateInviteCode();
-                } while (userMapper.findByInviteCode(code) != null);
-                userMapper.updateInviteCode(user.getId(), code);
-                generated++;
+        try {
+            List<User> users = userMapper.findAll();
+            int generated = 0;
+            for (User user : users) {
+                if (user.getInviteCode() == null || user.getInviteCode().isEmpty()) {
+                    String code;
+                    do {
+                        code = generateInviteCode();
+                    } while (userMapper.findByInviteCode(code) != null);
+                    userMapper.updateInviteCode(user.getId(), code);
+                    generated++;
+                }
             }
-        }
-        if (generated > 0) {
-            System.out.println("[InviteCodeInit] 已为 " + generated + " 位存量用户生成邀请码");
+            if (generated > 0) {
+                System.out.println("[InviteCodeInit] 已为 " + generated + " 位存量用户生成邀请码");
+            }
+        } catch (Exception e) {
+            System.err.println("[InviteCodeInit] 跳过：表字段可能尚未初始化，" + e.getMessage());
         }
     }
 

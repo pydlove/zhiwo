@@ -67,6 +67,10 @@ public class TitleGenerationTaskService {
         taskMapper.updateProgress(id, step, message, LocalDateTime.now());
     }
 
+    public void updateGeneratedContent(String id, String content) {
+        taskMapper.updateGeneratedContent(id, content, LocalDateTime.now());
+    }
+
     public List<TitleGenerationTask> listTasks(String keyword, String status) {
         return taskMapper.findAllWithSearch(keyword, status);
     }

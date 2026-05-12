@@ -41,6 +41,9 @@ public interface TitleGenerationTaskMapper {
     @Update("UPDATE tu_title_generation_task SET progress_step = #{step}, progress_message = #{message}, updated_at = #{updatedAt} WHERE id = #{id}")
     int updateProgress(@Param("id") String id, @Param("step") Integer step, @Param("message") String message, @Param("updatedAt") LocalDateTime updatedAt);
 
+    @Update("UPDATE tu_title_generation_task SET generated_content = #{content}, updated_at = #{updatedAt} WHERE id = #{id}")
+    int updateGeneratedContent(@Param("id") String id, @Param("content") String content, @Param("updatedAt") LocalDateTime updatedAt);
+
     @Delete("DELETE FROM tu_title_generation_task WHERE id = #{id} AND status = 'pending'")
     int deletePendingById(@Param("id") String id);
 

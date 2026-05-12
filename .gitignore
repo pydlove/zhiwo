@@ -61,3 +61,6 @@ Thumbs.db
 /.idea/
 /services/ai-detect/models/
 /services/admin-backend/logs/
+/services/admin-backend/uploads/articles/
+/services/admin-backend/uploads/
+/services/admin-backend/tmp/

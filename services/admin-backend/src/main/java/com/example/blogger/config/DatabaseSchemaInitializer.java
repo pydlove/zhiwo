@@ -71,6 +71,34 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
                     log.info("[DatabaseSchemaInitializer] 已自动添加字段: generate_status");
                 }
             }
+
+            // 检查 generated_content 列是否存在
+            boolean hasGeneratedContent = false;
+            try (ResultSet rs = metaData.getColumns(null, null, "tu_title_generation_task", "generated_content")) {
+                hasGeneratedContent = rs.next();
+            }
+            if (!hasGeneratedContent) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.executeUpdate(
+                        "ALTER TABLE tu_title_generation_task ADD COLUMN generated_content LONGTEXT COMMENT '大模型生成的原始内容'"
+                    );
+                    log.info("[DatabaseSchemaInitializer] 已自动添加字段: generated_content");
+                }
+            }
+
+            // 检查 tu_user 表是否缺少 theme_color 字段
+            boolean hasThemeColor = false;
+            try (ResultSet rs = metaData.getColumns(null, null, "tu_user", "theme_color")) {
+                hasThemeColor = rs.next();
+            }
+            if (!hasThemeColor) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.executeUpdate(
+                        "ALTER TABLE tu_user ADD COLUMN theme_color VARCHAR(20) DEFAULT '#fa541c' COMMENT '文章主题色'"
+                    );
+                    log.info("[DatabaseSchemaInitializer] 已自动添加字段: theme_color");
+                }
+            }
         } catch (Exception e) {
             log.error("[DatabaseSchemaInitializer] 数据库字段迁移失败: {}", e.getMessage(), e);
         }

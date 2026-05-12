@@ -27,7 +27,7 @@ const routes = [
       { path: 'orders', name: 'OrderManage', component: () => import('../views/OrderManage.vue'), meta: { title: '收益管理', perm: 'config' } },
       { path: 'expire-reminder', name: 'ExpireReminder', component: () => import('../views/ExpireReminder.vue'), meta: { title: '到期提醒', perm: 'user' } },
       { path: 'process', name: 'ProcessManage', component: () => import('../views/ProcessManage.vue'), meta: { title: '流程管理', perm: 'title-library' } },
-      { path: 'task-list', name: 'TaskListManage', component: () => import('../views/TaskListManage.vue'), meta: { title: '任务列表', perm: 'task-list' } },
+      { path: 'task-list', name: 'TaskListManage', component: () => import('../views/TaskListManage.vue'), meta: { title: '生成文章任务', perm: 'task-list' } },
       { path: 'customer-dialogues', name: 'CustomerDialogueManage', component: () => import('../views/CustomerDialogueManage.vue'), meta: { title: '客服对话', perm: 'config' } },
       { path: 'ai-flavor-rules', name: 'AiFlavorRuleManage', component: () => import('../views/AiFlavorRuleManage.vue'), meta: { title: 'AI去除规则', perm: 'config' } },
       // FIXME: AI 检测功能暂时禁用

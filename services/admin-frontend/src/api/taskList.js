@@ -19,3 +19,11 @@ export function stopTask(id) {
 export function retryTask(id) {
   return request.post(`/tasks/${id}/retry`)
 }
+
+export function regenerateDocx(id) {
+  return request.post(`/tasks/${id}/regenerate-docx`)
+}
+
+export function reapplyAiFlavor(id) {
+  return request.post(`/tasks/${id}/reapply-ai-flavor`)
+}

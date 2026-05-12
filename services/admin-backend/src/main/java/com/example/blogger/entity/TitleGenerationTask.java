@@ -20,6 +20,7 @@ public class TitleGenerationTask {
     private LocalDateTime processedAt;
     private Integer progressStep;
     private String progressMessage;
+    private String generatedContent; // 大模型生成的原始内容
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -59,4 +60,7 @@ public class TitleGenerationTask {
 
     public String getProgressMessage() { return progressMessage; }
     public void setProgressMessage(String progressMessage) { this.progressMessage = progressMessage; }
+
+    public String getGeneratedContent() { return generatedContent; }
+    public void setGeneratedContent(String generatedContent) { this.generatedContent = generatedContent; }
 }

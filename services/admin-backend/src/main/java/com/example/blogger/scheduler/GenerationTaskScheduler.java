@@ -105,6 +105,7 @@ public class GenerationTaskScheduler {
                     throw new InterruptedException("任务被停止");
                 }
                 log.info("[GenerationTaskScheduler] LLM 返回内容长度: {}", content.length());
+                taskService.updateGeneratedContent(task.getId(), content);
                 taskService.updateProgress(task.getId(), 2, "大模型生成完成");
 
                 // Step 3: Generate DOCX file

@@ -1,8 +1,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { Table, Tag, Input, Select, Button, Steps, message, Popconfirm } from 'ant-design-vue'
-import { listTasks, cancelTask, stopTask, retryTask } from '../api/taskList.js'
+import { Table, Tag, Input, Select, Button, Steps, message, Popconfirm, Dropdown, Menu } from 'ant-design-vue'
+import { listTasks, cancelTask, stopTask, retryTask, regenerateDocx, reapplyAiFlavor } from '../api/taskList.js'
 
 const router = useRouter()
 
@@ -42,7 +42,7 @@ function fetchTasks() {
       tasks.value = res?.list || []
     })
     .catch(() => {
-      message.error('加载任务列表失败')
+      message.error('加载生成文章任务失败')
     })
     .finally(() => {
       loading.value = false
@@ -129,6 +129,32 @@ async function handleRetry(record) {
   }
 }
 
+async function handleRegenerateDocx(record) {
+  actionLoadingId.value = record.id
+  try {
+    await regenerateDocx(record.id)
+    message.success('样式优化已重新执行')
+    fetchTasks()
+  } catch (e) {
+    message.error(e?.response?.data?.msg || '重新生成失败')
+  } finally {
+    actionLoadingId.value = null
+  }
+}
+
+async function handleReapplyAiFlavor(record) {
+  actionLoadingId.value = record.id
+  try {
+    await reapplyAiFlavor(record.id)
+    message.success('去AI味已重新执行')
+    fetchTasks()
+  } catch (e) {
+    message.error(e?.response?.data?.msg || '去AI味执行失败')
+  } finally {
+    actionLoadingId.value = null
+  }
+}
+
 const columns = [
   {
     title: '标题',
@@ -149,16 +175,30 @@ const columns = [
   {
     title: '进度',
     key: 'progress',
-    width: 500,
+    width: 320,
     customRender: ({ record }) => {
-      const current = getStepCurrent(record.status, record.progressStep)
-      return h('div', {}, [
-        h(Steps, { size: 'small', current: current }, () =>
-          stepItems.map((item, idx) => h(Step, { key: idx, title: item.title }))
-        ),
-        record.progressMessage
-          ? h('div', { style: 'margin-top: 4px; font-size: 12px; color: #888;' }, record.progressMessage)
-          : null,
+      const status = record.status
+      const step = record.progressStep || 0
+      const msg = record.progressMessage || ''
+
+      const config = {
+        pending:    { color: '#1890ff', bg: '#e6f7ff', tag: 'blue',    text: '排队中' },
+        processing: { color: '#fa8c16', bg: '#fff7e6', tag: 'orange',  text: stepItems[Math.min(step - 1, 5)]?.title || '处理中' },
+        stopped:    { color: '#bfbfbf', bg: '#f5f5f5', tag: 'default', text: '已停止' },
+        completed:  { color: '#52c41a', bg: '#f6ffed', tag: 'success', text: '已完成' },
+        failed:     { color: '#ff4d4f', bg: '#fff2f0', tag: 'error',   text: '失败' },
+      }[status] || config.pending
+
+      const percent = status === 'completed' ? 100 : Math.min(Math.round((step / 6) * 100), 95)
+
+      return h('div', { style: 'min-width: 180px;' }, [
+        h('div', { style: 'display: flex; align-items: center; gap: 8px; margin-bottom: 6px;' }, [
+          h(Tag, { color: config.tag, style: 'font-size: 12px; line-height: 18px; padding: 0 6px; margin: 0;' }, () => config.text),
+          h('span', { style: 'font-size: 12px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px;' }, msg),
+        ]),
+        h('div', { style: `width: 100%; height: 6px; background: ${config.bg}; border-radius: 3px; overflow: hidden;` }, [
+          h('div', { style: `height: 100%; width: ${percent}%; background: ${config.color}; border-radius: 3px; transition: width 0.3s ease;` }),
+        ]),
       ])
     },
   },
@@ -171,39 +211,54 @@ const columns = [
   {
     title: '操作',
     key: 'action',
-    width: 120,
+    width: 160,
     align: 'center',
     customRender: ({ record }) => {
       const isLoading = actionLoadingId.value === record.id
-      const btns = []
 
       if (record.status === 'pending') {
-        btns.push(
+        return h('div', { style: 'display: flex; justify-content: center;' }, [
           h(Popconfirm, {
             title: '确定取消该任务吗？',
             onConfirm: () => handleCancel(record),
-          }, () => h(Button, { type: 'link', size: 'small', danger: true, loading: isLoading }, () => '取消'))
-        )
-      } else if (record.status === 'processing') {
-        btns.push(
+          }, () => h(Button, { type: 'link', size: 'small', danger: true, loading: isLoading }, () => '取消')),
+        ])
+      }
+
+      if (record.status === 'processing') {
+        return h('div', { style: 'display: flex; justify-content: center;' }, [
           h(Popconfirm, {
             title: '确定停止该任务吗？',
             onConfirm: () => handleStop(record),
-          }, () => h(Button, { type: 'link', size: 'small', danger: true, loading: isLoading }, () => '停止'))
-        )
-      } else {
-        btns.push(
-          h(Button, { type: 'link', size: 'small', loading: isLoading, onClick: () => handleRetry(record) }, () => '重跑')
-        )
+          }, () => h(Button, { type: 'link', size: 'small', danger: true, loading: isLoading }, () => '停止')),
+        ])
       }
+
+      const mainBtns = [
+        h(Button, { type: 'link', size: 'small', loading: isLoading, onClick: () => handleRetry(record) }, () => '重跑'),
+      ]
 
       if (record.resultFileUrl) {
-        btns.push(
-          h('a', { href: record.resultFileUrl, target: '_blank', rel: 'noopener noreferrer', style: 'margin-left: 4px;' }, () => '下载')
+        mainBtns.push(
+          h('a', { href: record.resultFileUrl, target: '_blank', rel: 'noopener noreferrer', style: 'padding: 0 4px;' }, () => '下载')
         )
       }
 
-      return h('div', { style: 'display: flex; align-items: center; justify-content: center;' }, btns)
+      const moreItems = [
+        h(Menu.Item, { key: 'regen', onClick: () => handleRegenerateDocx(record) }, () => '重跑样式优化'),
+      ]
+      if (record.resultFileUrl) {
+        moreItems.push(
+          h(Menu.Item, { key: 'aiflavor', onClick: () => handleReapplyAiFlavor(record) }, () => '重跑去AI味')
+        )
+      }
+
+      const moreDropdown = h(Dropdown, {}, {
+        default: () => h(Button, { type: 'link', size: 'small', style: 'padding: 0 4px;' }, () => '更多'),
+        overlay: () => h(Menu, {}, () => moreItems),
+      })
+
+      return h('div', { style: 'display: flex; align-items: center; justify-content: center; gap: 2px; flex-wrap: wrap;' }, [...mainBtns, moreDropdown])
     },
   },
 ]

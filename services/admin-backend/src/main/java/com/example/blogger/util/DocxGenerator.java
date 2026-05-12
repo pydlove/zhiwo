@@ -15,6 +15,7 @@ public class DocxGenerator {
     private static final int H3_FONT_SIZE = 16; // 16pt
     private static final int NORMAL_FONT_SIZE = 12; // 12pt
 
+    private static final Pattern H1_PATTERN = Pattern.compile("<h1[^>]*>(.*?)</h1>");
     private static final Pattern H3_PATTERN = Pattern.compile("<h3>(.*?)</h3>");
     private static final Pattern S_PATTERN = Pattern.compile("<s>(.*?)</s>");
 
@@ -25,21 +26,10 @@ public class DocxGenerator {
      * @param filePath 输出文件路径
      */
     public void generateDocx(String title, String content, String filePath) throws Exception {
+        // title 参数保留用于兼容调用方，但不再写入文档正文
         try (FileOutputStream out = new FileOutputStream(filePath);
              XWPFDocument document = new XWPFDocument()) {
-            // 标题
-            XWPFParagraph titleParagraph = document.createParagraph();
-            titleParagraph.setAlignment(ParagraphAlignment.CENTER);
-            XWPFRun titleRun = titleParagraph.createRun();
-            titleRun.setText(title);
-            titleRun.setBold(true);
-            titleRun.setFontSize(24);
-            titleRun.addBreak();
-
-            // 空行
-            document.createParagraph();
-
-            // 正文段落：按 \n\n 分割段落
+            // 正文段落：按 \n\n 分割段落（不再单独写入标题，标题已体现在文件名中）
             String[] paragraphs = content.split("\n\n");
             for (String para : paragraphs) {
                 if (para.trim().isEmpty()) {
@@ -47,6 +37,12 @@ public class DocxGenerator {
                     continue;
                 }
                 String trimmed = para.trim();
+
+                // 跳过 <h1> 文章标题段落（标题已体现在文件名中）
+                Matcher h1Matcher = H1_PATTERN.matcher(trimmed);
+                if (h1Matcher.matches()) {
+                    continue;
+                }
 
                 // 检查是否是 <h3> 标题段落
                 Matcher h3Matcher = H3_PATTERN.matcher(trimmed);

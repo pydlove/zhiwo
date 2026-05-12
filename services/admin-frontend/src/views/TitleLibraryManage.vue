@@ -394,19 +394,14 @@ const columns = [
   {
     title: '操作',
     key: 'action',
-    width: 180,
+    width: 160,
     align: 'center',
     customRender: ({ record }) => {
       const hasFile = !!(record.generatedFileUrl || record.subscriptionPostFileUrl)
 
+      // 核心按钮：编辑、生成
       const mainBtns = [
         h(Button, { type: 'link', size: 'small', onClick: () => handleEdit(record) }, () => '编辑'),
-        hasFile
-          ? h(Button, { type: 'link', size: 'small', style: 'padding: 0 4px;', onClick: () => downloadArticle(record) }, () => '下载')
-          : null,
-        hasFile
-          ? h(Button, { type: 'link', size: 'small', style: 'padding: 0 4px;', onClick: () => handlePreviewGeneratedArticle(record) }, () => '预览')
-          : null,
         h(Button, {
           type: 'link',
           size: 'small',
@@ -414,20 +409,33 @@ const columns = [
           loading: generatingPostId.value === record.id,
           onClick: () => handleGeneratePost(record),
         }, () => '生成'),
-      ].filter(Boolean)
+      ]
+
+      // 文件下拉：下载、预览（有文件时才显示）
+      let fileDropdown = null
+      if (hasFile) {
+        const fileItems = [
+          h(Menu.Item, { key: 'dl', onClick: () => downloadArticle(record) }, () => '下载'),
+          h(Menu.Item, { key: 'pv', onClick: () => handlePreviewGeneratedArticle(record) }, () => '预览'),
+        ]
+        fileDropdown = h(Dropdown, {}, {
+          default: () => h(Button, { type: 'link', size: 'small', style: 'padding: 0 4px;' }, () => '文件'),
+          overlay: () => h(Menu, {}, () => fileItems),
+        })
+      }
 
       // 更多下拉：发邮件、AI味通过、删除
       const moreMenuItems = []
       if (hasFile && record.recommendUserId) {
         moreMenuItems.push(
-          h(Menu.Item, { onClick: () => sendArticleEmailToUser(record) }, () =>
+          h(Menu.Item, { key: 'semail', onClick: () => sendArticleEmailToUser(record) }, () =>
             h('span', {}, sendArticleEmailLoadingId.value === record.id ? '发送中...' : '发送文章邮件')
           )
         )
       }
       if (record.subscriptionPostId && !hasFile) {
         moreMenuItems.push(
-          h(Menu.Item, { onClick: () => handleSendEmail(record) }, () =>
+          h(Menu.Item, { key: 'email', onClick: () => handleSendEmail(record) }, () =>
             h('span', {}, sendEmailLoadingId.value === record.id ? '发送中...' : '发邮件')
           )
         )
@@ -437,13 +445,14 @@ const columns = [
       }
       moreMenuItems.push(
         h(Menu.Item, {
+          key: 'ai',
           onClick: () => record.isAiPassed ? null : handleAiPassedOne(record),
           disabled: record.isAiPassed,
         }, () => record.isAiPassed ? '✓ AI味已通过' : '标记AI味通过')
       )
       moreMenuItems.push(h(Menu.Divider))
       moreMenuItems.push(
-        h(Menu.Item, { danger: true, onClick: () => handleDelete(record) }, () => '删除')
+        h(Menu.Item, { key: 'del', danger: true, onClick: () => handleDelete(record) }, () => '删除')
       )
 
       const moreDropdown = h(Dropdown, {}, {
@@ -451,8 +460,11 @@ const columns = [
         overlay: () => h(Menu, {}, () => moreMenuItems),
       })
 
-      mainBtns.push(moreDropdown)
-      return h('div', { style: 'display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 2px;' }, mainBtns)
+      return h('div', { style: 'display: flex; justify-content: center; align-items: center; gap: 2px; flex-wrap: wrap;' }, [
+        ...mainBtns,
+        fileDropdown,
+        moreDropdown,
+      ].filter(Boolean))
     },
   },
 ]
@@ -2288,7 +2300,7 @@ onMounted(() => {
         <div style="width: 100%; min-width: 0;">
           <Card :title="'标题库 — ' + t.label" :bordered="false">
             <template #extra>
-              <Button @click="router.push('/task-list')">任务列表</Button>
+              <Button @click="router.push('/task-list')">生成文章任务</Button>
             </template>
             <!-- 第一行：搜索筛选 -->
             <div style="display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">

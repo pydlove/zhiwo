@@ -4,6 +4,10 @@ export function listTitles(params) {
   return request.get('/title-library', { params })
 }
 
+export function getTrackStats() {
+  return request.get('/title-library/track-stats')
+}
+
 export function saveTitle(data) {
   if (data.id) {
     return request.put('/title-library/' + data.id, data)
@@ -249,6 +253,43 @@ export function batchAiPassed(titleIds) {
 // 批量标记复制提示词
 export function batchCopied(titleIds) {
   return request.post('/title-library/batch-copied', { titleIds })
+}
+
+// 标记/取消标记AI味重
+export function markAiFlavorHeavy(titleId, heavy = true) {
+  return request.post('/title-library/mark-ai-flavor-heavy', null, { params: { titleId, heavy } })
+}
+
+// 确认标题
+export function confirmTitle(id) {
+  return request.post('/title-library/' + id + '/confirm')
+}
+
+// 批量确认标题
+export function batchConfirm(titleIds) {
+  return request.post('/title-library/batch-confirm', { titleIds })
+}
+
+// ========== 文章审核管理 ==========
+
+// 查询待审核列表
+export function listPendingReview(date) {
+  return request.get('/title-library/pending-review', { params: { date } })
+}
+
+// 查询审核历史
+export function listReviewHistory(date) {
+  return request.get('/title-library/review-history', { params: { date } })
+}
+
+// 单条审核操作
+export function reviewTitle(id, action) {
+  return request.post('/title-library/' + id + '/review', null, { params: { action } })
+}
+
+// 批量审核操作
+export function batchReview(titleIds, action) {
+  return request.post('/title-library/batch-review', { titleIds, action })
 }
 
 // 发送文章邮件（带附件）

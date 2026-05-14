@@ -1,9 +1,10 @@
 <script setup>
 import { ref, onMounted, computed, h, nextTick, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import dayjs from 'dayjs'
-import { Card, Input, Select, Button, Table, Tag, Modal, Form, Popconfirm, message, Pagination, Descriptions, DatePicker, Tabs, Spin, InputNumber, Checkbox, CheckboxGroup, Dropdown, Menu } from 'ant-design-vue'
-import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, matchCheck, matchPreview, matchConfirm, matchOne, unbindRecommendation, batchUnbindRecommendations, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed, batchChangeTrack, clearRecommendationsByDate, getUserHistory, saveArticleFeedback, listArticleFeedback, deleteArticleFeedback, generatePostSingle, createGenerationTask, getPostContent, removeAiFlavor, batchAiPassed, batchCopied, autoInsertImages, sendArticleEmail } from '../api/titleLibrary.js'
+import { Card, Input, Select, Button, Table, Tag, Modal, Form, Popconfirm, message, Pagination, Descriptions, DatePicker, Tabs, Spin, InputNumber, Checkbox, CheckboxGroup, Dropdown, Menu, Tooltip, Row, Col, Space, Alert } from 'ant-design-vue'
+import { FileTextOutlined, BarChartOutlined, CheckOutlined, CheckCircleOutlined, ExclamationCircleOutlined, EllipsisOutlined, DownOutlined } from '@ant-design/icons-vue'
+import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, matchCheck, matchPreview, matchConfirm, matchOne, unbindRecommendation, batchUnbindRecommendations, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed, batchChangeTrack, clearRecommendationsByDate, getUserHistory, saveArticleFeedback, listArticleFeedback, deleteArticleFeedback, generatePostSingle, createGenerationTask, getPostContent, removeAiFlavor, batchAiPassed, batchCopied, autoInsertImages, sendArticleEmail, confirmTitle, batchConfirm, markAiFlavorHeavy } from '../api/titleLibrary.js'
 import { listAiFlavorRules } from '../api/aiFlavorRule.js'
 import { listTracks } from '../api/track.js'
 import { listUsers } from '../api/user.js'
@@ -11,6 +12,7 @@ import request from '../api/request.js'
 import { renderAsync } from 'docx-preview'
 
 const router = useRouter()
+const route = useRoute()
 
 const activeTab = ref(localStorage.getItem('titleLibrary_activeTab') || 'all')
 
@@ -46,7 +48,6 @@ async function handleMarkUsed(record) {
 
 const selectedRowKeys = ref([])
 const selectedRows = ref([])
-const selectedTargetUserId = ref(undefined)
 
 const globalDefaultStylePrompt = ref('')
 
@@ -100,9 +101,11 @@ const searchKeyword = ref(savedSearch.keyword || '')
 const searchPlatform = ref(savedSearch.platform || '')
 const searchTrack = ref(savedSearch.trackId || '')
 const searchUserName = ref(savedSearch.userName || '')
-const searchMatched = ref(savedSearch.matched || '')
+const searchMatched = ref(savedSearch.matched || '1')
 const searchPushDate = ref(savedSearch.pushDate ? dayjs(savedSearch.pushDate) : null)
 const searchIsUsed = ref(savedSearch.isUsed || '')
+const searchIsConfirmed = ref(savedSearch.isConfirmed || '')
+const searchAiFlavor = ref(savedSearch.aiFlavor || '')
 
 const filteredTracksForSearch = computed(() => {
   if (!searchPlatform.value) {
@@ -133,6 +136,8 @@ function saveSearchState() {
     matched: searchMatched.value,
     pushDate: searchPushDate.value ? searchPushDate.value.format('YYYY-MM-DD') : null,
     isUsed: searchIsUsed.value,
+    isConfirmed: searchIsConfirmed.value,
+    aiFlavor: searchAiFlavor.value,
   }
   localStorage.setItem('titleLibrary_search', JSON.stringify(state))
 }
@@ -227,21 +232,26 @@ const columns = [
     customRender: ({ record }) => {
       const btnStyle = 'padding: 0; display: inline-block;'
       const nodes = []
-      if (record.subscriptionPostFileUrl) {
+      const hasPost = record.subscriptionPostFileUrl || record.generatedFileUrl
+      if (hasPost) {
         nodes.push(
           h(Button, {
             type: 'link',
             size: 'small',
             style: btnStyle,
-            onClick: () => handlePreviewPost(record),
-          }, () => record.title),
-          h(Button, {
-            type: 'link',
-            size: 'small',
-            style: 'padding: 0; flex-shrink: 0; font-size: 12px;',
-            onClick: () => handleDownloadPost(record),
-          }, () => '下载')
+            onClick: () => record.subscriptionPostFileUrl ? handlePreviewPost(record) : handlePreviewGeneratedArticle(record),
+          }, () => record.title)
         )
+        if (record.subscriptionPostFileUrl) {
+          nodes.push(
+            h(Button, {
+              type: 'link',
+              size: 'small',
+              style: 'padding: 0; flex-shrink: 0; font-size: 12px;',
+              onClick: () => handleDownloadPost(record),
+            }, () => '下载')
+          )
+        }
       } else {
         nodes.push(h('span', { style: btnStyle }, record.title))
       }
@@ -253,21 +263,12 @@ const columns = [
           onClick: () => copyRowPrompt(record)
         }, () => record.isCopied ? '✓ 已复制' : '复制提示词')
       )
-      return h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, nodes)
+      return h('div', { style: 'display: flex; flex-wrap: wrap; align-items: center; gap: 8px; line-height: 1.5;' }, nodes)
     },
   },
-  { title: '推荐日期', dataIndex: 'pushDate', width: 90 },
+  { title: '推荐时间', dataIndex: 'pushDate', width: 90 },
   {
-    title: '平台/赛道',
-    key: 'platformTrack',
-    ellipsis: true,
-    width: 130,
-    customRender: ({ record }) => {
-      return h('span', {}, `${record.platform || '-'} / ${record.trackName || '-'}`)
-    },
-  },
-  {
-    title: '关联用户',
+    title: '管理用户',
     key: 'userInfo',
     dataIndex: 'recommendUserName',
     ellipsis: true,
@@ -275,15 +276,43 @@ const columns = [
     sorter: true,
     customRender: ({ record }) => {
       if (!record.recommendUserName) return h('span', { style: 'color: #999;' }, '未匹配')
-      const text = record.recommendUserTemplate
-        ? `${record.recommendUserName} / ${record.recommendUserTemplate}`
-        : record.recommendUserName
       return h(Button, {
         type: 'link',
         size: 'small',
         style: 'padding: 0; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block;',
         onClick: () => handleViewUser(record),
-      }, () => text)
+      }, () => record.recommendUserName)
+    },
+  },
+  {
+    title: '确认状态',
+    key: 'confirmStatus',
+    width: 100,
+    align: 'center',
+    customRender: ({ record }) => {
+      const status = record.confirmStatus
+      if (status === 1) {
+        return h(Tag, { color: 'success' }, () => '已确认')
+      }
+      if (status === 2) {
+        return h(Tag, { color: 'error' }, () => '已拒绝')
+      }
+      return h('span', { style: 'color: #999;' }, '未确认')
+    },
+  },
+  {
+    title: 'AI味',
+    key: 'aiFlavor',
+    width: 90,
+    align: 'center',
+    customRender: ({ record }) => {
+      if (record.aiFlavorStatus === 2) {
+        return h(Tag, { color: 'error' }, () => 'AI味重')
+      }
+      if (record.aiFlavorStatus === 1) {
+        return h(Tag, { color: 'success' }, () => '通过')
+      }
+      return h('span', { style: 'color: #999;' }, '-')
     },
   },
   {
@@ -293,57 +322,92 @@ const columns = [
     align: 'center',
     customRender: ({ record }) => {
       const status = record.generateStatus
+      if (status === 3) return h(Tag, { color: 'blue' }, () => '排队中')
       if (status === 2) return h(Tag, { color: 'orange' }, () => '生成中')
       if (status === 1) return h(Tag, { color: 'green' }, () => '已生成')
       return h(Tag, { color: 'default' }, () => '未生成')
     },
   },
   {
-    title: 'AI味检测',
-    key: 'isAiPassed',
-    width: 90,
-    align: 'center',
+    title: '平台/赛道',
+    key: 'platformTrack',
+    ellipsis: true,
+    width: 130,
     customRender: ({ record }) => {
-      return record.isAiPassed
-        ? h(Tag, { color: 'success' }, () => '通过')
-        : h('span', { style: 'color: #999;' }, '-')
+      return h('span', {}, `${record.platform || '-'} / ${record.trackName || '-'}`)
     },
   },
+  { title: '创建时间', dataIndex: 'createdAt', width: 160, sorter: true },
   {
     title: '操作',
     key: 'action',
-    width: 160,
+    width: 240,
     align: 'center',
+    fixed: 'right',
     customRender: ({ record }) => {
       const hasFile = !!(record.generatedFileUrl || record.subscriptionPostFileUrl)
 
-      // 核心按钮：编辑、生成
-      const mainBtns = [
-        h(Button, { type: 'link', size: 'small', onClick: () => handleEdit(record) }, () => '编辑'),
-        h(Button, {
-          type: 'link',
+      // 生成按钮
+      const genBtn = h(Tooltip, { title: '生成文章' }, {
+        default: () => h(Button, {
+          type: 'text',
           size: 'small',
-          style: 'padding: 0 4px;',
           loading: generatingPostId.value === record.id,
           onClick: () => handleGeneratePost(record),
-        }, () => '生成'),
-      ]
+          style: { color: '#595959', padding: '0 1px', minWidth: '22px' },
+        }, { icon: () => h(FileTextOutlined) }),
+      })
 
-      // 文件下拉：下载、预览（有文件时才显示）
-      let fileDropdown = null
-      if (hasFile) {
-        const fileItems = [
-          h(Menu.Item, { key: 'dl', onClick: () => downloadArticle(record) }, () => '下载'),
-          h(Menu.Item, { key: 'pv', onClick: () => handlePreviewGeneratedArticle(record) }, () => '预览'),
-        ]
-        fileDropdown = h(Dropdown, {}, {
-          default: () => h(Button, { type: 'link', size: 'small', style: 'padding: 0 4px;' }, () => '文件'),
-          overlay: () => h(Menu, {}, () => fileItems),
-        })
-      }
+      // 推荐概览按钮
+      const pushOverviewBtn = h(Tooltip, { title: '推荐概览' }, {
+        default: () => h(Button, {
+          type: 'text',
+          size: 'small',
+          onClick: () => router.push('/push-overview'),
+          style: { color: '#595959', padding: '0 1px', minWidth: '22px' },
+        }, { icon: () => h(BarChartOutlined) }),
+      })
 
-      // 更多下拉：发邮件、AI味通过、删除
+      // 确认按钮
+      const isConfirmed = record.confirmStatus === 1
+      const confirmBtn = h(Tooltip, { title: isConfirmed ? '已确认' : '确认' }, {
+        default: () => h(Button, {
+          type: 'text',
+          size: 'small',
+          onClick: () => !isConfirmed && handleConfirm(record),
+          style: { color: isConfirmed ? '#52c41a' : '#bfbfbf', padding: '0 1px', minWidth: '22px', cursor: isConfirmed ? 'default' : 'pointer' },
+        }, { icon: () => h(CheckOutlined) }),
+      })
+
+      // AI检测通过按钮
+      const aiPassBtn = h(Tooltip, { title: record.aiFlavorStatus === 1 ? 'AI检测已通过' : '标记AI通过' }, {
+        default: () => h(Button, {
+          type: 'text',
+          size: 'small',
+          onClick: () => record.aiFlavorStatus !== 1 && handleAiPassedOne(record),
+          style: { color: record.aiFlavorStatus === 1 ? '#1890ff' : '#bfbfbf', padding: '0 1px', minWidth: '22px', cursor: record.aiFlavorStatus === 1 ? 'default' : 'pointer' },
+        }, { icon: () => h(CheckCircleOutlined) }),
+      })
+
+      // AI味重按钮
+      const aiHeavyBtn = h(Tooltip, { title: record.aiFlavorStatus === 2 ? 'AI味重（点击取消）' : '标记AI味重' }, {
+        default: () => h(Button, {
+          type: 'text',
+          size: 'small',
+          onClick: () => handleToggleAiFlavorHeavy(record),
+          style: { color: record.aiFlavorStatus === 2 ? '#ff4d4f' : '#fa8c16', padding: '0 1px', minWidth: '22px' },
+        }, { icon: () => h(ExclamationCircleOutlined) }),
+      })
+
+      // 更多下拉：编辑、文件、发邮件、删除
       const moreMenuItems = []
+      moreMenuItems.push(
+        h(Menu.Item, { key: 'edit', onClick: () => handleEdit(record) }, () => '编辑')
+      )
+      if (hasFile) {
+        moreMenuItems.push(h(Menu.Item, { key: 'dl', onClick: () => downloadArticle(record) }, () => '下载'))
+        moreMenuItems.push(h(Menu.Item, { key: 'pv', onClick: () => handlePreviewGeneratedArticle(record) }, () => '预览'))
+      }
       if (hasFile && record.recommendUserId) {
         moreMenuItems.push(
           h(Menu.Item, { key: 'semail', onClick: () => sendArticleEmailToUser(record) }, () =>
@@ -358,29 +422,26 @@ const columns = [
           )
         )
       }
-      if (moreMenuItems.length > 0) {
-        moreMenuItems.push(h(Menu.Divider))
-      }
-      moreMenuItems.push(
-        h(Menu.Item, {
-          key: 'ai',
-          onClick: () => record.isAiPassed ? null : handleAiPassedOne(record),
-          disabled: record.isAiPassed,
-        }, () => record.isAiPassed ? '✓ AI味已通过' : '标记AI味通过')
-      )
       moreMenuItems.push(h(Menu.Divider))
       moreMenuItems.push(
         h(Menu.Item, { key: 'del', danger: true, onClick: () => handleDelete(record) }, () => '删除')
       )
 
       const moreDropdown = h(Dropdown, {}, {
-        default: () => h(Button, { type: 'link', size: 'small', style: 'padding: 0 4px;' }, () => '更多'),
+        default: () => h(Button, {
+          type: 'text',
+          size: 'small',
+          style: { color: '#595959', padding: '0 1px', minWidth: '22px' },
+        }, { icon: () => h(EllipsisOutlined) }),
         overlay: () => h(Menu, {}, () => moreMenuItems),
       })
 
-      return h('div', { style: 'display: flex; justify-content: center; align-items: center; gap: 2px; flex-wrap: wrap;' }, [
-        ...mainBtns,
-        fileDropdown,
+      return h('div', { style: 'display: flex; justify-content: center; align-items: center; gap: 2px; white-space: nowrap;' }, [
+        genBtn,
+        pushOverviewBtn,
+        confirmBtn,
+        aiPassBtn,
+        aiHeavyBtn,
         moreDropdown,
       ].filter(Boolean))
     },
@@ -390,8 +451,8 @@ const columns = [
 const currentPage = ref(1)
 const pageSize = ref(10)
 const totalCount = ref(0)
-const sortField = ref('')
-const sortOrder = ref('')
+const sortField = ref('createdAt')
+const sortOrder = ref('descend')
 
 const paginatedData = computed(() => {
   // 服务端已分页，直接使用
@@ -409,6 +470,8 @@ async function loadData() {
     if (searchMatched.value !== '' && searchMatched.value !== undefined) params.matched = searchMatched.value
     if (searchPushDate.value) params.pushDate = searchPushDate.value.format('YYYY-MM-DD')
     if (searchIsUsed.value !== '' && searchIsUsed.value !== undefined) params.isUsed = searchIsUsed.value
+    if (searchIsConfirmed.value !== '' && searchIsConfirmed.value !== undefined) params.isConfirmed = searchIsConfirmed.value
+    if (searchAiFlavor.value !== '' && searchAiFlavor.value !== undefined) params.aiFlavor = searchAiFlavor.value
     // 按用户类型过滤（全部、开户、分成、试用）
     const userTypeMap = { accountOpened: '1', distributor: '2', trial: '3' }
     if (userTypeMap[activeTab.value]) params.userType = userTypeMap[activeTab.value]
@@ -489,6 +552,8 @@ function handleReset() {
   searchMatched.value = ''
   searchPushDate.value = null
   searchIsUsed.value = ''
+  searchIsConfirmed.value = ''
+  searchAiFlavor.value = ''
   currentPage.value = 1
   saveSearchState()
   loadData()
@@ -754,10 +819,21 @@ async function handleBatchAiPassed() {
 async function handleAiPassedOne(record) {
   try {
     await batchAiPassed([record.id])
-    record.isAiPassed = 1
+    record.aiFlavorStatus = 1
     message.success('已标记为 AI味检测通过')
   } catch (e) {
     message.error(e?.response?.data?.msg || e?.message || '标记失败')
+  }
+}
+
+async function handleConfirm(record) {
+  try {
+    await confirmTitle(record.id)
+    record.isConfirmed = 1
+    record.confirmStatus = 1
+    message.success('已确认')
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e?.message || '确认失败')
   }
 }
 
@@ -824,6 +900,8 @@ async function handleSave() {
     if (payload.pushDate && typeof payload.pushDate.format === 'function') {
       payload.pushDate = payload.pushDate.format('YYYY-MM-DD')
     }
+    // 同步 recommendDate，避免后端 getPushDate() 因优先返回旧的 recommendDate 导致日期修改不生效
+    payload.recommendDate = payload.pushDate || null
     if (!payload.recommendUserId) {
       payload.recommendUserId = null
       payload.recommendUserName = null
@@ -1000,7 +1078,8 @@ async function loadMatchSimilarities() {
 }
 
 async function openMatchModal() {
-  matchForm.value.date = dayjs()
+  const saved = localStorage.getItem('matchForm_date')
+  matchForm.value.date = saved ? dayjs(saved) : dayjs()
   matchModalOpen.value = true
   await runMatchPreview()
 }
@@ -1053,6 +1132,18 @@ function handleApproveOne(record) {
   }).catch(e => {
     message.error(e?.response?.data?.msg || e?.message || '保存失败')
   })
+}
+
+async function handleToggleAiFlavorHeavy(record) {
+  try {
+    const newHeavy = record.aiFlavorStatus !== 2 ? 2 : 0
+    const titleId = record.titleId || record.id
+    await markAiFlavorHeavy(titleId, newHeavy === 2)
+    record.aiFlavorStatus = newHeavy
+    message.success(newHeavy === 2 ? '已标记为AI味重' : '已取消AI味重标记')
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e?.message || '操作失败')
+  }
 }
 
 function handleTitleEdit(record, newTitle) {
@@ -1190,6 +1281,8 @@ async function doExportTitleList() {
       if (searchMatched.value !== '' && searchMatched.value !== undefined) params.matched = searchMatched.value
       if (searchPushDate.value) params.pushDate = searchPushDate.value.format('YYYY-MM-DD')
       if (searchIsUsed.value !== '' && searchIsUsed.value !== undefined) params.isUsed = searchIsUsed.value
+      if (searchIsConfirmed.value !== '' && searchIsConfirmed.value !== undefined) params.isConfirmed = searchIsConfirmed.value
+      if (searchAiFlavor.value !== '' && searchAiFlavor.value !== undefined) params.aiFlavor = searchAiFlavor.value
       blob = await exportTitleList(params)
     }
     const url = URL.createObjectURL(blob)
@@ -1222,6 +1315,8 @@ async function doExportFromRule() {
       if (searchMatched.value !== '' && searchMatched.value !== undefined) params.matched = searchMatched.value
       if (searchPushDate.value) params.pushDate = searchPushDate.value.format('YYYY-MM-DD')
       if (searchIsUsed.value !== '' && searchIsUsed.value !== undefined) params.isUsed = searchIsUsed.value
+      if (searchIsConfirmed.value !== '' && searchIsConfirmed.value !== undefined) params.isConfirmed = searchIsConfirmed.value
+      if (searchAiFlavor.value !== '' && searchAiFlavor.value !== undefined) params.aiFlavor = searchAiFlavor.value
       blob = await exportTitleLibrary(params)
     }
     const url = URL.createObjectURL(blob)
@@ -1249,20 +1344,59 @@ const importArticleModalOpen = ref(false)
 const importArticleFiles = ref([])
 const importArticleLoading = ref(false)
 const importArticleResult = ref(null)
+const importArticleMode = ref('folder') // 'folder' | 'file'
+const importArticleDragActive = ref(false)
+const importArticleFileInputRef = ref(null)
+const importArticleFolderInputRef = ref(null)
 
 function openImportArticleModal() {
   importArticleModalOpen.value = true
   importArticleFiles.value = []
   importArticleResult.value = null
+  importArticleMode.value = 'folder'
+  importArticleDragActive.value = false
 }
 
 function onImportArticleFileChange(e) {
   importArticleFiles.value = Array.from(e.target.files || [])
 }
 
+function triggerImportArticleInput() {
+  if (importArticleMode.value === 'folder') {
+    importArticleFolderInputRef.value?.click()
+  } else {
+    importArticleFileInputRef.value?.click()
+  }
+}
+
+function onImportArticleDragOver(e) {
+  e.preventDefault()
+  importArticleDragActive.value = true
+}
+
+function onImportArticleDragLeave(e) {
+  e.preventDefault()
+  importArticleDragActive.value = false
+}
+
+function onImportArticleDrop(e) {
+  e.preventDefault()
+  importArticleDragActive.value = false
+  const files = Array.from(e.dataTransfer.files || [])
+  if (files.length === 0) return
+  // 过滤仅保留 .doc / .docx
+  importArticleFiles.value = files.filter(f => {
+    const name = f.name.toLowerCase()
+    return name.endsWith('.doc') || name.endsWith('.docx')
+  })
+  if (importArticleFiles.value.length === 0) {
+    message.warning('未检测到 .doc / .docx 文件')
+  }
+}
+
 async function handleImportArticles() {
   if (importArticleFiles.value.length === 0) {
-    message.warning('请选择文件夹或文件')
+    message.warning(importArticleMode.value === 'folder' ? '请选择文件夹' : '请选择文件')
     return
   }
   importArticleLoading.value = true
@@ -1621,7 +1755,7 @@ async function copyRowPrompt(record) {
   // 1. 先注入样式提示词变量
   let stylePrompt = globalDefaultStylePrompt.value || ''
   // 优先使用当前行数据的关联用户样式，其次用手动选择的目标用户
-  const relatedUserId = record.recommendUserId || selectedTargetUserId.value
+  const relatedUserId = record.recommendUserId
   if (relatedUserId) {
     const uid = String(relatedUserId)
     const user = allUsers.value.find(u => String(u.id) === uid)
@@ -1644,26 +1778,37 @@ async function copyRowPrompt(record) {
     result = result.split('${' + f.key + '}').join(replacement)
   }
 
-  // 复制到剪贴板，带 fallback
+  // 复制到剪贴板：优先用 clipboard API，失败再用 fallback
+  let copied = false
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(result)
-    } else {
-      // fallback for older browsers / non-secure contexts
+      copied = true
+    }
+  } catch {
+    copied = false
+  }
+  if (!copied) {
+    try {
       const textarea = document.createElement('textarea')
       textarea.value = result
       textarea.style.position = 'fixed'
       textarea.style.left = '-9999px'
       document.body.appendChild(textarea)
       textarea.select()
-      const success = document.execCommand('copy')
+      copied = document.execCommand('copy')
       document.body.removeChild(textarea)
-      if (!success) throw new Error('execCommand copy failed')
+    } catch {
+      copied = false
     }
+  }
+  if (copied) {
     record.isCopied = 1
-    await batchCopied([record.id])
     message.success('已复制提示词')
-  } catch {
+    batchCopied([record.id]).catch(() => {
+      // 后端标记失败不影响前端体验
+    })
+  } else {
     message.error('复制失败，请手动复制')
   }
 }
@@ -1939,6 +2084,22 @@ async function handlePreviewPost(record) {
             className: 'docx-preview',
             inWrapper: false,
           })
+          // 注入自定义样式：去除删除线内容，保留颜色和字体
+          const styleEl = document.createElement('style')
+          styleEl.textContent = `
+            .docx-preview, .docx-preview * {
+              font-family: 'Microsoft YaHei', '微软雅黑', sans-serif !important;
+            }
+            .docx-preview del,
+            .docx-preview s,
+            .docx-preview strike {
+              display: none !important;
+            }
+            .docx-preview [style*="line-through"] {
+              display: none !important;
+            }
+          `
+          docxContainerRef.value.appendChild(styleEl)
         } catch (renderErr) {
           console.error('docx render error:', renderErr)
           docxContainerRef.value.innerHTML = '<div style="color:#999;text-align:center;padding:40px;">文件解析失败，该文件可能不是有效的 docx 格式</div>'
@@ -1953,6 +2114,31 @@ async function handlePreviewPost(record) {
     previewHtmlContent.value = ''
   } finally {
     previewLoading.value = false
+  }
+}
+
+async function copyArticleContent() {
+  let text = ''
+  if (previewHtmlContent.value) {
+    text = previewHtmlContent.value
+  } else if (docxContainerRef.value) {
+    text = docxContainerRef.value.innerText || ''
+  }
+  if (!text || !text.trim()) {
+    message.warning('暂无可复制的内容')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    message.success('文章内容已复制')
+  } catch (e) {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+    message.success('文章内容已复制')
   }
 }
 
@@ -1976,8 +2162,9 @@ const userModalOpen = ref(false)
 const selectedUserRecord = ref(null)
 
 function handleViewUser(record) {
-  selectedUserRecord.value = record
-  userModalOpen.value = true
+  if (record.recommendUserName) {
+    router.push({ path: '/users', query: { keyword: record.recommendUserName } })
+  }
 }
 
 // Import
@@ -2177,6 +2364,11 @@ async function handleCancelGenerate() {
 }
 
 onMounted(() => {
+  // 如果 URL 带有 keyword 查询参数，自动设置搜索条件
+  if (route.query.keyword) {
+    searchKeyword.value = route.query.keyword
+    currentPage.value = 1
+  }
   loadData()
   loadPanelData()
 })
@@ -2184,58 +2376,93 @@ onMounted(() => {
 </script>
 
 <template>
-  <div v-if="generatingPost" style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-      <div style="font-size: 13px; color: #389e0d;">
-        <strong>正在生成文章</strong> — {{ generatePostStatusMsg }}
-      </div>
-      <Button type="link" danger size="small" style="padding: 0;" @click="handleCancelGeneratePost">取消生成</Button>
-    </div>
-    <div style="width: 100%; background: #d9d9d9; border-radius: 4px; height: 8px;">
-      <div :style="{ width: generatePostProgress + '%', background: '#52c41a', height: '8px', borderRadius: '4px', transition: 'width 0.5s' }" />
-    </div>
-    <div style="font-size: 12px; color: #389e0d; margin-top: 4px; text-align: right;">{{ generatePostProgress }}%</div>
-  </div>
+  <Alert
+    v-if="generatingPost"
+    type="success"
+    show-icon
+    style="margin-bottom: 16px;"
+  >
+    <template #message>
+      <Space style="width: 100%; justify-content: space-between;">
+        <span><strong>正在生成文章</strong> — {{ generatePostStatusMsg }}</span>
+        <Button type="link" danger size="small" @click="handleCancelGeneratePost">取消生成</Button>
+      </Space>
+    </template>
+    <template #description>
+      <Progress :percent="generatePostProgress" size="small" status="active" />
+    </template>
+  </Alert>
 
   <Tabs v-model:activeKey="activeTab" @change="() => { currentPage = 1; saveActiveTab(); loadData(); }">
+    <template #rightExtra>
+      <Space>
+        <Button size="small" @click="router.push('/task-list')">生成文章任务</Button>
+        <Button size="small" @click="router.push('/article-review')">文章审核</Button>
+      </Space>
+    </template>
     <Tabs.TabPane v-for="t in mainTabs" :key="t.key" :tab="t.label">
       <div style="display: flex; gap: 16px;">
         <!-- 左侧主内容 -->
         <div style="width: 100%; min-width: 0;">
-          <Card :title="'标题库 — ' + t.label" :bordered="false">
-            <template #extra>
-              <Button @click="router.push('/task-list')">生成文章任务</Button>
-            </template>
-            <!-- 第一行：搜索筛选 -->
-            <div style="display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
-              <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
-              <Select show-search v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear @change="handleSearch">
-                <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value" :label="p.label">{{ p.label }}</Select.Option>
-              </Select>
-              <Select show-search v-model:value="searchTrack" placeholder="选择赛道" style="width: 160px;" allowClear :disabled="!searchPlatform" @change="handleSearch">
-                <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
-              </Select>
-              <Input v-model:value="searchUserName" placeholder="关联用户" style="width: 140px;" @pressEnter="handleSearch" />
-              <Select show-search v-model:value="searchMatched" placeholder="匹配状态" style="width: 130px;" allowClear>
-                <Select.Option value="1">已匹配</Select.Option>
-                <Select.Option value="0">未匹配</Select.Option>
-              </Select>
-              <DatePicker v-model:value="searchPushDate" placeholder="推荐日期" style="width: 140px;" />
-              <Button type="primary" @click="handleSearch">查询</Button>
-              <Button @click="handleReset">重置</Button>
-            </div>
-
-            <!-- 第二行：高频操作 -->
-            <div style="display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
-              <Button type="primary" @click="handleAdd">+ 新增标题</Button>
-              <Button type="primary" ghost :loading="matching" @click="openMatchModal">匹配推荐</Button>
-
-              <div style="margin-left: auto; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-                <Select show-search v-model:value="selectedTargetUserId" placeholder="选择目标用户（用于样式）" style="width: 180px;" allowClear>
-                  <Select.Option v-for="u in allUsers" :key="u.id" :value="u.id" :label="u.username">{{ u.username }}</Select.Option>
+          <Card :title="'标题匹配 — ' + t.label" :bordered="false">
+            <!-- 搜索筛选 -->
+            <Row :gutter="[12, 12]" style="margin-bottom: 16px;">
+              <Col :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
+                <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" @pressEnter="handleSearch" />
+              </Col>
+              <Col :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
+                <Select show-search v-model:value="searchPlatform" placeholder="选择平台" allowClear @change="handleSearch" style="width: 100%;">
+                  <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value" :label="p.label">{{ p.label }}</Select.Option>
                 </Select>
+              </Col>
+              <Col :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
+                <Select show-search v-model:value="searchTrack" placeholder="选择赛道" allowClear :disabled="!searchPlatform" @change="handleSearch" style="width: 100%;">
+                  <Select.Option v-for="t in filteredTracksForSearch" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
+                </Select>
+              </Col>
+              <Col :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
+                <Input v-model:value="searchUserName" placeholder="关联用户" @pressEnter="handleSearch" />
+              </Col>
+              <Col :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
+                <Select show-search v-model:value="searchMatched" placeholder="匹配状态" allowClear style="width: 100%;">
+                  <Select.Option value="1">已匹配</Select.Option>
+                  <Select.Option value="0">未匹配</Select.Option>
+                </Select>
+              </Col>
+              <Col :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
+                <DatePicker v-model:value="searchPushDate" placeholder="推荐日期" style="width: 100%;" />
+              </Col>
+              <Col :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
+                <Select show-search v-model:value="searchIsConfirmed" placeholder="确认状态" allowClear style="width: 100%;">
+                  <Select.Option value="1">已确认</Select.Option>
+                  <Select.Option value="0">未确认</Select.Option>
+                  <Select.Option value="2">已拒绝</Select.Option>
+                </Select>
+              </Col>
+              <Col :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
+                <Select show-search v-model:value="searchAiFlavor" placeholder="AI味检测" allowClear style="width: 100%;">
+                  <Select.Option value="0">未检测</Select.Option>
+                  <Select.Option value="1">通过</Select.Option>
+                  <Select.Option value="2">AI味重</Select.Option>
+                </Select>
+              </Col>
+              <Col :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
+                <Space>
+                  <Button type="primary" @click="handleSearch">查询</Button>
+                  <Button @click="handleReset">重置</Button>
+                </Space>
+              </Col>
+            </Row>
+
+            <!-- 高频操作 -->
+            <div style="margin-bottom: 16px;">
+              <Space :size="12" wrap style="width: 100%; justify-content: space-between;">
+                <Space :size="12" wrap>
+                  <Button type="primary" @click="handleAdd">+ 新增标题</Button>
+                  <Button type="primary" ghost :loading="matching" @click="openMatchModal">匹配推荐</Button>
+                </Space>
                 <Dropdown>
-                  <Button>更多 ▼</Button>
+                  <Button>更多 <DownOutlined /></Button>
                   <template #overlay>
                     <Menu>
                       <Menu.Item @click="openImportModal">导入标题</Menu.Item>
@@ -2248,32 +2475,43 @@ onMounted(() => {
                     </Menu>
                   </template>
                 </Dropdown>
-              </div>
+              </Space>
             </div>
 
-            <!-- 批量操作栏：选中行时浮现 -->
-            <div v-if="selectedRowKeys.length > 0" style="background: #f0f5ff; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-              <span style="font-size: 13px;">已选择 <strong style="color: #1890ff;">{{ selectedRowKeys.length }}</strong> 项</span>
-              <Button size="small" type="primary" :loading="batchGenerating" @click="handleBatchGenerate">批量生成</Button>
-              <Button size="small" type="primary" ghost @click="handleBatchSendEmail">批量发邮件</Button>
-              <Button size="small" danger @click="handleBatchUnbind">批量解绑</Button>
-              <Button size="small" type="primary" ghost @click="handleBatchAiPassed">检测AI味通过</Button>
-              <Button size="small" type="link" @click="selectedRowKeys = []">取消选择</Button>
-            </div>
+            <!-- 批量操作栏 -->
+            <Alert
+              v-if="selectedRowKeys.length > 0"
+              type="info"
+              show-icon
+              style="margin-bottom: 16px;"
+            >
+              <template #message>
+                <Space :size="12" wrap align="center">
+                  <span>已选择 <strong style="color: #1890ff;">{{ selectedRowKeys.length }}</strong> 项</span>
+                  <Button size="small" type="primary" :loading="batchGenerating" @click="handleBatchGenerate">批量生成</Button>
+                  <Button size="small" type="primary" ghost @click="handleBatchSendEmail">批量发邮件</Button>
+                  <Button size="small" danger @click="handleBatchUnbind">批量解绑</Button>
+                  <Button size="small" type="primary" ghost @click="handleBatchAiPassed">检测AI味通过</Button>
+                  <Button size="small" type="link" @click="selectedRowKeys = []">取消选择</Button>
+                </Space>
+              </template>
+            </Alert>
 
             <Table :columns="columns" :data-source="paginatedData" :pagination="false" row-key="id" :loading="loading" :row-selection="rowSelection" :scroll="{ x: 'max-content' }" @change="handleTableChange" />
 
-            <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
-              <Pagination
-                v-model:current="currentPage"
-                v-model:pageSize="pageSize"
-                :total="totalCount"
-                show-size-changer
-                :page-size-options="['10', '20', '50']"
-                :show-total="total => `共 ${total} 条`"
-                @change="handlePageChange"
-              />
-            </div>
+            <Row justify="end" style="margin-top: 16px;">
+              <Col>
+                <Pagination
+                  v-model:current="currentPage"
+                  v-model:pageSize="pageSize"
+                  :total="totalCount"
+                  show-size-changer
+                  :page-size-options="['10', '20', '50']"
+                  :show-total="total => `共 ${total} 条`"
+                  @change="handlePageChange"
+                />
+              </Col>
+            </Row>
           </Card>
         </div>
 
@@ -2675,7 +2913,10 @@ onMounted(() => {
 
   <Modal v-model:open="previewModalOpen" title="文章预览" :footer="null" :mask-closable="true" width="900">
     <div v-if="previewRecord" style="margin-top: 12px;">
-      <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">{{ previewRecord.subscriptionPostTitle }}</div>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <div style="font-size: 16px; font-weight: 600;">{{ previewRecord.subscriptionPostTitle }}</div>
+        <Button size="small" @click="copyArticleContent">复制文章内容</Button>
+      </div>
       <div style="border: 1px solid #f0f0f0; border-radius: 6px; background: #fafafa; min-height: 360px; max-height: 500px; overflow: auto;">
         <div v-if="previewLoading" style="padding: 24px; text-align: center; color: #999;">正在加载预览...</div>
         <pre
@@ -2753,21 +2994,66 @@ onMounted(() => {
           <strong>导入说明</strong>
         </div>
         <div style="font-size: 12px; color: #389e0d; line-height: 1.8;">
-          1. 选择包含生成后文章的文件夹（仅支持 .doc / .docx 格式）<br>
+          1. 支持「选择文件夹」批量导入，或「选择文件」逐个/多选导入（仅支持 .doc / .docx 格式）<br>
           2. 系统会根据文件名自动匹配标题库中的记录<br>
           3. 匹配成功后会自动创建文章并关联到对应的推荐记录
         </div>
       </div>
-      <Form.Item label="选择文件夹" required>
+      <Form.Item label="导入方式" required>
+        <div style="display: flex; gap: 16px; margin-bottom: 8px;">
+          <label style="font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+            <input type="radio" v-model="importArticleMode" value="folder" @change="importArticleFiles = []" />
+            选择文件夹
+          </label>
+          <label style="font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+            <input type="radio" v-model="importArticleMode" value="file" @change="importArticleFiles = []" />
+            选择文件
+          </label>
+        </div>
+      </Form.Item>
+      <Form.Item :label="importArticleMode === 'folder' ? '选择文件夹' : '选择文件'" required>
+        <!-- 隐藏的原生 input -->
         <input
+          ref="importArticleFolderInputRef"
           type="file"
           webkitdirectory
           directory
           multiple
           @change="onImportArticleFileChange"
-          style="display: block; margin-bottom: 8px;"
+          style="display: none;"
+        />
+        <input
+          ref="importArticleFileInputRef"
+          type="file"
+          accept=".doc,.docx"
+          multiple
+          @change="onImportArticleFileChange"
+          style="display: none;"
+        />
+
+        <!-- 拖拽上传区域 -->
+        <div
+          class="article-import-dropzone"
+          :class="{ active: importArticleDragActive }"
+          @click="triggerImportArticleInput"
+          @dragover="onImportArticleDragOver"
+          @dragleave="onImportArticleDragLeave"
+          @drop="onImportArticleDrop"
         >
-        <div v-if="importArticleFiles.length > 0" style="font-size: 12px; color: #666;">
+          <div class="article-import-icon">
+            <svg viewBox="0 0 1024 1024" width="48" height="48" fill="currentColor">
+              <path d="M544 864V672h128L512 480 352 672h128v192H320v64h384v-64H544zM512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64z m0 832c-212.1 0-384-171.9-384-384s171.9-384 384-384 384 171.9 384 384-171.9 384-384 384z" />
+            </svg>
+          </div>
+          <div class="article-import-title">
+            点击或将文件拖拽到这里上传
+          </div>
+          <div class="article-import-desc">
+            支持 {{ importArticleMode === 'folder' ? '选择文件夹批量' : '单个/多个' }}导入，仅支持 .doc / .docx 格式
+          </div>
+        </div>
+
+        <div v-if="importArticleFiles.length > 0" style="margin-top: 8px; font-size: 12px; color: #666;">
           已选择 {{ importArticleFiles.length }} 个文件
         </div>
       </Form.Item>
@@ -3079,5 +3365,39 @@ onMounted(() => {
 :deep(.ant-menu-item:active) {
   outline: none;
   box-shadow: none;
+}
+
+.article-import-dropzone {
+  border: 2px dashed #d9d9d9;
+  border-radius: 8px;
+  padding: 32px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  background: #fafafa;
+}
+.article-import-dropzone:hover {
+  border-color: #1890ff;
+  background: #e6f7ff;
+}
+.article-import-dropzone.active {
+  border-color: #1890ff;
+  background: #e6f7ff;
+}
+.article-import-icon {
+  color: #1890ff;
+  margin-bottom: 12px;
+  line-height: 1;
+}
+.article-import-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: #262626;
+  margin-bottom: 6px;
+}
+.article-import-desc {
+  font-size: 12px;
+  color: #8c8c8c;
+  line-height: 1.6;
 }
 </style>

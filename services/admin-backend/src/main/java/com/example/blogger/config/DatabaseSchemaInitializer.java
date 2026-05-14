@@ -38,8 +38,38 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
             ensureColumn(conn, "tu_title_generation_task", "generated_content",
                 "ALTER TABLE tu_title_generation_task ADD COLUMN generated_content LONGTEXT COMMENT '大模型生成的原始内容'");
 
+            ensureColumn(conn, "tu_title_library", "task_id",
+                "ALTER TABLE tu_title_library ADD COLUMN task_id VARCHAR(32) DEFAULT NULL COMMENT '关联的生成任务ID'");
+
             ensureColumn(conn, "tu_user", "theme_color",
                 "ALTER TABLE tu_user ADD COLUMN theme_color VARCHAR(20) DEFAULT '#fa541c' COMMENT '文章主题色'");
+
+            ensureColumn(conn, "tu_user", "title_font_size",
+                "ALTER TABLE tu_user ADD COLUMN title_font_size INT DEFAULT 16 COMMENT '文章标题字号(pt)'");
+
+            ensureColumn(conn, "tu_user", "content_font_size",
+                "ALTER TABLE tu_user ADD COLUMN content_font_size INT DEFAULT 12 COMMENT '文章正文字号(pt)'");
+
+            ensureColumn(conn, "tu_title_library", "is_confirmed",
+                "ALTER TABLE tu_title_library ADD COLUMN is_confirmed INT DEFAULT 0 COMMENT '是否确认: 0=未确认 1=已确认'");
+
+            ensureColumn(conn, "tu_title_library", "is_ai_flavor_heavy",
+                "ALTER TABLE tu_title_library ADD COLUMN is_ai_flavor_heavy INT DEFAULT 0 COMMENT 'AI味重标记: 0=正常 1=AI味重'");
+
+            ensureColumn(conn, "tu_title_library", "ai_flavor_status",
+                "ALTER TABLE tu_title_library ADD COLUMN ai_flavor_status INT DEFAULT 0 COMMENT 'AI味状态: 0/null=未检测 1=已通过 2=AI味重'");
+
+            // 迁移 is_ai_passed / is_ai_flavor_heavy 数据到 ai_flavor_status
+            migrateAiFlavorStatus(conn);
+
+            ensureColumn(conn, "tu_title_generation_task", "process_started_at",
+                "ALTER TABLE tu_title_generation_task ADD COLUMN process_started_at DATETIME DEFAULT NULL COMMENT '开始生成时间（进入processing状态的时间）'");
+
+            ensureColumn(conn, "tu_title_library", "confirm_status",
+                "ALTER TABLE tu_title_library ADD COLUMN confirm_status INT DEFAULT 0 COMMENT '确认状态: 0=未确认 1=已确认 2=已拒绝'");
+
+            // 迁移 is_confirmed 数据到 confirm_status
+            migrateConfirmStatus(conn);
 
             ensureTable(conn, "tu_title_generate_task",
                 "CREATE TABLE IF NOT EXISTS tu_title_generate_task (" +
@@ -70,6 +100,45 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
                 "  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP," +
                 "  UNIQUE KEY uk_provider (provider)" +
                 ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='大模型配置表'");
+
+            ensureTable(conn, "tu_prompt_template",
+                "CREATE TABLE IF NOT EXISTS tu_prompt_template (" +
+                "  id VARCHAR(32) PRIMARY KEY COMMENT '模板ID'," +
+                "  name VARCHAR(100) NOT NULL COMMENT '模板名称'," +
+                "  content LONGTEXT NOT NULL COMMENT '提示词内容'," +
+                "  type VARCHAR(50) DEFAULT 'generate_title' COMMENT '类别: generate_title=生成标题'," +
+                "  is_default TINYINT DEFAULT 0 COMMENT '是否默认: 0=否 1=是'," +
+                "  is_deleted TINYINT DEFAULT 0 COMMENT '是否删除: 0=否 1=是'," +
+                "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'," +
+                "  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'" +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='提示词模板表'");
+
+            ensureTable(conn, "tu_image_library",
+                "CREATE TABLE IF NOT EXISTS tu_image_library (" +
+                "  id VARCHAR(32) PRIMARY KEY COMMENT '图片ID'," +
+                "  name VARCHAR(255) DEFAULT NULL COMMENT '原始文件名'," +
+                "  url VARCHAR(500) NOT NULL COMMENT '图片访问URL'," +
+                "  categories VARCHAR(500) DEFAULT NULL COMMENT '赛道ID列表JSON'," +
+                "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'" +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='图片库表'");
+
+            ensureTable(conn, "tu_announcement",
+                "CREATE TABLE IF NOT EXISTS tu_announcement (" +
+                "  id VARCHAR(32) PRIMARY KEY COMMENT '公告ID'," +
+                "  type VARCHAR(50) NOT NULL COMMENT '公告类型: article_push=文章推送公告'," +
+                "  content TEXT NOT NULL COMMENT '公告内容（支持HTML）'," +
+                "  is_enabled INT NOT NULL DEFAULT 1 COMMENT '是否开启: 0=关闭 1=开启'," +
+                "  is_deleted INT NOT NULL DEFAULT 0 COMMENT '是否删除: 0=否 1=是'," +
+                "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'," +
+                "  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'," +
+                "  UNIQUE KEY uk_type (type)" +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='公告管理表'");
+
+            ensureColumn(conn, "tu_title_generate_task", "duplicate_count",
+                "ALTER TABLE tu_title_generate_task ADD COLUMN duplicate_count INT DEFAULT 0 COMMENT '重复标题数量'");
+
+            ensureColumn(conn, "tu_title_generate_task", "inserted_count",
+                "ALTER TABLE tu_title_generate_task ADD COLUMN inserted_count INT DEFAULT 0 COMMENT '成功插入标题数量'");
         } catch (Exception e) {
             log.error("[DatabaseSchemaInitializer] 数据库连接失败: {}", e.getMessage(), e);
         }
@@ -98,6 +167,31 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
             }
         } catch (Exception e) {
             log.error("[DatabaseSchemaInitializer] 创建表 {} 失败: {}", tableName, e.getMessage());
+        }
+    }
+
+    private void migrateConfirmStatus(Connection conn) {
+        try (Statement stmt = conn.createStatement()) {
+            stmt.executeUpdate(
+                "UPDATE tu_title_library SET confirm_status = 1 WHERE is_confirmed = 1 AND (confirm_status IS NULL OR confirm_status = 0)"
+            );
+            log.info("[DatabaseSchemaInitializer] 已迁移 is_confirmed 数据到 confirm_status");
+        } catch (Exception e) {
+            log.error("[DatabaseSchemaInitializer] 迁移 confirm_status 失败: {}", e.getMessage());
+        }
+    }
+
+    private void migrateAiFlavorStatus(Connection conn) {
+        try (Statement stmt = conn.createStatement()) {
+            stmt.executeUpdate(
+                "UPDATE tu_title_library SET ai_flavor_status = 2 WHERE is_ai_flavor_heavy = 1 AND ai_flavor_status IS NULL"
+            );
+            stmt.executeUpdate(
+                "UPDATE tu_title_library SET ai_flavor_status = 1 WHERE is_ai_passed = 1 AND (is_ai_flavor_heavy IS NULL OR is_ai_flavor_heavy != 1) AND ai_flavor_status IS NULL"
+            );
+            log.info("[DatabaseSchemaInitializer] 已迁移 AI味状态数据到 ai_flavor_status");
+        } catch (Exception e) {
+            log.error("[DatabaseSchemaInitializer] 迁移 ai_flavor_status 失败: {}", e.getMessage());
         }
     }
 

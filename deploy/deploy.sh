@@ -131,6 +131,25 @@ eval "$SSH_CMD $REMOTE_HOST 'cd /root/app/gzh/admin-service/ && unzip -oq blogge
 log_info "上传管理端生产配置..."
 eval "$SCP_CMD $PROJECT_DIR/services/admin-backend/src/main/resources/application-prod.yml $REMOTE_HOST:/root/app/gzh/admin-service/"
 
+log_info "上传 Python 脚本..."
+eval "$SSH_CMD $REMOTE_HOST 'mkdir -p /root/app/gzh/scripts/py'"
+eval "$SCP_CMD -r $PROJECT_DIR/services/admin-backend/src/main/resources/py/* $REMOTE_HOST:/root/app/gzh/scripts/py/"
+
+# 验证 Python 脚本是否成功上传（md5 校验）
+LOCAL_SCRIPT_MD5=$(md5 -q "$PROJECT_DIR/services/admin-backend/src/main/resources/py/replace_periods.py" 2>/dev/null || md5sum "$PROJECT_DIR/services/admin-backend/src/main/resources/py/replace_periods.py" | awk '{print $1}')
+REMOTE_SCRIPT_MD5=$(eval "$SSH_CMD $REMOTE_HOST 'md5sum /root/app/gzh/scripts/py/replace_periods.py 2>/dev/null || md5 -q /root/app/gzh/scripts/py/replace_periods.py 2>/dev/null'" | awk '{print $1}')
+if [ "$LOCAL_SCRIPT_MD5" != "$REMOTE_SCRIPT_MD5" ]; then
+  log_error "Python 脚本 md5 校验失败！"
+  log_error "本地: $LOCAL_SCRIPT_MD5"
+  log_error "远程: $REMOTE_SCRIPT_MD5"
+  log_error "文件可能未正确上传，请检查服务器 /root/app/gzh/scripts/py/replace_periods.py"
+  exit 1
+fi
+log_info "Python 脚本 md5 校验通过 ($LOCAL_SCRIPT_MD5)"
+
+log_info "检查并安装 Python 依赖 (python-docx)..."
+eval "$SSH_CMD $REMOTE_HOST 'pip3 install python-docx >/dev/null 2>&1 || pip install python-docx >/dev/null 2>&1 || echo \"警告: python-docx 安装失败，请手动安装\"'"
+
 # 清理本地临时压缩包
 rm -f "$PROJECT_DIR/services/user-backend/target/user-backend-1.0.0.jar.zip"
 rm -f "$PROJECT_DIR/services/admin-backend/target/blogger-backend-1.0.0.jar.zip"

@@ -22,7 +22,6 @@ import org.springframework.stereotype.Component;
 
 import java.io.File;
 import java.io.FileOutputStream;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -45,6 +44,15 @@ public class TitleGenerateScheduler {
     private final ObjectMapper objectMapper;
 
     private volatile boolean isProcessing = false;
+
+    private static class SaveResult {
+        final int savedCount;
+        final int skipCount;
+        SaveResult(int savedCount, int skipCount) {
+            this.savedCount = savedCount;
+            this.skipCount = skipCount;
+        }
+    }
 
     public TitleGenerateScheduler(TitleGenerateTaskMapper taskMapper,
                                   TitleGenerateTaskService taskService,
@@ -181,8 +189,8 @@ public class TitleGenerateScheduler {
 
             // Step 3: 解析入库
             taskService.updateProgress(task.getId(), 3, "解析入库中...");
-            int savedCount = saveTitles(allRows, trackNameToIdMap);
-            log.info("[TitleGenerateScheduler] 入库完成: 保存 {} 条", savedCount);
+            SaveResult saveResult = saveTitles(allRows, trackNameToIdMap, task.getId());
+            log.info("[TitleGenerateScheduler] 入库完成: 保存 {} 条, 跳过重复 {} 条", saveResult.savedCount, saveResult.skipCount);
 
             // Step 4: 生成 Excel
             taskService.updateProgress(task.getId(), 4, "生成Excel文件...");
@@ -198,8 +206,8 @@ public class TitleGenerateScheduler {
             log.info("[TitleGenerateScheduler] Excel生成完成: {}", filePath);
 
             // Step 5: 完成
-            taskService.updateCompleted(task.getId(), fileUrl, fileName);
-            taskService.updateProgress(task.getId(), 5, "已完成，共生成 " + allRows.size() + " 条，入库 " + savedCount + " 条");
+            taskService.updateCompleted(task.getId(), fileUrl, fileName, saveResult.skipCount, saveResult.savedCount);
+            taskService.updateProgress(task.getId(), 5, "已完成，共生成 " + allRows.size() + " 条，入库 " + saveResult.savedCount + " 条，重复 " + saveResult.skipCount + " 条");
             log.info("[TitleGenerateScheduler] 任务完成: id={}", task.getId());
 
         } catch (Exception e) {
@@ -240,42 +248,75 @@ public class TitleGenerateScheduler {
         prompt.append("6. 只输出纯JSON，不要markdown代码块，不要任何额外文字\n\n");
         prompt.append("格式：{\"titles\":[{\"track\":\"赛道名称\",\"title\":\"标题文字\",\"description\":\"SEO描述\"},...]}");
         if (instruction != null && !instruction.trim().isEmpty()) {
-            prompt.append("\n\n【额外要求】").append(instruction.trim()).append("（请在生成标题时严格遵循此要求）");
+            prompt.append("\n\n【标题生成方向】").append(instruction.trim()).append("（请在生成标题时严格遵循此要求）");
         }
         return prompt.toString();
     }
 
     private JsonNode extractJsonArray(String llmResponse) {
+        String text = llmResponse;
+        // 1. 去掉 <think>...</think> 思维链
+        text = text.replaceAll("(?s)<think>.*?</think>", "");
+        // 2. 尝试去掉 markdown 代码块标记
+        if (text.contains("```json")) {
+            text = text.substring(text.indexOf("```json") + 7);
+            if (text.contains("```")) {
+                text = text.substring(0, text.indexOf("```"));
+            }
+        } else if (text.contains("```")) {
+            text = text.substring(text.indexOf("```") + 3);
+            if (text.contains("```")) {
+                text = text.substring(0, text.indexOf("```"));
+            }
+        }
+        text = text.trim();
+        // 3. 找到 JSON 对象开始/结束位置
+        int start = text.indexOf("{");
+        int end = text.lastIndexOf("}");
+        if (start >= 0 && end > start) {
+            text = text.substring(start, end + 1);
+        }
         try {
-            String text = llmResponse;
-            // 尝试去掉 markdown 代码块标记
-            if (text.contains("```json")) {
-                text = text.substring(text.indexOf("```json") + 7);
-                if (text.contains("```")) {
-                    text = text.substring(0, text.indexOf("```"));
-                }
-            } else if (text.contains("```")) {
-                text = text.substring(text.indexOf("```") + 3);
-                if (text.contains("```")) {
-                    text = text.substring(0, text.indexOf("```"));
-                }
-            }
-            text = text.trim();
-            // 找到 JSON 对象开始位置
-            int start = text.indexOf("{");
-            int end = text.lastIndexOf("}");
-            if (start >= 0 && end > start) {
-                text = text.substring(start, end + 1);
-            }
             JsonNode root = objectMapper.readTree(text);
-            return root.path("titles");
+            JsonNode titles = root.path("titles");
+            if (titles.isArray() && titles.size() > 0) {
+                return titles;
+            }
+            return titles;
         } catch (Exception e) {
             log.warn("[TitleGenerateScheduler] JSON解析失败: {}", e.getMessage());
+            // 4. 回退：用正则提取单个 title 对象
+            JsonNode fallback = tryExtractTitlesWithRegex(text);
+            if (fallback != null) {
+                log.info("[TitleGenerateScheduler] 正则回退提取到 {} 条标题", fallback.size());
+                return fallback;
+            }
+            log.warn("[TitleGenerateScheduler] 回退提取也未找到有效标题，清洗后文本前300字: {}",
+                    text.length() > 300 ? text.substring(0, 300) + "..." : text);
             return null;
         }
     }
 
-    private int saveTitles(List<Map<String, String>> allRows, Map<String, String> trackNameToIdMap) {
+    private JsonNode tryExtractTitlesWithRegex(String text) {
+        try {
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                    "\\{\\s*\"track\"\\s*:\\s*\"([^\"]*)\"\\s*,\\s*\"title\"\\s*:\\s*\"([^\"]*)\"\\s*,\\s*\"description\"\\s*:\\s*\"([^\"]*)\"\\s*\\}");
+            java.util.regex.Matcher matcher = pattern.matcher(text);
+            com.fasterxml.jackson.databind.node.ArrayNode result = objectMapper.createArrayNode();
+            while (matcher.find()) {
+                com.fasterxml.jackson.databind.node.ObjectNode obj = objectMapper.createObjectNode();
+                obj.put("track", matcher.group(1));
+                obj.put("title", matcher.group(2));
+                obj.put("description", matcher.group(3));
+                result.add(obj);
+            }
+            return result.size() > 0 ? result : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private SaveResult saveTitles(List<Map<String, String>> allRows, Map<String, String> trackNameToIdMap, String taskId) {
         int savedCount = 0;
         int skipCount = 0;
         Set<String> batchDedupSet = new HashSet<>();
@@ -288,7 +329,6 @@ public class TitleGenerateScheduler {
                 }
             }
         }
-        LocalDate tomorrow = LocalDate.now().plusDays(1);
 
         for (Map<String, String> row : allRows) {
             try {
@@ -317,8 +357,8 @@ public class TitleGenerateScheduler {
                 tl.setDescription(row.get("description"));
                 tl.setPlatform(platform);
                 tl.setTrackId(trackId);
+                tl.setTaskId(taskId);
                 tl.setUseCount(0);
-                tl.setPushDate(tomorrow);
                 titleLibraryService.save(tl);
                 try {
                     titleReviewService.createReviewRecord(tl.getId(), "ai_generated_v2");
@@ -331,7 +371,7 @@ public class TitleGenerateScheduler {
             }
         }
         log.info("[TitleGenerateScheduler] 入库统计: 保存={}, 跳过重复={}", savedCount, skipCount);
-        return savedCount;
+        return new SaveResult(savedCount, skipCount);
     }
 
     private void writeExcel(List<Map<String, String>> allRows, String filePath) throws Exception {

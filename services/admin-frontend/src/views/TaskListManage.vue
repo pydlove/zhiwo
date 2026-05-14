@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { Table, Tag, Input, Select, Button, Steps, message, Popconfirm, Dropdown, Menu } from 'ant-design-vue'
-import { listTasks, cancelTask, stopTask, retryTask, regenerateDocx, reapplyAiFlavor } from '../api/taskList.js'
+import { listTasks, cancelTask, stopTask, retryTask, rerunBackend } from '../api/taskList.js'
 
 const router = useRouter()
 
@@ -26,9 +26,8 @@ const statusOptions = [
 const stepItems = [
   { title: '提示词' },
   { title: '大模型' },
-  { title: '写文件' },
-  { title: '样式化' },
   { title: '去AI味' },
+  { title: '写文件' },
   { title: '完成' },
 ]
 
@@ -62,7 +61,7 @@ function getStatusTag(status, step) {
     case 'pending':
       return { color: 'blue', text: '排队中' }
     case 'processing':
-      return { color: 'orange', text: step ? (step === 1 ? '构建提示词' : step === 2 ? '大模型生成' : step === 3 ? '写入文件' : step === 4 ? '样式优化' : step === 5 ? '去除AI味' : '处理中') : '进行中' }
+      return { color: 'orange', text: step ? (step === 1 ? '构建提示词' : step === 2 ? '大模型生成' : step === 3 ? '去除AI味' : step === 4 ? '写入文件' : step === 5 ? '已完成' : '处理中') : '进行中' }
     case 'stopped':
       return { color: 'default', text: '已停止' }
     case 'completed':
@@ -84,7 +83,7 @@ function getStepCurrent(status, step) {
     if (step === 5) return 4
     return 0
   }
-  if (status === 'completed') return 6
+  if (status === 'completed') return 5
   if (status === 'stopped') return step || 0
   if (status === 'failed') return step || 0
   return 0
@@ -129,27 +128,14 @@ async function handleRetry(record) {
   }
 }
 
-async function handleRegenerateDocx(record) {
+async function handleRerunBackend(record) {
   actionLoadingId.value = record.id
   try {
-    await regenerateDocx(record.id)
-    message.success('样式优化已重新执行')
+    await rerunBackend(record.id)
+    message.success('后半段已重新执行')
     fetchTasks()
   } catch (e) {
-    message.error(e?.response?.data?.msg || '重新生成失败')
-  } finally {
-    actionLoadingId.value = null
-  }
-}
-
-async function handleReapplyAiFlavor(record) {
-  actionLoadingId.value = record.id
-  try {
-    await reapplyAiFlavor(record.id)
-    message.success('去AI味已重新执行')
-    fetchTasks()
-  } catch (e) {
-    message.error(e?.response?.data?.msg || '去AI味执行失败')
+    message.error(e?.response?.data?.msg || '重跑后半段失败')
   } finally {
     actionLoadingId.value = null
   }
@@ -189,7 +175,7 @@ const columns = [
         failed:     { color: '#ff4d4f', bg: '#fff2f0', tag: 'error',   text: '失败' },
       }[status] || config.pending
 
-      const percent = status === 'completed' ? 100 : Math.min(Math.round((step / 6) * 100), 95)
+      const percent = status === 'completed' ? 100 : Math.min(Math.round((step / 5) * 100), 95)
 
       return h('div', { style: 'min-width: 180px;' }, [
         h('div', { style: 'display: flex; align-items: center; gap: 8px; margin-bottom: 6px;' }, [
@@ -200,6 +186,16 @@ const columns = [
           h('div', { style: `height: 100%; width: ${percent}%; background: ${config.color}; border-radius: 3px; transition: width 0.3s ease;` }),
         ]),
       ])
+    },
+  },
+  {
+    title: '耗时',
+    dataIndex: 'duration',
+    key: 'duration',
+    width: 100,
+    align: 'center',
+    customRender: ({ record }) => {
+      return h('span', { style: 'color: #595959; font-size: 13px;' }, record.duration || '-')
     },
   },
   {
@@ -245,13 +241,9 @@ const columns = [
       }
 
       const moreItems = [
-        h(Menu.Item, { key: 'regen', onClick: () => handleRegenerateDocx(record) }, () => '重跑样式优化'),
+        h(Menu.Item, { key: 'match', onClick: () => router.push(`/title-match?keyword=${encodeURIComponent(record.title)}`) }, () => '标题匹配'),
+        h(Menu.Item, { key: 'rerun', onClick: () => handleRerunBackend(record) }, () => '重跑后半段'),
       ]
-      if (record.resultFileUrl) {
-        moreItems.push(
-          h(Menu.Item, { key: 'aiflavor', onClick: () => handleReapplyAiFlavor(record) }, () => '重跑去AI味')
-        )
-      }
 
       const moreDropdown = h(Dropdown, {}, {
         default: () => h(Button, { type: 'link', size: 'small', style: 'padding: 0 4px;' }, () => '更多'),
@@ -289,7 +281,7 @@ onMounted(() => {
         @change="onStatusChange"
       />
       <Button type="primary" @click="onSearch">搜索</Button>
-      <Button style="margin-left: auto;" @click="router.push('/title-library')">标题库</Button>
+      <Button style="margin-left: auto;" @click="router.push('/title-match')">标题匹配</Button>
     </div>
 
     <Table

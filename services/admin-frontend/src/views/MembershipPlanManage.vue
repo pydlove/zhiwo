@@ -148,6 +148,32 @@ function moveFeatureDown(index) {
   arr[index + 1] = temp
 }
 
+const editingFeatureIndex = ref(-1)
+const editingFeatureText = ref('')
+
+function startEditFeature(index) {
+  editingFeatureIndex.value = index
+  editingFeatureText.value = form.value.features[index]
+}
+
+function saveFeatureEdit() {
+  const text = editingFeatureText.value.trim()
+  if (!text) {
+    message.warning('权益内容不能为空')
+    return
+  }
+  if (editingFeatureIndex.value >= 0) {
+    form.value.features[editingFeatureIndex.value] = text
+  }
+  editingFeatureIndex.value = -1
+  editingFeatureText.value = ''
+}
+
+function cancelFeatureEdit() {
+  editingFeatureIndex.value = -1
+  editingFeatureText.value = ''
+}
+
 async function handleSave() {
   if (!form.value.name) {
     message.warning('请填写套餐名称')
@@ -256,10 +282,18 @@ onMounted(loadData)
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px;">
           <div v-for="(f, i) in form.features" :key="i" style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px;">
-            <span style="flex: 1; font-size: 14px; color: #262626;">{{ f }}</span>
-            <a style="font-size: 12px; color: #8c8c8c;" :style="i <= 0 ? { visibility: 'hidden' } : {}" @click="moveFeatureUp(i)">上移</a>
-            <a style="font-size: 12px; color: #8c8c8c;" :style="i >= form.features.length - 1 ? { visibility: 'hidden' } : {}" @click="moveFeatureDown(i)">下移</a>
-            <a style="font-size: 12px; color: #f5222d;" @click="removeFeature(i)">删除</a>
+            <template v-if="editingFeatureIndex === i">
+              <Input v-model:value="editingFeatureText" size="small" style="flex: 1;" @pressEnter="saveFeatureEdit" />
+              <a style="font-size: 12px; color: #1890ff;" @click="saveFeatureEdit">保存</a>
+              <a style="font-size: 12px; color: #8c8c8c;" @click="cancelFeatureEdit">取消</a>
+            </template>
+            <template v-else>
+              <span style="flex: 1; font-size: 14px; color: #262626;">{{ f }}</span>
+              <a style="font-size: 12px; color: #1890ff;" @click="startEditFeature(i)">编辑</a>
+              <a style="font-size: 12px; color: #8c8c8c;" :style="i <= 0 ? { visibility: 'hidden' } : {}" @click="moveFeatureUp(i)">上移</a>
+              <a style="font-size: 12px; color: #8c8c8c;" :style="i >= form.features.length - 1 ? { visibility: 'hidden' } : {}" @click="moveFeatureDown(i)">下移</a>
+              <a style="font-size: 12px; color: #f5222d;" @click="removeFeature(i)">删除</a>
+            </template>
           </div>
         </div>
       </Form.Item>

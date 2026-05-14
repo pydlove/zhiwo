@@ -18,6 +18,8 @@ public class TitleGenerateTask {
     private String errorMessage;     // 失败原因
     private Integer progressStep;    // 进度步骤
     private String progressMessage;  // 当前进度描述
+    private Integer duplicateCount;   // 重复标题数量
+    private Integer insertedCount;    // 成功插入标题数量
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime processedAt;
@@ -63,4 +65,10 @@ public class TitleGenerateTask {
 
     public LocalDateTime getProcessedAt() { return processedAt; }
     public void setProcessedAt(LocalDateTime processedAt) { this.processedAt = processedAt; }
+
+    public Integer getDuplicateCount() { return duplicateCount; }
+    public void setDuplicateCount(Integer duplicateCount) { this.duplicateCount = duplicateCount; }
+
+    public Integer getInsertedCount() { return insertedCount; }
+    public void setInsertedCount(Integer insertedCount) { this.insertedCount = insertedCount; }
 }

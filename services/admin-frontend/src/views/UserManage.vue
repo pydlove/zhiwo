@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, h, watch } from 'vue'
-import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Checkbox, Upload, Switch, Tabs, DatePicker, Dropdown, Menu } from 'ant-design-vue'
+import { useRoute } from 'vue-router'
+import { Card, Input, InputNumber, Select, Button, Table, Tag, Modal, Form, message, Pagination, Checkbox, Upload, Switch, Tabs, DatePicker, Dropdown, Menu } from 'ant-design-vue'
 import { listUsers, getUserTracks, addUserTrack, removeUserTrack, exportUsers, importUsers, batchUpdateAdmin } from '../api/user.js'
 import { createOrder } from '../api/order.js'
 import { listSubscriptionPosts, saveSubscriptionPost } from '../api/subscriptionPost.js'
@@ -11,6 +12,7 @@ import { uploadFile } from '../api/upload.js'
 import { listMembershipPlans } from '../api/membershipPlan.js'
 import request from '../api/request.js'
 
+const route = useRoute()
 const activeTab = ref('accountOpened')
 
 // 从 localStorage 恢复
@@ -142,28 +144,21 @@ const columns = [
     width: 200,
     fixed: 'right',
     customRender: ({ record }) => {
-      const mainItems = [
-        h('a', { style: 'margin-right: 10px;', onClick: () => handleEdit(record) }, '编辑'),
-        h('a', { style: { color: record.status === 1 ? '#f5222d' : '#1890ff' }, onClick: () => toggleStatus(record) }, record.status === 1 ? '禁用' : '启用'),
-      ]
-
-      const moreMenuItems = [
-        h(Menu.Item, { key: 'rp', onClick: () => resetPassword(record) }, () => '重置密码'),
-        h(Menu.Item, { key: 'cp', onClick: () => copyAccountInfo(record) }, () => '复制信息'),
-        h(Menu.Item, { key: 'ti', onClick: () => openTrackInfoModal(record) }, () => '赛道信息'),
-        needsRecommend(record) ? h(Menu.Item, { key: 'rc', style: 'color: #fa8c16;', onClick: () => openRecommendModal(record) }, () => '推荐') : null,
-        h(Menu.Item, { key: 'nt', onClick: () => openNextTitleModal(record) }, () => '设定下一个标题'),
-        h(Menu.Item, { key: 'st', onClick: () => openStyleModal(record) }, () => '文章样式'),
+      const items = [
+        { key: 'edit', label: '编辑', action: () => handleEdit(record) },
+        { key: 'toggle', label: record.status === 1 ? '禁用' : '启用', action: () => toggleStatus(record) },
+        { key: 'rp', label: '重置密码', action: () => resetPassword(record) },
+        { key: 'cp', label: '复制信息', action: () => copyAccountInfo(record) },
+        { key: 'ti', label: '赛道信息', action: () => openTrackInfoModal(record) },
+        needsRecommend(record) ? { key: 'rc', label: '推荐', action: () => openRecommendModal(record) } : null,
+        { key: 'nt', label: '设定下一个标题', action: () => openNextTitleModal(record) },
+        { key: 'st', label: '文章样式', action: () => openStyleModal(record) },
       ].filter(Boolean)
 
-      const moreDropdown = moreMenuItems.length
-        ? h(Dropdown, {}, {
-            default: () => h('a', { style: 'margin-left: 10px;' }, '更多'),
-            overlay: () => h(Menu, {}, () => moreMenuItems),
-          })
-        : null
-
-      return h('div', { style: 'display: flex; align-items: center; white-space: nowrap;' }, [...mainItems, moreDropdown])
+      return h(Dropdown, {}, {
+        default: () => h('a', { style: 'cursor: pointer;' }, '操作'),
+        overlay: () => h(Menu, {}, () => items.map(it => h(Menu.Item, { key: it.key, onClick: it.action }, () => it.label)))
+      })
     },
   },
 ]
@@ -899,12 +894,16 @@ const styleModalOpen = ref(false)
 const styleUser = ref({})
 const styleForm = ref('')
 const styleThemeColor = ref('#fa541c')
+const styleTitleFontSize = ref(16)
+const styleContentFontSize = ref(12)
 const styleLoading = ref(false)
 
 function openStyleModal(record) {
   styleUser.value = record
   styleForm.value = record.styleConfig || ''
   styleThemeColor.value = record.themeColor || '#fa541c'
+  styleTitleFontSize.value = record.titleFontSize || 16
+  styleContentFontSize.value = record.contentFontSize || 12
   styleModalOpen.value = true
 }
 
@@ -912,7 +911,12 @@ async function saveStyle() {
   if (!styleUser.value.id) return
   styleLoading.value = true
   try {
-    const payload = { styleConfig: styleForm.value, themeColor: styleThemeColor.value }
+    const payload = {
+      styleConfig: styleForm.value,
+      themeColor: styleThemeColor.value,
+      titleFontSize: styleTitleFontSize.value,
+      contentFontSize: styleContentFontSize.value
+    }
     await request.put('/users/' + styleUser.value.id, payload)
     message.success('文章样式已保存')
     styleModalOpen.value = false
@@ -921,6 +925,8 @@ async function saveStyle() {
     if (idx !== -1) {
       data.value[idx].styleConfig = payload.styleConfig
       data.value[idx].themeColor = payload.themeColor
+      data.value[idx].titleFontSize = payload.titleFontSize
+      data.value[idx].contentFontSize = payload.contentFontSize
     }
   } catch (e) {
     message.error('保存失败')
@@ -1061,6 +1067,9 @@ async function handleBatchUpdateAdmin() {
 
 const batchStyleModalOpen = ref(false)
 const batchStyleForm = ref('')
+const batchThemeColor = ref('#fa541c')
+const batchTitleFontSize = ref(16)
+const batchContentFontSize = ref(12)
 const batchStyleLoading = ref(false)
 
 function openBatchStyleModal() {
@@ -1069,6 +1078,9 @@ function openBatchStyleModal() {
     return
   }
   batchStyleForm.value = ''
+  batchThemeColor.value = '#fa541c'
+  batchTitleFontSize.value = 16
+  batchContentFontSize.value = 12
   batchStyleModalOpen.value = true
 }
 
@@ -1082,6 +1094,9 @@ async function handleBatchSaveStyle() {
     await request.post('/users/batch-style', {
       userIds: selectedRowKeys.value,
       styleConfig: batchStyleForm.value,
+      themeColor: batchThemeColor.value,
+      titleFontSize: batchTitleFontSize.value,
+      contentFontSize: batchContentFontSize.value,
     })
     message.success('批量配置样式成功')
     batchStyleModalOpen.value = false
@@ -1161,6 +1176,14 @@ watch(activeTab, () => {
 })
 
 onMounted(() => {
+  if (route.query.keyword) {
+    searchMap.value['all'].username = route.query.keyword
+    activeTab.value = 'all'
+    // 清理 query，避免刷新页面重复触发
+    const newQuery = { ...route.query }
+    delete newQuery.keyword
+    window.history.replaceState({}, '', `${window.location.pathname}?${new URLSearchParams(newQuery).toString()}`)
+  }
   loadOperators()
   loadData()
 })
@@ -1799,7 +1822,7 @@ onMounted(() => {
   <!-- Batch Style Modal -->
   <Modal
     v-model:open="batchStyleModalOpen"
-    title="批量配置样式提示词"
+    title="批量配置文章样式"
     :mask-closable="false"
     :confirm-loading="batchStyleLoading"
     @ok="handleBatchSaveStyle"
@@ -1809,17 +1832,40 @@ onMounted(() => {
       <div style="margin-bottom: 16px; color: #666; font-size: 13px;">
         已选择 <strong style="color: #1890ff;">{{ selectedRowKeys.length }}</strong> 位用户
       </div>
+      <Form.Item label="文章主题色">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <input
+            v-model="batchThemeColor"
+            type="color"
+            style="width: 48px; height: 32px; border: 1px solid #d9d9d9; border-radius: 4px; cursor: pointer; padding: 2px;"
+          />
+          <Input
+            v-model:value="batchThemeColor"
+            style="width: 120px;"
+            placeholder="#fa541c"
+          />
+          <span style="font-size: 12px; color: #888;">用于文章中的着重色、小标题颜色</span>
+        </div>
+      </Form.Item>
+      <div style="display: flex; gap: 16px;">
+        <Form.Item label="标题字号 (pt)" style="flex: 1;">
+          <InputNumber v-model:value="batchTitleFontSize" :min="10" :max="32" style="width: 100%;" />
+        </Form.Item>
+        <Form.Item label="正文字号 (pt)" style="flex: 1;">
+          <InputNumber v-model:value="batchContentFontSize" :min="10" :max="32" style="width: 100%;" />
+        </Form.Item>
+      </div>
       <Form.Item label="样式提示词">
         <Input.TextArea
           v-model:value="batchStyleForm"
-          :rows="8"
+          :rows="6"
           placeholder="请输入要批量应用的样式提示词..."
         />
       </Form.Item>
       <div style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 12px; font-size: 12px; color: #52c41a;">
         <div style="font-weight: 600; margin-bottom: 8px;">使用说明</div>
-        <div>此处填写的样式提示词将批量应用到已勾选的所有用户。</div>
-        <div style="margin-top: 4px;">留空表示清空这些用户的样式提示词（他们将使用系统默认样式）。</div>
+        <div>此处配置的样式将批量应用到已勾选的所有用户。</div>
+        <div style="margin-top: 4px;">样式提示词留空表示不清空原有提示词；主题色和字号不填则使用默认值。</div>
       </div>
     </Form>
   </Modal>
@@ -1849,6 +1895,14 @@ onMounted(() => {
           <span style="font-size: 12px; color: #888;">用于文章中的着重色、小标题颜色</span>
         </div>
       </Form.Item>
+      <div style="display: flex; gap: 16px;">
+        <Form.Item label="标题字号 (pt)" style="flex: 1;">
+          <InputNumber v-model:value="styleTitleFontSize" :min="10" :max="32" style="width: 100%;" />
+        </Form.Item>
+        <Form.Item label="正文字号 (pt)" style="flex: 1;">
+          <InputNumber v-model:value="styleContentFontSize" :min="10" :max="32" style="width: 100%;" />
+        </Form.Item>
+      </div>
       <Form.Item label="样式提示词">
         <Input.TextArea
           v-model:value="styleForm"

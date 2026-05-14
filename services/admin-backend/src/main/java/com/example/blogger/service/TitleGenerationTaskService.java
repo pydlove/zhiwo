@@ -71,6 +71,10 @@ public class TitleGenerationTaskService {
         taskMapper.updateGeneratedContent(id, content, LocalDateTime.now());
     }
 
+    public void updateProcessStartedAt(String id, LocalDateTime processStartedAt) {
+        taskMapper.updateProcessStartedAt(id, processStartedAt);
+    }
+
     public List<TitleGenerationTask> listTasks(String keyword, String status) {
         return taskMapper.findAllWithSearch(keyword, status);
     }

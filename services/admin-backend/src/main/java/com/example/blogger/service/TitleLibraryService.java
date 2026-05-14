@@ -55,14 +55,6 @@ public class TitleLibraryService {
         this.emailService = emailService;
     }
 
-    /* TODO: 临时逻辑 —— 启动时把已有关联推荐的标题标记为已使用，下次发布前请注释掉下面整个方法 */
-    @PostConstruct
-    public void initMarkUsedForMatched() {
-        int updated = titleLibraryMapper.batchMarkUsedForMatched();
-        System.out.println("[临时] 启动自动标记已关联标题为已使用: " + updated + " 条");
-    }
-    /* TODO: 临时逻辑结束 —— 下次请注释掉上面整个方法 */
-
     /**
      * 启动时自动填充标题库中 platform 为空的记录
      * 根据 track_id 查找赛道，取赛道的第一个 platform 填充
@@ -119,14 +111,14 @@ public class TitleLibraryService {
         return result;
     }
 
-    public List<TitleLibrary> search(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate, String isUsed, String userType, String sortField, String sortOrder) {
-        return titleLibraryMapper.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, sortField, sortOrder);
+    public List<TitleLibrary> search(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate, String isUsed, String isConfirmed, String aiFlavor, String userType, String matchable, String sortField, String sortOrder) {
+        return titleLibraryMapper.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, isConfirmed, aiFlavor, userType, matchable, sortField, sortOrder);
     }
 
-    public Map<String, Object> searchPage(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate, String isUsed, String userType, int page, int pageSize, String sortField, String sortOrder) {
+    public Map<String, Object> searchPage(String platform, String trackId, String keyword, String recommendUserName, String matched, String pushDate, String isUsed, String isConfirmed, String aiFlavor, String userType, String matchable, int page, int pageSize, String sortField, String sortOrder) {
         int offset = (page - 1) * pageSize;
-        List<TitleLibrary> list = titleLibraryMapper.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, offset, pageSize, sortField, sortOrder);
-        int total = titleLibraryMapper.countSearch(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType);
+        List<TitleLibrary> list = titleLibraryMapper.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, isConfirmed, aiFlavor, userType, matchable, offset, pageSize, sortField, sortOrder);
+        int total = titleLibraryMapper.countSearch(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, isConfirmed, aiFlavor, userType, matchable);
         Map<String, Object> result = new HashMap<>();
         result.put("list", list);
         result.put("total", total);
@@ -142,6 +134,14 @@ public class TitleLibraryService {
     }
 
     public void save(TitleLibrary titleLibrary) {
+        // 标题唯一性校验
+        if (titleLibrary.getTitle() != null && !titleLibrary.getTitle().trim().isEmpty()) {
+            TitleLibrary existing = titleLibraryMapper.findByTitle(titleLibrary.getTitle().trim());
+            if (existing != null && !existing.getId().equals(titleLibrary.getId())) {
+                throw new IllegalArgumentException("标题名称已存在：" + titleLibrary.getTitle().trim());
+            }
+        }
+
         if (titleLibrary.getId() == null || titleLibrary.getId().isEmpty()) {
             if (titleLibrary.getIsUsed() == null) {
                 titleLibrary.setIsUsed(0);
@@ -165,12 +165,28 @@ public class TitleLibraryService {
                 rec.setTitleLibraryId(titleId);
                 rec.setUserId(recommendUserId);
                 rec.setPlatform(titleLibrary.getPlatform());
-                rec.setTrackId(titleLibrary.getTrackId());
-                rec.setRecommendDate(titleLibrary.getRecommendDate() != null ? titleLibrary.getRecommendDate() : (titleLibrary.getPushDate() != null ? titleLibrary.getPushDate() : LocalDate.now()));
+                // track_id 使用用户订阅的赛道：优先匹配标题所属赛道，否则取用户订阅的第一个
+                String titleTrackId = titleLibrary.getTrackId();
+                List<UserTrack> userTracks = userTrackMapper.findByUserId(recommendUserId);
+                String recTrackId = titleTrackId;
+                if (userTracks != null && !userTracks.isEmpty()) {
+                    recTrackId = userTracks.stream()
+                            .map(UserTrack::getTrackId)
+                            .filter(tid -> tid != null && tid.equals(titleTrackId))
+                            .findFirst()
+                            .orElse(userTracks.get(0).getTrackId());
+                }
+                rec.setTrackId(recTrackId);
+                // 优先使用 pushDate（前端编辑时用户修改的是 pushDate），其次才回退到 recommendDate
+                rec.setRecommendDate(titleLibrary.getPushDate() != null ? titleLibrary.getPushDate() : (titleLibrary.getRecommendDate() != null ? titleLibrary.getRecommendDate() : LocalDate.now()));
                 titleRecommendationMapper.insert(rec);
+                titleLibrary.setIsUsed(1);
+                titleLibraryMapper.update(titleLibrary);
             } else {
                 // 显式传入空字符串时才清空关联
                 titleRecommendationMapper.deleteByTitleId(titleId);
+                titleLibrary.setIsUsed(0);
+                titleLibraryMapper.update(titleLibrary);
             }
         }
         // recommendUserId 为 null 时不处理关联，保持原样（防止导入等批量操作误删关联）
@@ -184,12 +200,28 @@ public class TitleLibraryService {
         titleLibraryMapper.updateIsUsed(id, isUsed);
     }
 
-    public void updateIsAiPassed(String id, Integer isAiPassed) {
-        titleLibraryMapper.updateIsAiPassed(id, isAiPassed);
+    public void updateAiFlavorStatus(String id, Integer aiFlavorStatus) {
+        titleLibraryMapper.updateAiFlavorStatus(id, aiFlavorStatus);
     }
 
     public void updateIsCopied(String id, Integer isCopied) {
         titleLibraryMapper.updateIsCopied(id, isCopied);
+    }
+
+    public void updateIsConfirmed(String id, Integer isConfirmed) {
+        titleLibraryMapper.updateIsConfirmed(id, isConfirmed);
+    }
+
+    public void updateConfirmStatus(String id, Integer confirmStatus) {
+        titleLibraryMapper.updateConfirmStatus(id, confirmStatus);
+    }
+
+    public List<TitleLibrary> findPendingReview(String recommendDate) {
+        return titleLibraryMapper.findPendingReview(recommendDate);
+    }
+
+    public List<TitleLibrary> findReviewHistory(String recommendDate) {
+        return titleLibraryMapper.findReviewHistory(recommendDate);
     }
 
     public void updateGeneratedFile(String id, String fileUrl, String fileName) {
@@ -198,10 +230,6 @@ public class TitleLibraryService {
 
     public void updateGenerateStatus(String id, Integer generateStatus) {
         titleLibraryMapper.updateGenerateStatus(id, generateStatus);
-    }
-
-    public void updatePushDate(String id, java.time.LocalDate pushDate) {
-        titleLibraryMapper.updatePushDate(id, pushDate);
     }
 
     public void updateTitle(TitleLibrary title) {
@@ -307,6 +335,7 @@ public class TitleLibraryService {
             String postTitle = (String) row.get("postTitle");
             String titleLibraryId = row.get("titleLibraryId") != null ? row.get("titleLibraryId").toString() : null;
             String titleName = (String) row.get("titleName");
+            String generatedFileUrl = row.get("generatedFileUrl") != null ? row.get("generatedFileUrl").toString() : null;
 
             Map<String, Object> user = userMap.computeIfAbsent(userId, k -> {
                 Map<String, Object> u = new HashMap<>();
@@ -325,7 +354,8 @@ public class TitleLibraryService {
 
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> tracks = (List<Map<String, Object>>) user.get("tracks");
-            boolean hasPost = subscriptionPostId != null && !subscriptionPostId.isEmpty();
+            boolean hasPost = (subscriptionPostId != null && !subscriptionPostId.isEmpty())
+                    || (generatedFileUrl != null && !generatedFileUrl.isEmpty());
             boolean hasTitle = titleLibraryId != null && !titleLibraryId.isEmpty();
 
             // 防御重复：同一赛道可能因推荐表多条记录导致重复行，去重并保留有文章的那条
@@ -447,6 +477,10 @@ public class TitleLibraryService {
         result.put("list", pageList);
         result.put("total", total);
         return result;
+    }
+
+    public List<Map<String, Object>> countByTrack() {
+        return titleLibraryMapper.countByTrack();
     }
 
     public List<Map<String, Object>> findUnpushedUsers(LocalDate date) {

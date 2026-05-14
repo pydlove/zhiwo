@@ -15,3 +15,11 @@ export function getTitleGenerateTask(id) {
 export function cancelTitleGenerateTask(id) {
   return request.post(`/title-generate/tasks/${id}/cancel`)
 }
+
+export function stopTitleGenerateTask(id) {
+  return request.post(`/title-generate/tasks/${id}/stop`)
+}
+
+export function getTaskTitles(id) {
+  return request.get(`/title-generate/tasks/${id}/titles`)
+}

@@ -20,10 +20,6 @@ export function retryTask(id) {
   return request.post(`/tasks/${id}/retry`)
 }
 
-export function regenerateDocx(id) {
-  return request.post(`/tasks/${id}/regenerate-docx`)
-}
-
-export function reapplyAiFlavor(id) {
-  return request.post(`/tasks/${id}/reapply-ai-flavor`)
+export function rerunBackend(id) {
+  return request.post(`/tasks/${id}/rerun-backend`)
 }

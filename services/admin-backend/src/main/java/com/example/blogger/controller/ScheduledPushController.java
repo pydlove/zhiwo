@@ -50,4 +50,26 @@ public class ScheduledPushController {
         scheduledPushService.cancel(id);
         return Result.ok(null);
     }
+
+    @PutMapping("/{id}")
+    public Result<Void> update(@PathVariable String id, @RequestBody Map<String, Object> body) {
+        String pushTime = body.get("pushTime") != null ? body.get("pushTime").toString() : null;
+        if (pushTime == null || pushTime.isEmpty()) {
+            return Result.error("推送时间不能为空");
+        }
+        scheduledPushService.updatePushTime(id, pushTime);
+        return Result.ok(null);
+    }
+
+    @PostMapping("/{id}/trigger")
+    public Result<Void> triggerNow(@PathVariable String id) {
+        scheduledPushService.triggerNow(id);
+        return Result.ok(null);
+    }
+
+    @DeleteMapping("/{id}/delete")
+    public Result<Void> delete(@PathVariable String id) {
+        scheduledPushService.delete(id);
+        return Result.ok(null);
+    }
 }

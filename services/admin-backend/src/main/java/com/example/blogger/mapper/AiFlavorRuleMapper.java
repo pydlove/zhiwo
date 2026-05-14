@@ -11,6 +11,9 @@ public interface AiFlavorRuleMapper {
     @Select("SELECT id, rule_from, rule_to, sort_order, is_enabled, created_at FROM tu_ai_flavor_rule ORDER BY sort_order ASC, created_at ASC")
     List<AiFlavorRule> findAll();
 
+    @Select("SELECT id, rule_from, rule_to, sort_order, is_enabled, created_at FROM tu_ai_flavor_rule WHERE is_enabled = 1 ORDER BY sort_order ASC, created_at ASC")
+    List<AiFlavorRule> findAllEnabled();
+
     @Select("SELECT id, rule_from, rule_to, sort_order, is_enabled, created_at FROM tu_ai_flavor_rule WHERE id = #{id}")
     AiFlavorRule findById(@Param("id") String id);
 

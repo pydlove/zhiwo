@@ -2,6 +2,8 @@ package com.example.blogger.util;
 
 import org.apache.poi.xwpf.usermodel.*;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTColor;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTFonts;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr;
 import org.springframework.stereotype.Component;
 
 import java.io.FileOutputStream;
@@ -12,38 +14,63 @@ import java.util.regex.Pattern;
 public class DocxGenerator {
 
     private static final String HIGHLIGHT_COLOR = "fa541c";
-    private static final int H3_FONT_SIZE = 16; // 16pt
-    private static final int NORMAL_FONT_SIZE = 12; // 12pt
+    private static final int DEFAULT_H3_FONT_SIZE = 16; // 16pt
+    private static final int DEFAULT_NORMAL_FONT_SIZE = 12; // 12pt
 
     private static final Pattern H1_PATTERN = Pattern.compile("<h1[^>]*>(.*?)</h1>");
-    private static final Pattern H3_PATTERN = Pattern.compile("<h3>(.*?)</h3>");
+    private static final Pattern H3_PATTERN = Pattern.compile("<h3[^>]*>(.*?)</h3>");
     private static final Pattern S_PATTERN = Pattern.compile("<s>(.*?)</s>");
 
     /**
-     * 将文章内容写入 DOCX 文件（使用默认主题色）
+     * 将文章内容写入 DOCX 文件（使用默认主题色和字号）
      * @param title 文章标题
      * @param content 文章正文（支持 <h3> 章节标题 和 <s> 着重加强 标签）
      * @param filePath 输出文件路径
      */
     public void generateDocx(String title, String content, String filePath) throws Exception {
-        generateDocx(title, content, filePath, HIGHLIGHT_COLOR);
+        generateDocx(title, content, filePath, HIGHLIGHT_COLOR, null, null);
     }
 
     /**
-     * 将文章内容写入 DOCX 文件
+     * 将文章内容写入 DOCX 文件（使用自定义主题色）
      * @param title 文章标题
      * @param content 文章正文（支持 <h3> 章节标题 和 <s> 着重加强 标签）
      * @param filePath 输出文件路径
      * @param themeColor 主题色（十六进制，如 fa541c）
      */
     public void generateDocx(String title, String content, String filePath, String themeColor) throws Exception {
+        generateDocx(title, content, filePath, themeColor, null, null);
+    }
+
+    /**
+     * 将文章内容写入 DOCX 文件（完整版：支持主题色和字号配置）
+     * @param title 文章标题
+     * @param content 文章正文（支持 <h3> 章节标题 和 <s> 着重加强 标签）
+     * @param filePath 输出文件路径
+     * @param themeColor 主题色（十六进制，如 fa541c）
+     * @param titleFontSize 标题字号（pt），null 时使用默认值 16
+     * @param contentFontSize 正文字号（pt），null 时使用默认值 12
+     */
+    public void generateDocx(String title, String content, String filePath, String themeColor, Integer titleFontSize, Integer contentFontSize) throws Exception {
+        // 兜底：移除大模型思考过程标签及其内容
+        content = stripThinkingTags(content);
+
         String color = (themeColor != null && !themeColor.isEmpty()) ? themeColor.replace("#", "") : HIGHLIGHT_COLOR;
+        int h3Size = (titleFontSize != null && titleFontSize > 0) ? titleFontSize : DEFAULT_H3_FONT_SIZE;
+        int normalSize = (contentFontSize != null && contentFontSize > 0) ? contentFontSize : DEFAULT_NORMAL_FONT_SIZE;
+
         // title 参数保留用于兼容调用方，但不再写入文档正文
         try (FileOutputStream out = new FileOutputStream(filePath);
              XWPFDocument document = new XWPFDocument()) {
+            // 预处理：标准化换行符，把单个 \n 变成 \n\n，确保块级标签独占段落；同时去除 <p> 和 </p> 标签
+            // 把连续三个及以上 \n 压缩为 \n\n，避免过多空段落
+            String normalizedContent = content.replaceAll("(?<!\n)\n(?!\n)", "\n\n")
+                                               .replaceAll("\n{3,}", "\n\n")
+                                               .replaceAll("</?p>", "");
             // 正文段落：按 \n\n 分割段落（不再单独写入标题，标题已体现在文件名中）
-            String[] paragraphs = content.split("\n\n");
-            for (String para : paragraphs) {
+            String[] paragraphs = normalizedContent.split("\n\n+");
+            for (int i = 0; i < paragraphs.length; i++) {
+                String para = paragraphs[i];
                 if (para.trim().isEmpty()) {
                     document.createParagraph();
                     continue;
@@ -60,29 +87,79 @@ public class DocxGenerator {
                 Matcher h3Matcher = H3_PATTERN.matcher(trimmed);
                 if (h3Matcher.matches()) {
                     String h3Text = h3Matcher.group(1);
-                    addH3Paragraph(document, h3Text, color);
-                    continue;
+                    addH3Paragraph(document, h3Text, color, h3Size);
+                } else if (!trimmed.contains("<s>") && !endsWithPunctuation(trimmed)) {
+                    // 智能标题识别：独立段落且结尾无标点，大概率是标题
+                    String cleanText = trimmed.replaceAll("<[^>]+>", "");
+                    addH3Paragraph(document, cleanText, color, h3Size);
+                } else {
+                    // 普通段落：可能包含 <s> 标签
+                    addNormalParagraph(document, trimmed, color, normalSize);
                 }
 
-                // 普通段落：可能包含 <s> 标签
-                addNormalParagraph(document, trimmed, color);
+                // 暂时注释：每个段落之间增加一个换行（空段落），避免排版拥挤
+                // if (i < paragraphs.length - 1) {
+                //     document.createParagraph();
+                // }
             }
 
             document.write(out);
         }
     }
 
-    private void addH3Paragraph(XWPFDocument document, String text, String color) {
-        XWPFParagraph p = document.createParagraph();
-        p.setAlignment(ParagraphAlignment.LEFT);
-        XWPFRun run = p.createRun();
-        run.setText(text);
-        run.setFontSize(H3_FONT_SIZE);
-        run.setColor(color);
-        run.setBold(true);
+    /**
+     * 兜底过滤：移除大模型思考过程标签及其内容。
+     * 如果整篇文章被单个 <think> 包裹（过滤后为空），则只去掉标签本身，保留内容。
+     */
+    private String stripThinkingTags(String text) {
+        if (text == null || text.isEmpty()) return text;
+        String cleaned = text.replaceAll("(?is)<thinking\\b[^>]*>.*?</thinking>", "")
+                             .replaceAll("(?is)<think\\b[^>]*>.*?</think>", "")
+                             .replaceAll("(?is)<thought\\b[^>]*>.*?</thought>", "")
+                             .replaceAll("(?is)<reasoning\\b[^>]*>.*?</reasoning>", "")
+                             .trim();
+        // 兜底：如果过滤后内容为空，回退为只移除标签保留内容
+        if (cleaned.isEmpty()) {
+            cleaned = text.replaceAll("(?is)</?thinking\\b[^>]*>", "")
+                          .replaceAll("(?is)</?think\\b[^>]*>", "")
+                          .replaceAll("(?is)</?thought\\b[^>]*>", "")
+                          .replaceAll("(?is)</?reasoning\\b[^>]*>", "")
+                          .trim();
+        }
+        return cleaned;
     }
 
-    private void addNormalParagraph(XWPFDocument document, String text, String color) {
+    /**
+     * 判断文本去除 HTML 标签后是否以标点符号结尾
+     */
+    private boolean endsWithPunctuation(String text) {
+        String plain = text.replaceAll("<[^>]+>", "").trim();
+        if (plain.isEmpty()) return false;
+        char last = plain.charAt(plain.length() - 1);
+        return "。，！？；：、.?!:;".indexOf(last) >= 0;
+    }
+
+    private void addH3Paragraph(XWPFDocument document, String text, String color, int fontSize) {
+        XWPFParagraph p = document.createParagraph();
+        p.setAlignment(ParagraphAlignment.LEFT);
+
+        // 在标题文字前插入红色竖条符号（与文字天然基线对齐）
+        XWPFRun slashRun = p.createRun();
+        slashRun.setText("▌ ");
+        slashRun.setFontSize(fontSize);
+        slashRun.setColor("ff4d4f");
+        slashRun.setBold(true);
+        setRunFont(slashRun);
+
+        XWPFRun run = p.createRun();
+        run.setText(text);
+        run.setFontSize(fontSize);
+        run.setColor(color);
+        run.setBold(true);
+        setRunFont(run);
+    }
+
+    private void addNormalParagraph(XWPFDocument document, String text, String color, int fontSize) {
         XWPFParagraph p = document.createParagraph();
         p.setAlignment(ParagraphAlignment.BOTH);
 
@@ -98,7 +175,8 @@ public class DocxGenerator {
                 if (!normalText.isEmpty()) {
                     XWPFRun normalRun = p.createRun();
                     normalRun.setText(normalText);
-                    normalRun.setFontSize(NORMAL_FONT_SIZE);
+                    normalRun.setFontSize(fontSize);
+                    setRunFont(normalRun);
                 }
             }
             // <s> 标签内的文本
@@ -106,9 +184,10 @@ public class DocxGenerator {
             if (!sText.isEmpty()) {
                 XWPFRun sRun = p.createRun();
                 sRun.setText(sText);
-                sRun.setFontSize(NORMAL_FONT_SIZE);
+                sRun.setFontSize(fontSize);
                 sRun.setBold(true);
                 sRun.setColor(color);
+                setRunFont(sRun);
             }
             lastEnd = sMatcher.end();
         }
@@ -119,15 +198,19 @@ public class DocxGenerator {
             if (!remainingText.isEmpty()) {
                 XWPFRun remainingRun = p.createRun();
                 remainingRun.setText(remainingText);
-                remainingRun.setFontSize(NORMAL_FONT_SIZE);
+                remainingRun.setFontSize(fontSize);
+                setRunFont(remainingRun);
             }
         }
 
-        // 如果没有匹配到任何 <s> 标签，整段都是普通文本
-        if (lastEnd == 0 && !sMatcher.find(0)) {
-            XWPFRun run = p.createRun();
-            run.setText(text);
-            run.setFontSize(NORMAL_FONT_SIZE);
-        }
+    }
+
+    private void setRunFont(XWPFRun run) {
+        CTRPr rPr = run.getCTR().isSetRPr() ? run.getCTR().getRPr() : run.getCTR().addNewRPr();
+        CTFonts fonts = rPr.sizeOfRFontsArray() > 0 ? rPr.getRFontsArray(0) : rPr.addNewRFonts();
+        fonts.setAscii("Arial");
+        fonts.setHAnsi("Arial");
+        fonts.setEastAsia("微软雅黑");
+        run.setFontFamily("Arial");
     }
 }

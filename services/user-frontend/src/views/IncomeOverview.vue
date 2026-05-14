@@ -10,6 +10,23 @@ const income = ref({
 
 const loading = ref(false)
 
+// 底部设置面板控制
+const showSettings = ref(false)
+const settings = ref({
+  yesterday: 66.24,
+  dayRatio: 28.60,
+  weekRatio: -5.10,
+  monthTotal: 2345.60,
+})
+
+function applySettings() {
+  income.value = { ...settings.value }
+}
+
+function toggleSettings() {
+  showSettings.value = !showSettings.value
+}
+
 async function loadData() {
   loading.value = true
   try {
@@ -96,6 +113,39 @@ onMounted(loadData)
         <div class="income-link">
           <span>如何提现收入？</span>
         </div>
+      </div>
+    </div>
+
+    <!-- 底部设置面板：控制上方数字显示，不影响截图区域 -->
+    <div class="income-settings">
+      <button class="settings-toggle" @click="toggleSettings">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.67 15 1.65 1.65 0 003 15v-.09a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.67V4.6a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+        </svg>
+        数据设置
+      </button>
+      <div v-if="showSettings" class="settings-panel">
+        <div class="settings-title">自定义展示数据</div>
+        <div class="settings-grid">
+          <div class="settings-item">
+            <label class="settings-label">昨日收入（元）</label>
+            <input v-model.number="settings.yesterday" type="number" step="0.01" class="settings-input" />
+          </div>
+          <div class="settings-item">
+            <label class="settings-label">日环比（%）</label>
+            <input v-model.number="settings.dayRatio" type="number" step="0.01" class="settings-input" />
+          </div>
+          <div class="settings-item">
+            <label class="settings-label">周同比（%）</label>
+            <input v-model.number="settings.weekRatio" type="number" step="0.01" class="settings-input" />
+          </div>
+          <div class="settings-item">
+            <label class="settings-label">本月收入（元）</label>
+            <input v-model.number="settings.monthTotal" type="number" step="0.01" class="settings-input" />
+          </div>
+        </div>
+        <button class="settings-apply" @click="applySettings">应用</button>
       </div>
     </div>
   </div>
@@ -270,5 +320,101 @@ onMounted(loadData)
   font-size: 13px;
   color: #576b95;
   cursor: pointer;
+}
+
+/* 底部设置面板 */
+.income-settings {
+  margin-top: auto;
+  padding: 16px;
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.settings-toggle:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
+}
+
+.settings-panel {
+  margin-top: 12px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.settings-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #262626;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.settings-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.settings-input {
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #262626;
+  background: #f9fafb;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.settings-input:focus {
+  border-color: #07C160;
+  background: #fff;
+}
+
+.settings-apply {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, #07C160 0%, #06AD56 100%);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.settings-apply:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(7, 193, 96, 0.3);
 }
 </style>

@@ -204,6 +204,8 @@ public class UserController {
         if (user.getAdminId() != null) existing.setAdminId(user.getAdminId());
         if (user.getStyleConfig() != null) existing.setStyleConfig(user.getStyleConfig());
         if (user.getThemeColor() != null) existing.setThemeColor(user.getThemeColor());
+        if (user.getTitleFontSize() != null) existing.setTitleFontSize(user.getTitleFontSize());
+        if (user.getContentFontSize() != null) existing.setContentFontSize(user.getContentFontSize());
         // Detect account opening: userType changed to 1 (开户)
         boolean wasOpened = existing.getUserType() != null && existing.getUserType() == 1;
         if (user.getUserType() != null) existing.setUserType(user.getUserType());
@@ -242,13 +244,27 @@ public class UserController {
         @SuppressWarnings("unchecked")
         List<String> userIds = (List<String>) body.get("userIds");
         String styleConfig = (String) body.get("styleConfig");
+        String themeColor = (String) body.get("themeColor");
+        Integer titleFontSize = body.get("titleFontSize") != null ? ((Number) body.get("titleFontSize")).intValue() : null;
+        Integer contentFontSize = body.get("contentFontSize") != null ? ((Number) body.get("contentFontSize")).intValue() : null;
         if (userIds == null || userIds.isEmpty()) {
             return Result.error("请选择用户");
         }
         for (String userId : userIds) {
             User user = userService.getById(userId);
             if (user != null) {
-                user.setStyleConfig(styleConfig);
+                if (styleConfig != null) {
+                    user.setStyleConfig(styleConfig);
+                }
+                if (themeColor != null && !themeColor.isEmpty()) {
+                    user.setThemeColor(themeColor);
+                }
+                if (titleFontSize != null) {
+                    user.setTitleFontSize(titleFontSize);
+                }
+                if (contentFontSize != null) {
+                    user.setContentFontSize(contentFontSize);
+                }
                 userService.save(user);
             }
         }
@@ -538,8 +554,23 @@ public class UserController {
                 continue;
             }
 
+            String trimmedTitle = title.trim();
+            TitleLibrary existing = titleLibraryMapper.findByTitle(trimmedTitle);
+            if (existing != null) {
+                if (userId.equals(existing.getRecommendUserId())) {
+                    // 标题已存在且属于当前用户，跳过不重复保存
+                    Map<String, String> resultItem = new HashMap<>();
+                    resultItem.put("titleLibraryId", existing.getId());
+                    resultItem.put("title", existing.getTitle());
+                    resultList.add(resultItem);
+                    continue;
+                } else {
+                    return Result.error("标题「" + trimmedTitle + "」已被其他用户使用");
+                }
+            }
+
             TitleLibrary tl = new TitleLibrary();
-            tl.setTitle(title.trim());
+            tl.setTitle(trimmedTitle);
             tl.setPlatform(track.getPlatforms());
             tl.setTrackId(trackId);
             tl.setPushDate(recommendDate);

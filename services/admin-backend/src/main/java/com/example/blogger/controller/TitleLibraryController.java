@@ -72,6 +72,7 @@ public class TitleLibraryController {
     private final LLMService llmService;
     private final DocxGenerator docxGenerator;
     private final com.example.blogger.service.TitleGenerationTaskService titleGenerationTaskService;
+    private final com.example.blogger.util.AiFlavorRemover aiFlavorRemover;
 
     @Value("${app.script.replace-periods-path}")
     private String replacePeriodsScriptPath;
@@ -120,7 +121,8 @@ public class TitleLibraryController {
                                   org.springframework.web.client.RestTemplate restTemplate,
                                   LLMService llmService,
                                   DocxGenerator docxGenerator,
-                                  com.example.blogger.service.TitleGenerationTaskService titleGenerationTaskService) {
+                                  com.example.blogger.service.TitleGenerationTaskService titleGenerationTaskService,
+                                  com.example.blogger.util.AiFlavorRemover aiFlavorRemover) {
         this.titleLibraryService = titleLibraryService;
         this.trackMapper = trackMapper;
         this.userMapper = userMapper;
@@ -142,6 +144,7 @@ public class TitleLibraryController {
         this.llmService = llmService;
         this.docxGenerator = docxGenerator;
         this.titleGenerationTaskService = titleGenerationTaskService;
+        this.aiFlavorRemover = aiFlavorRemover;
     }
 
     @PostConstruct
@@ -154,19 +157,6 @@ public class TitleLibraryController {
             }
         } catch (SQLException e) {
             System.err.println("Migration check failed: " + e.getMessage());
-        }
-    }
-
-    @PostConstruct
-    public void migratePushDateColumn() {
-        try (Connection conn = dataSource.getConnection();
-             ResultSet rs = conn.getMetaData().getColumns(null, null, "tu_title_library", "push_date")) {
-            if (!rs.next()) {
-                conn.createStatement().execute("ALTER TABLE tu_title_library ADD COLUMN push_date DATE NULL COMMENT '推荐日期' AFTER description");
-                System.out.println("Migration applied: added push_date column to tu_title_library");
-            }
-        } catch (SQLException e) {
-            System.err.println("Migration check failed for push_date: " + e.getMessage());
         }
     }
 
@@ -566,7 +556,10 @@ public class TitleLibraryController {
             @RequestParam(value = "matched", required = false) String matched,
             @RequestParam(value = "pushDate", required = false) String pushDate,
             @RequestParam(value = "isUsed", required = false) String isUsed,
+            @RequestParam(value = "isConfirmed", required = false) String isConfirmed,
+            @RequestParam(value = "aiFlavor", required = false) String aiFlavor,
             @RequestParam(value = "userType", required = false) String userType,
+            @RequestParam(value = "matchable", required = false) String matchable,
             @RequestParam(value = "page", required = false) Integer page,
             @RequestParam(value = "pageSize", required = false) Integer pageSize,
             @RequestParam(value = "sortField", required = false) String sortField,
@@ -578,36 +571,100 @@ public class TitleLibraryController {
                 || (matched != null && !matched.isEmpty())
                 || (pushDate != null && !pushDate.isEmpty())
                 || (isUsed != null && !isUsed.isEmpty())
-                || (userType != null && !userType.isEmpty());
+                || (isConfirmed != null && !isConfirmed.isEmpty())
+                || (aiFlavor != null && !aiFlavor.isEmpty())
+                || (userType != null && !userType.isEmpty())
+                || (matchable != null && !matchable.isEmpty());
         if (page != null && pageSize != null && page > 0 && pageSize > 0) {
             if (hasFilter) {
-                return Result.ok(titleLibraryService.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, page, pageSize, sortField, sortOrder));
+                return Result.ok(titleLibraryService.searchPage(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, isConfirmed, aiFlavor, userType, matchable, page, pageSize, sortField, sortOrder));
             }
             return Result.ok(titleLibraryService.listPage(page, pageSize));
         }
         if (hasFilter) {
-            return Result.ok(titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, sortField, sortOrder));
+            return Result.ok(titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, isConfirmed, aiFlavor, userType, matchable, sortField, sortOrder));
         }
         return Result.ok(titleLibraryService.list());
     }
 
     @PostMapping
     public Result<Void> save(@RequestBody TitleLibrary titleLibrary) {
-        titleLibraryService.save(titleLibrary);
-        return Result.ok(null);
+        try {
+            titleLibraryService.save(titleLibrary);
+            return Result.ok(null);
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        }
     }
 
     @PutMapping("/{id}")
     public Result<Void> update(@PathVariable String id, @RequestBody TitleLibrary titleLibrary) {
-        titleLibrary.setId(id);
-        titleLibraryService.save(titleLibrary);
-        return Result.ok(null);
+        try {
+            titleLibrary.setId(id);
+            titleLibraryService.save(titleLibrary);
+            return Result.ok(null);
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        }
     }
 
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable String id) {
         titleLibraryService.delete(id);
         return Result.ok(null);
+    }
+
+    /**
+     * 修复脏数据：
+     * 1. 已有关联推荐但未标记 is_used=1 的标题
+     * 2. 对齐 push_date 和 recommend_date：有 recommendation 关联但 recommend_date 为 null 的，用 push_date 回填
+     * 3. 清空已有 recommendation 关联的标题的 push_date（统一以 recommend_date 为准）
+     */
+    @PostMapping("/fix-dirty-data")
+    public Result<Map<String, Object>> fixDirtyData() {
+        int fixedIsUsed = titleLibraryService.batchMarkUsedForMatched();
+        int backfilledRecommendDate = 0;
+        int clearedPushDate = 0;
+        try (Connection conn = dataSource.getConnection();
+             java.sql.Statement stmt = conn.createStatement()) {
+            // 2. 回填 recommend_date：有 recommendation 关联但 recommend_date 为 null 的，用 push_date 回填
+            backfilledRecommendDate = stmt.executeUpdate(
+                "UPDATE tu_title_recommendation r " +
+                "INNER JOIN tu_title_library t ON r.title_library_id = t.id " +
+                "SET r.recommend_date = t.push_date " +
+                "WHERE r.recommend_date IS NULL AND t.push_date IS NOT NULL"
+            );
+            // 3. 清空已有 recommendation 关联的标题的 push_date
+            clearedPushDate = stmt.executeUpdate(
+                "UPDATE tu_title_library t " +
+                "SET t.push_date = NULL " +
+                "WHERE t.push_date IS NOT NULL " +
+                "AND EXISTS (SELECT 1 FROM tu_title_recommendation r WHERE r.title_library_id = t.id)"
+            );
+            // 4. 删除 push_date 字段（如果还存在且已无任何数据）
+            ResultSet rs = stmt.executeQuery(
+                "SELECT COUNT(*) AS cnt FROM tu_title_library WHERE push_date IS NOT NULL"
+            );
+            if (rs.next() && rs.getInt("cnt") == 0) {
+                stmt.execute("ALTER TABLE tu_title_library DROP COLUMN push_date");
+                log.info("[fix-dirty-data] 已删除 tu_title_library.push_date 字段");
+            }
+        } catch (SQLException e) {
+            log.error("[fix-dirty-data] SQL 执行失败", e);
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("fixedIsUsed", fixedIsUsed);
+        result.put("backfilledRecommendDate", backfilledRecommendDate);
+        result.put("clearedPushDate", clearedPushDate);
+        return Result.ok(result);
+    }
+
+    /**
+     * 按赛道统计标题数量（总数/已使用/未使用）
+     */
+    @GetMapping("/track-stats")
+    public Result<List<Map<String, Object>>> trackStats() {
+        return Result.ok(titleLibraryService.countByTrack());
     }
 
     @PostMapping("/batch-change-track")
@@ -789,6 +846,8 @@ public class TitleLibraryController {
             @RequestParam(value = "matched", required = false) String matched,
             @RequestParam(value = "pushDate", required = false) String pushDate,
             @RequestParam(value = "isUsed", required = false) String isUsed,
+            @RequestParam(value = "isConfirmed", required = false) String isConfirmed,
+            @RequestParam(value = "aiFlavor", required = false) String aiFlavor,
             @RequestParam(value = "userType", required = false) String userType,
             @RequestParam(value = "titleIds", required = false) List<String> titleIds) {
         try {
@@ -806,9 +865,11 @@ public class TitleLibraryController {
                         || (recommendUserName != null && !recommendUserName.isEmpty())
                         || (matched != null && !matched.isEmpty())
                         || (pushDate != null && !pushDate.isEmpty())
-                        || (isUsed != null && !isUsed.isEmpty());
+                        || (isUsed != null && !isUsed.isEmpty())
+                        || (isConfirmed != null && !isConfirmed.isEmpty())
+                        || (aiFlavor != null && !aiFlavor.isEmpty());
                 titles = hasFilter
-                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, null, null)
+                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, isConfirmed, aiFlavor, userType, null, null, null)
                         : titleLibraryService.list();
             }
 
@@ -868,6 +929,8 @@ public class TitleLibraryController {
             @RequestParam(value = "matched", required = false) String matched,
             @RequestParam(value = "pushDate", required = false) String pushDate,
             @RequestParam(value = "isUsed", required = false) String isUsed,
+            @RequestParam(value = "isConfirmed", required = false) String isConfirmed,
+            @RequestParam(value = "aiFlavor", required = false) String aiFlavor,
             @RequestParam(value = "userType", required = false) String userType,
             @RequestParam(value = "titleIds", required = false) List<String> titleIds,
             @RequestParam(value = "baseName", required = false) String baseName) {
@@ -886,9 +949,11 @@ public class TitleLibraryController {
                         || (recommendUserName != null && !recommendUserName.isEmpty())
                         || (matched != null && !matched.isEmpty())
                         || (pushDate != null && !pushDate.isEmpty())
-                        || (isUsed != null && !isUsed.isEmpty());
+                        || (isUsed != null && !isUsed.isEmpty())
+                        || (isConfirmed != null && !isConfirmed.isEmpty())
+                        || (aiFlavor != null && !aiFlavor.isEmpty());
                 titles = hasFilter
-                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, userType, null, null)
+                        ? titleLibraryService.search(platform, trackId, keyword, recommendUserName, matched, pushDate, isUsed, isConfirmed, aiFlavor, userType, null, null, null)
                         : titleLibraryService.list();
             }
 
@@ -1629,10 +1694,8 @@ public class TitleLibraryController {
                     .filter(t -> t.getIsUsed() == null || t.getIsUsed() != 1) // 过滤掉 is_used=1 的标题
                     .collect(Collectors.toList());
 
-            // 在未匹配的标题中，优先匹配 pushDate 等于目标日期的；pushDate 为 null 的也允许匹配
-            // 同时过滤掉没有 trackId 的标题（无法匹配任何用户）
+            // 在未匹配的标题中，过滤掉没有 trackId 的标题（无法匹配任何用户）
             List<TitleLibrary> titles = unmatchedTitles.stream()
-                    .filter(t -> t.getPushDate() == null || !t.getPushDate().isAfter(targetDate))
                     .filter(t -> t.getTrackId() != null && !t.getTrackId().isEmpty())
                     .collect(Collectors.toList());
 
@@ -1786,7 +1849,6 @@ public class TitleLibraryController {
                 rec.setTrackId(title.getTrackId());
                 rec.setRecommendDate(targetDate);
                 titleRecommendationMapper.insert(rec);
-                titleLibraryService.updatePushDate(title.getId(), targetDate);
                 titleLibraryService.updateIsUsed(title.getId(), 1);
 
                 // 标记本次调用内该用户+赛道组合已匹配（不同赛道仍可继续匹配）
@@ -2002,7 +2064,6 @@ public class TitleLibraryController {
                 rec.setTrackId(title.getTrackId());
                 rec.setRecommendDate(targetDate);
                 titleRecommendationMapper.insert(rec);
-                titleLibraryService.updatePushDate(titleId, targetDate);
                 titleLibraryService.updateIsUsed(titleId, 1);
                 saved++;
                 savedIds.add(titleId);
@@ -2148,7 +2209,6 @@ public class TitleLibraryController {
     @DeleteMapping("/{id}/recommendation")
     public Result<Void> unbindRecommendation(@PathVariable String id) {
         titleRecommendationMapper.deleteByTitleId(id);
-        titleLibraryService.updatePushDate(id, null);
         titleLibraryService.updateIsUsed(id, 0);
         return Result.ok(null);
     }
@@ -2165,7 +2225,6 @@ public class TitleLibraryController {
         for (String id : titleIds) {
             try {
                 titleRecommendationMapper.deleteByTitleId(id);
-                titleLibraryService.updatePushDate(id, null);
                 titleLibraryService.updateIsUsed(id, 0);
                 success++;
             } catch (Exception e) {
@@ -2189,7 +2248,42 @@ public class TitleLibraryController {
         int failed = 0;
         for (String id : titleIds) {
             try {
-                titleLibraryService.updateIsAiPassed(id, 1);
+                titleLibraryService.updateAiFlavorStatus(id, 1);
+                success++;
+            } catch (Exception e) {
+                failed++;
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", success);
+        result.put("failed", failed);
+        return Result.ok(result);
+    }
+
+    @PostMapping("/{id}/confirm")
+    public Result<?> confirmTitle(@PathVariable String id) {
+        try {
+            titleLibraryService.updateIsConfirmed(id, 1);
+            titleLibraryService.updateConfirmStatus(id, 1);
+            return Result.ok(null);
+        } catch (Exception e) {
+            return Result.error("确认失败: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/batch-confirm")
+    public Result<Map<String, Object>> batchConfirm(@RequestBody Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
+        List<String> titleIds = (List<String>) body.get("titleIds");
+        if (titleIds == null || titleIds.isEmpty()) {
+            return Result.error("请选择要确认的标题");
+        }
+        int success = 0;
+        int failed = 0;
+        for (String id : titleIds) {
+            try {
+                titleLibraryService.updateIsConfirmed(id, 1);
+                titleLibraryService.updateConfirmStatus(id, 1);
                 success++;
             } catch (Exception e) {
                 failed++;
@@ -2213,6 +2307,125 @@ public class TitleLibraryController {
         for (String id : titleIds) {
             try {
                 titleLibraryService.updateIsCopied(id, 1);
+                success++;
+            } catch (Exception e) {
+                failed++;
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", success);
+        result.put("failed", failed);
+        return Result.ok(result);
+    }
+
+    /**
+     * 标记/取消标记标题为AI味重
+     */
+    @PostMapping("/mark-ai-flavor-heavy")
+    public Result<Void> markAiFlavorHeavy(@RequestParam("titleId") String titleId,
+                                           @RequestParam(value = "heavy", defaultValue = "true") boolean heavy) {
+        titleLibraryService.updateAiFlavorStatus(titleId, heavy ? 2 : 0);
+        log.info("[TitleLibrary] 标记AI味重: titleId={}, heavy={}", titleId, heavy);
+        return Result.ok(null);
+    }
+
+    // ========== 文章审核管理 ==========
+
+    /**
+     * 查询待审核列表：已生成、未确认、指定推荐日期
+     */
+    @GetMapping("/pending-review")
+    public Result<List<TitleLibrary>> pendingReview(@RequestParam("date") String date) {
+        try {
+            List<TitleLibrary> list = titleLibraryService.findPendingReview(date);
+            return Result.ok(list);
+        } catch (Exception e) {
+            log.error("[ArticleReview] 查询待审核列表失败: date={}, error={}", date, e.getMessage(), e);
+            return Result.error("查询失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 查询审核历史：已确认或已拒绝、指定推荐日期
+     */
+    @GetMapping("/review-history")
+    public Result<List<TitleLibrary>> reviewHistory(@RequestParam("date") String date) {
+        try {
+            List<TitleLibrary> list = titleLibraryService.findReviewHistory(date);
+            return Result.ok(list);
+        } catch (Exception e) {
+            log.error("[ArticleReview] 查询审核历史失败: date={}, error={}", date, e.getMessage(), e);
+            return Result.error("查询失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 单条审核操作
+     * action: confirm=确认, reject=打回, aiPass=标记AI味通过, aiHeavy=标记AI味重
+     */
+    @PostMapping("/{id}/review")
+    public Result<Void> reviewTitle(@PathVariable String id,
+                                     @RequestParam("action") String action) {
+        try {
+            switch (action) {
+                case "confirm":
+                    titleLibraryService.updateConfirmStatus(id, 1);
+                    log.info("[ArticleReview] 确认通过: id={}", id);
+                    break;
+                case "reject":
+                    titleLibraryService.updateConfirmStatus(id, 2);
+                    log.info("[ArticleReview] 打回: id={}", id);
+                    break;
+                case "aiPass":
+                    titleLibraryService.updateAiFlavorStatus(id, 1);
+                    log.info("[ArticleReview] 标记AI味通过: id={}", id);
+                    break;
+                case "aiHeavy":
+                    titleLibraryService.updateAiFlavorStatus(id, 2);
+                    log.info("[ArticleReview] 标记AI味重: id={}", id);
+                    break;
+                default:
+                    return Result.error("未知操作: " + action);
+            }
+            return Result.ok(null);
+        } catch (Exception e) {
+            log.error("[ArticleReview] 审核操作失败: id={}, action={}, error={}", id, action, e.getMessage(), e);
+            return Result.error("操作失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 批量审核操作
+     */
+    @PostMapping("/batch-review")
+    public Result<Map<String, Object>> batchReview(@RequestBody Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
+        List<String> titleIds = (List<String>) body.get("titleIds");
+        String action = (String) body.get("action");
+        if (titleIds == null || titleIds.isEmpty()) {
+            return Result.error("请选择要审核的标题");
+        }
+        int success = 0;
+        int failed = 0;
+        for (String id : titleIds) {
+            try {
+                switch (action) {
+                    case "confirm":
+                        titleLibraryService.updateConfirmStatus(id, 1);
+                        break;
+                    case "reject":
+                        titleLibraryService.updateConfirmStatus(id, 2);
+                        break;
+                    case "aiPass":
+                        titleLibraryService.updateAiFlavorStatus(id, 1);
+                        break;
+                    case "aiHeavy":
+                        titleLibraryService.updateAiFlavorStatus(id, 2);
+                        break;
+                    default:
+                        failed++;
+                        continue;
+                }
                 success++;
             } catch (Exception e) {
                 failed++;
@@ -2268,12 +2481,11 @@ public class TitleLibraryController {
             // 2. 删除目标日期的推荐记录
             int deleted = titleRecommendationMapper.deleteByDate(targetDate);
 
-            // 3. 清理标题状态：删除后没有其他推荐记录的标题，清空 push_date 和 is_used
+            // 3. 清理标题状态：删除后没有其他推荐记录的标题，清空 is_used
             int cleared = 0;
             for (String titleId : titleIds) {
                 int remaining = titleRecommendationMapper.countByTitleId(titleId);
                 if (remaining == 0) {
-                    titleLibraryService.updatePushDate(titleId, null);
                     titleLibraryService.updateIsUsed(titleId, 0);
                     cleared++;
                 }
@@ -2654,8 +2866,14 @@ public class TitleLibraryController {
             // Step 2: Create task record (允许重复提交，生成新的任务)
             com.example.blogger.entity.TitleGenerationTask task = titleGenerationTaskService.createTask(id, titleLib.getTitle(), prompt);
 
-            // 标记标题为生成中
-            titleLibraryService.updateGenerateStatus(id, 2);
+            // 标记标题为排队中（任务创建后尚未开始处理）
+            titleLibraryService.updateGenerateStatus(id, 3);
+
+            // 如果标题之前被拒绝，重置为未确认状态
+            if (titleLib.getConfirmStatus() != null && titleLib.getConfirmStatus() == 2) {
+                titleLibraryService.updateConfirmStatus(id, 0);
+                log.info("[CreateTask] 重置拒绝状态为未确认: id={}", id);
+            }
 
             log.info("[CreateTask] Task created: id={}, titleLibraryId={}, title={}", task.getId(), id, titleLib.getTitle());
 
@@ -3097,7 +3315,7 @@ public class TitleLibraryController {
     }
 
     /**
-     * 发送文章邮件（带 DOCX 附件）
+     * 发送文章邮件（带 DOCX 附件），格式与推送概览保持一致
      */
     @PostMapping("/{id}/send-article-email")
     public Result<Void> sendArticleEmail(@PathVariable String id, @RequestBody Map<String, String> body) {
@@ -3133,19 +3351,49 @@ public class TitleLibraryController {
                 return Result.error("文章文件不存在");
             }
 
-            // 发送邮件
-            String content = buildArticleEmailHtml(titleLib);
-            emailService.sendHtmlEmailWithAttachment(toEmail, "您的创作文章", content, file, titleLib.getGeneratedFileName());
+            // 获取用户和赛道信息，保持与推送概览一致
+            User user = null;
+            if (titleLib.getRecommendUserId() != null && !titleLib.getRecommendUserId().isEmpty()) {
+                user = userMapper.findById(titleLib.getRecommendUserId());
+            }
+            String userName = user != null ? user.getUsername() : "";
+
+            Track track = null;
+            if (titleLib.getTrackId() != null && !titleLib.getTrackId().isEmpty()) {
+                track = trackMapper.findById(titleLib.getTrackId());
+            }
+            String trackName = track != null ? track.getName() : "";
+
+            // 发送邮件（与推送概览使用相同的模板和主题）
+            emailService.sendDailyRecommendEmail(
+                    toEmail,
+                    userName,
+                    trackName,
+                    titleLib.getTitle(),
+                    titleLib.getPlatform(),
+                    file,
+                    titleLib.getGeneratedFileName()
+            );
+
+            // 记录推送日志（如有推荐记录）
+            if (user != null && titleLib.getRecommendDate() != null) {
+                try {
+                    EmailPushLog log = new EmailPushLog();
+                    log.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
+                    log.setUserId(user.getId());
+                    log.setPushDate(titleLib.getRecommendDate());
+                    log.setType("daily_recommend");
+                    log.setTitleLibraryId(titleLib.getId());
+                    emailPushLogMapper.insert(log);
+                } catch (Exception e) {
+                    // 日志记录失败不影响邮件发送
+                }
+            }
 
             return Result.ok(null);
         } catch (Exception e) {
             return Result.error("发送邮件失败: " + e.getMessage());
         }
-    }
-
-    private String buildArticleEmailHtml(TitleLibrary titleLib) {
-        String title = HtmlUtils.htmlEscape(titleLib.getTitle());
-        return "<html><body><p>您好，您的文章《" + title + "》已生成，附件为 DOCX 文件，请查收。</p></body></html>";
     }
 
     @PostMapping("/batch-send-email")
@@ -3339,6 +3587,7 @@ public class TitleLibraryController {
 
             try {
                 LocalDate pushDate = LocalDate.parse(dateStr);
+                boolean allowRepeat = Boolean.TRUE.equals(body.get("allowRepeat"));
                 int total = userIds.size();
                 int success = 0;
                 int failed = 0;
@@ -3362,6 +3611,11 @@ public class TitleLibraryController {
                         errors.add(Map.of("user", user.getUsername(), "reason", "用户未设置邮箱"));
                         continue;
                     }
+                    if (!user.getEmail().contains("@")) {
+                        failed++;
+                        errors.add(Map.of("user", user.getUsername(), "reason", "邮箱格式无效: " + user.getEmail()));
+                        continue;
+                    }
 
                     // 查找用户当日所有推荐（有关联文章的）
                     List<Map<String, Object>> recMaps = titleRecommendationMapper.findByUserAndDate(userId, pushDate);
@@ -3371,45 +3625,73 @@ public class TitleLibraryController {
                         continue;
                     }
 
-                    // 查询该用户当日已推送过的 titleLibraryId，避免重复推送
-                    List<String> pushedTitleIds = emailPushLogMapper.findPushedTitleIdsByUserAndDate(userId, pushDate);
-                    Set<String> pushedSet = new HashSet<>(pushedTitleIds != null ? pushedTitleIds : new ArrayList<>());
+                    // 查询该用户当日已推送过的 titleLibraryId，避免重复推送（allowRepeat=true 时跳过此检查）
+                    Set<String> pushedSet = new HashSet<>();
+                    if (!allowRepeat) {
+                        List<String> pushedTitleIds = emailPushLogMapper.findPushedTitleIdsByUserAndDate(userId, pushDate);
+                        pushedSet = new HashSet<>(pushedTitleIds != null ? pushedTitleIds : new ArrayList<>());
+                    }
 
                     boolean anyPushed = false;
                     for (Map<String, Object> recMap : recMaps) {
                         String subPostId = recMap.get("subscription_post_id") != null ? recMap.get("subscription_post_id").toString() : null;
                         String trackId = recMap.get("track_id") != null ? recMap.get("track_id").toString() : null;
                         String titleLibId = recMap.get("title_library_id") != null ? recMap.get("title_library_id").toString() : null;
-                        // 已推送过的跳过
-                        if (titleLibId != null && !titleLibId.isEmpty() && pushedSet.contains(titleLibId)) {
+                        // 已推送过的跳过（非重复推送模式）
+                        if (!allowRepeat && titleLibId != null && !titleLibId.isEmpty() && pushedSet.contains(titleLibId)) {
                             continue;
                         }
-                        if (subPostId == null || subPostId.isEmpty()) {
+                        File articleFile = null;
+                        String fileName = null;
+                        String articleTitle = null;
+                        String platform = null;
+
+                        if (subPostId != null && !subPostId.isEmpty()) {
+                            SubscriptionPost post = subscriptionPostMapper.findById(subPostId);
+                            if (post == null) continue;
+                            String fileUrl = post.getFileUrl();
+                            if (fileUrl == null || fileUrl.isEmpty()) continue;
+                            articleFile = new File(fileUrl.startsWith("/")
+                                    ? System.getProperty("user.dir") + fileUrl
+                                    : fileUrl);
+                            if (!articleFile.exists()) {
+                                String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
+                                articleFile = new File(articlesDir + File.separator + post.getFileName());
+                            }
+                            if (!articleFile.exists()) continue;
+                            fileName = post.getFileName();
+                            articleTitle = post.getTitle();
+                            platform = "";
+                        } else if (titleLibId != null && !titleLibId.isEmpty()) {
+                            // 回退：从 title_library 的 generated_file_url 获取文件
+                            TitleLibrary titleLib = titleLibraryService.getById(titleLibId);
+                            if (titleLib == null) continue;
+                            String fileUrl = titleLib.getGeneratedFileUrl();
+                            if (fileUrl == null || fileUrl.isEmpty()) continue;
+                            articleFile = new File(fileUrl.startsWith("/")
+                                    ? System.getProperty("user.dir") + fileUrl
+                                    : fileUrl);
+                            if (!articleFile.exists()) {
+                                String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
+                                articleFile = new File(articlesDir + File.separator + titleLib.getGeneratedFileName());
+                            }
+                            if (!articleFile.exists()) continue;
+                            fileName = titleLib.getGeneratedFileName();
+                            articleTitle = titleLib.getTitle();
+                            platform = titleLib.getPlatform();
+                        } else {
                             continue;
                         }
-                        SubscriptionPost post = subscriptionPostMapper.findById(subPostId);
-                        if (post == null) {
-                            continue;
-                        }
-                        String fileUrl = post.getFileUrl();
-                        if (fileUrl == null || fileUrl.isEmpty()) {
-                            continue;
-                        }
-                        File articleFile = new File(fileUrl.startsWith("/")
-                                ? System.getProperty("user.dir") + fileUrl
-                                : fileUrl);
-                        if (!articleFile.exists()) {
-                            String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
-                            articleFile = new File(articlesDir + File.separator + post.getFileName());
-                        }
-                        if (!articleFile.exists()) {
-                            continue;
-                        }
+
                         Track userTrack = trackMapper.findById(trackId);
                         String trackName = userTrack != null ? userTrack.getName() : "";
                         TitleLibrary titleLib = titleLibraryService.getById(titleLibId);
-                        String articleTitle = titleLib != null ? titleLib.getTitle() : post.getTitle();
-                        String platform = titleLib != null && titleLib.getPlatform() != null ? titleLib.getPlatform() : "";
+                        if (articleTitle == null || articleTitle.isEmpty()) {
+                            articleTitle = titleLib != null ? titleLib.getTitle() : "";
+                        }
+                        if (platform == null || platform.isEmpty()) {
+                            platform = titleLib != null && titleLib.getPlatform() != null ? titleLib.getPlatform() : "";
+                        }
                         emailService.sendDailyRecommendEmail(
                                 user.getEmail(),
                                 user.getUsername(),
@@ -3417,7 +3699,7 @@ public class TitleLibraryController {
                                 articleTitle,
                                 platform,
                                 articleFile,
-                                post.getFileName()
+                                fileName
                         );
                         // 记录推送日志
                         EmailPushLog log = new EmailPushLog();
@@ -3432,7 +3714,8 @@ public class TitleLibraryController {
                     if (anyPushed) {
                         success++;
                     } else {
-                        errors.add(Map.of("user", user.getUsername(), "reason", "所有文章已推送过，无需重复推送"));
+                        String reason = allowRepeat ? "当日没有可推送的文章" : "所有文章已推送过，无需重复推送";
+                        errors.add(Map.of("user", user.getUsername(), "reason", reason));
                     }
                 } catch (Exception e) {
                     failed++;
@@ -3493,6 +3776,11 @@ public class TitleLibraryController {
                 if (titleLib == null) {
                     failCount++;
                     continue;
+                }
+
+                // 如果标题之前被拒绝，重置为未确认状态
+                if (titleLib.getConfirmStatus() != null && titleLib.getConfirmStatus() == 2) {
+                    titleLibraryService.updateConfirmStatus(titleLib.getId(), 0);
                 }
 
                 User user = userMapper.findById(rec.getUserId());
@@ -3626,6 +3914,9 @@ public class TitleLibraryController {
                     task.put("progress", recommendations.size() > 0 ? (completed * 100 / recommendations.size()) : 0);
                     continue;
                 }
+
+                // 去除AI味及思考标签
+                content = aiFlavorRemover.removeAiFlavor(content);
 
                 // Wrap with style CSS
                 String fullHtml = wrapContentWithStyle(titleLib.getTitle(), content, styleCss);
@@ -4066,7 +4357,7 @@ public class TitleLibraryController {
                     prompt.append("6. 只输出纯JSON，不要markdown代码块，不要任何额外文字\n\n");
                     prompt.append("格式：{\"titles\":[{\"track\":\"赛道名称\",\"title\":\"标题文字\",\"description\":\"SEO描述\"},...]}");
                     if (instruction != null && !instruction.trim().isEmpty()) {
-                        prompt.append("\n\n【额外要求】").append(instruction.trim()).append("（请在生成标题时严格遵循此要求）");
+                        prompt.append("\n\n【标题生成方向】").append(instruction.trim()).append("（请在生成标题时严格遵循此要求）");
                     }
 
                     log.info("[生成标题] Prompt 长度={} 内容前200字={}", prompt.length(), prompt.substring(0, Math.min(200, prompt.length())));

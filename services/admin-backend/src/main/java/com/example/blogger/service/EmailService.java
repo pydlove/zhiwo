@@ -14,6 +14,7 @@ import java.io.File;
 @Service
 public class EmailService {
     private final JavaMailSender mailSender;
+    private final AnnouncementService announcementService;
 
     @Value("${spring.mail.username:}")
     private String fromEmail;
@@ -24,8 +25,9 @@ public class EmailService {
     @Value("${app.base-url:http://localhost:5173}")
     private String appBaseUrl;
 
-    public EmailService(JavaMailSender mailSender) {
+    public EmailService(JavaMailSender mailSender, AnnouncementService announcementService) {
         this.mailSender = mailSender;
+        this.announcementService = announcementService;
     }
 
     public void sendSimpleEmail(String to, String subject, String content) {
@@ -437,6 +439,32 @@ public class EmailService {
         String displayName = userName != null && !userName.isEmpty() ? userName : "创作者";
         String displayTrack = trackName != null && !trackName.isEmpty() ? trackName : "精选赛道";
         String displayPlatform = platform != null && !platform.isEmpty() ? platform : "公众号";
+
+        // 查询文章推送公告
+        String announcementHtml = "";
+        try {
+            com.example.blogger.entity.Announcement announcement = announcementService.getActiveByType("article_push");
+            if (announcement != null && announcement.getContent() != null && !announcement.getContent().isEmpty()) {
+                announcementHtml = """
+                                <!-- 公告区 -->
+                                <tr>
+                                    <td style="padding:20px 40px 16px;">
+                                        <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:10px; padding:14px 18px;">
+                                            <div style="display:flex; align-items:flex-start; gap:10px;">
+                                                <span style="font-size:16px; line-height:1.4;">&#128227;</span>
+                                                <div style="font-size:15px; color:#dc2626; font-weight:600; line-height:1.6;">
+                                                    %s
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                    """.formatted(announcement.getContent());
+            }
+        } catch (Exception e) {
+            // 公告查询失败不影响邮件发送
+        }
+
         return """
             <!DOCTYPE html>
             <html>
@@ -449,6 +477,8 @@ public class EmailService {
                     <tr>
                         <td align="center" style="padding:40px 20px;">
                             <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px; width:100%%; background:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+                                %s
+
                                 <!-- 顶部品牌区 -->
                                 <tr>
                                     <td style="background:linear-gradient(135deg, #2563eb 0%%, #1e40af 100%%); padding:32px 40px; text-align:center;">
@@ -513,6 +543,6 @@ public class EmailService {
                 </table>
             </body>
             </html>
-            """.formatted(displayName, displayTrack, articleTitle, displayPlatform);
+            """.formatted(announcementHtml, displayName, displayTrack, articleTitle, displayPlatform);
     }
 }

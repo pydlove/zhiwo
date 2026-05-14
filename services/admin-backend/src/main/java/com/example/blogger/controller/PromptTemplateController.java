@@ -48,7 +48,7 @@ public class PromptTemplateController {
         if (template.getId() == null || template.getId().isEmpty()) {
             template.setId(UUID.randomUUID().toString().replace("-", ""));
             if (template.getType() == null || template.getType().isEmpty()) {
-                template.setType("generate_post");
+                template.setType("generate_title");
             }
             if (template.getIsDefault() == null) {
                 template.setIsDefault(0);

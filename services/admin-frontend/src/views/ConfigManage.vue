@@ -68,6 +68,7 @@ const notifyEmailAddress = ref('')
 const backupLoading = ref(false)
 
 const defaultArticleStyle = ref('')
+const generationConcurrency = ref('1')
 
 async function handleBackupDb() {
   backupLoading.value = true
@@ -105,6 +106,9 @@ async function loadConfig() {
       if (data.mainOperator) mainOperator.value = data.mainOperator
       if (data.defaultArticleStyle !== undefined) {
         defaultArticleStyle.value = data.defaultArticleStyle
+      }
+      if (data.generation_task_concurrency !== undefined) {
+        generationConcurrency.value = data.generation_task_concurrency
       }
     }
   } catch (e) {
@@ -145,6 +149,10 @@ async function saveStyleConfig() {
 
 async function saveMainOperator() {
   await savePartial({ mainOperator: mainOperator.value || '' })
+}
+
+async function saveGenerationConcurrency() {
+  await savePartial({ generation_task_concurrency: generationConcurrency.value || '1' })
 }
 
 async function saveNotifyConfig() {
@@ -362,6 +370,25 @@ onMounted(() => {
           <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">用户直接访问（不带 op 参数）时，默认展示该运营者的二维码和话术</div>
         </Form.Item>
         <Button type="primary" @click="saveMainOperator">保存</Button>
+      </Form>
+    </Card>
+
+    <Card style="border-radius: 2px; margin-bottom: 24px;">
+      <template #title>
+        <span style="font-size: 16px; font-weight: 500; color: #262626;">文章生成并发配置</span>
+      </template>
+      <Form layout="vertical">
+        <Form.Item label="同时运行任务数" style="max-width: 480px;">
+          <Input
+            v-model:value="generationConcurrency"
+            type="number"
+            min="1"
+            max="10"
+            placeholder="例如：1"
+          />
+          <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">设置同时执行的文章生成任务数量，范围 1-10，默认 1。增大并发会加快队列处理速度，但会占用更多系统资源。</div>
+        </Form.Item>
+        <Button type="primary" @click="saveGenerationConcurrency">保存</Button>
       </Form>
     </Card>
 

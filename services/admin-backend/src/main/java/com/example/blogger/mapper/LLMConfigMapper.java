@@ -23,4 +23,7 @@ public interface LLMConfigMapper {
 
     @Update("UPDATE tu_llm_config SET is_active = 0 WHERE provider != #{provider}")
     int deactivateOthers(@Param("provider") String provider);
+
+    @Update("UPDATE tu_llm_config SET is_active = 0")
+    int clearAllActive();
 }

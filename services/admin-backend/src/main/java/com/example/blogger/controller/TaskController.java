@@ -7,6 +7,7 @@ import com.example.blogger.entity.User;
 import com.example.blogger.service.TitleGenerationTaskService;
 import com.example.blogger.service.TitleLibraryService;
 import com.example.blogger.service.UserService;
+import com.example.blogger.util.AiFlavorRemover;
 import com.example.blogger.util.DocxGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +18,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,6 +36,7 @@ public class TaskController {
     private final TitleLibraryService titleLibraryService;
     private final UserService userService;
     private final DocxGenerator docxGenerator;
+    private final AiFlavorRemover aiFlavorRemover;
 
     @Value("${app.script.replace-periods-path:}")
     private String replacePeriodsScriptPath;
@@ -41,11 +44,13 @@ public class TaskController {
     public TaskController(TitleGenerationTaskService taskService,
                           TitleLibraryService titleLibraryService,
                           UserService userService,
-                          DocxGenerator docxGenerator) {
+                          DocxGenerator docxGenerator,
+                          AiFlavorRemover aiFlavorRemover) {
         this.taskService = taskService;
         this.titleLibraryService = titleLibraryService;
         this.userService = userService;
         this.docxGenerator = docxGenerator;
+        this.aiFlavorRemover = aiFlavorRemover;
     }
 
     @GetMapping
@@ -53,6 +58,27 @@ public class TaskController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String status) {
         List<TitleGenerationTask> list = taskService.listTasks(keyword, status);
+        LocalDateTime now = LocalDateTime.now();
+        for (TitleGenerationTask task : list) {
+            if ("pending".equals(task.getStatus())) {
+                task.setDuration("-");
+                continue;
+            }
+            LocalDateTime start = task.getProcessStartedAt();
+            if (start == null) {
+                start = task.getCreatedAt();
+            }
+            LocalDateTime end = task.getProcessedAt();
+            if (end == null) {
+                end = now;
+            }
+            if (start != null && end != null) {
+                long seconds = Duration.between(start, end).getSeconds();
+                task.setDuration(formatDuration(seconds));
+            } else {
+                task.setDuration("-");
+            }
+        }
         Map<String, Object> result = new HashMap<>();
         result.put("list", list);
         result.put("total", list.size());
@@ -112,8 +138,8 @@ public class TaskController {
         return Result.ok(result);
     }
 
-    @PostMapping("/{id}/regenerate-docx")
-    public Result<Void> regenerateDocx(@PathVariable String id) {
+    @PostMapping("/{id}/rerun-backend")
+    public Result<Void> rerunBackend(@PathVariable String id) {
         TitleGenerationTask task = taskService.findById(id);
         if (task == null) {
             return Result.error("任务不存在");
@@ -123,8 +149,13 @@ public class TaskController {
         }
         try {
             String content = task.getGeneratedContent();
-            log.info("[TaskController] 重新生成DOCX, title={}, contentLength={}", task.getTitle(), content.length());
+            log.info("[TaskController] 重跑后半段, title={}, contentLength={}", task.getTitle(), content.length());
 
+            // 1. 去AI味
+            String cleanedContent = aiFlavorRemover.removeAiFlavor(content);
+            log.info("[TaskController] 去AI味完成, originalLength={}, cleanedLength={}", content.length(), cleanedContent.length());
+
+            // 2. 生成DOCX
             String safeTitle = task.getTitle() != null ? task.getTitle() : "untitled";
             safeTitle = safeTitle.replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9\\s]", "").trim();
             safeTitle = safeTitle.replaceAll("\\s+", "，");
@@ -139,99 +170,45 @@ public class TaskController {
             }
             String filePath = articlesDir + File.separator + fileName;
 
-            // 获取用户主题色
+            // 获取用户主题色和字号配置
             String themeColor = null;
+            Integer titleFontSize = null;
+            Integer contentFontSize = null;
             try {
                 TitleLibrary titleLib = titleLibraryService.getById(task.getTitleLibraryId());
                 if (titleLib != null && titleLib.getRecommendUserId() != null) {
                     User user = userService.getById(titleLib.getRecommendUserId());
-                    if (user != null && user.getThemeColor() != null && !user.getThemeColor().isEmpty()) {
-                        themeColor = user.getThemeColor();
+                    if (user != null) {
+                        if (user.getThemeColor() != null && !user.getThemeColor().isEmpty()) {
+                            themeColor = user.getThemeColor();
+                        }
+                        titleFontSize = user.getTitleFontSize();
+                        contentFontSize = user.getContentFontSize();
                     }
                 }
             } catch (Exception e) {
-                log.warn("[TaskController] 获取用户主题色失败，使用默认颜色: {}", e.getMessage());
+                log.warn("[TaskController] 获取用户样式配置失败，使用默认配置: {}", e.getMessage());
             }
 
-            docxGenerator.generateDocx(task.getTitle(), content, filePath, themeColor);
+            docxGenerator.generateDocx(task.getTitle(), cleanedContent, filePath, themeColor, titleFontSize, contentFontSize);
             String fileUrl = "/uploads/articles/" + fileName;
             taskService.updateStatus(task.getId(), "completed", fileUrl);
             titleLibraryService.updateGeneratedFile(task.getTitleLibraryId(), fileUrl, fileName);
-            log.info("[TaskController] DOCX重新生成完成: fileUrl={}", fileUrl);
+            log.info("[TaskController] 重跑后半段完成: fileUrl={}", fileUrl);
             return Result.ok(null);
         } catch (Exception e) {
-            log.error("[TaskController] 重新生成DOCX失败: id={}, error={}", id, e.getMessage(), e);
-            return Result.error("重新生成失败: " + e.getMessage());
+            log.error("[TaskController] 重跑后半段失败: id={}, error={}", id, e.getMessage(), e);
+            return Result.error("重跑后半段失败: " + e.getMessage());
         }
     }
 
-    @PostMapping("/{id}/reapply-ai-flavor")
-    public Result<Void> reapplyAiFlavor(@PathVariable String id) {
-        TitleGenerationTask task = taskService.findById(id);
-        if (task == null) {
-            return Result.error("任务不存在");
+    private String formatDuration(long seconds) {
+        if (seconds < 60) {
+            return seconds + "秒";
+        } else if (seconds < 3600) {
+            return (seconds / 60) + "分" + (seconds % 60) + "秒";
+        } else {
+            return (seconds / 3600) + "小时" + ((seconds % 3600) / 60) + "分";
         }
-        if (task.getResultFileName() == null || task.getResultFileName().isEmpty()) {
-            return Result.error("任务没有生成文件");
-        }
-        File scriptFile = new File(replacePeriodsScriptPath);
-        if (!scriptFile.exists()) {
-            return Result.error("去AI味脚本不存在");
-        }
-
-        String fileName = task.getResultFileName();
-        String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
-        String filePath = articlesDir + File.separator + fileName;
-
-        try {
-            execAiFlavorScript(filePath);
-            log.info("[TaskController] 去AI味重新执行完成: id={}, file={}", id, filePath);
-            return Result.ok(null);
-        } catch (Exception e) {
-            log.error("[TaskController] 重新执行去AI味失败: id={}, error={}", id, e.getMessage(), e);
-            return Result.error("去AI味执行失败: " + e.getMessage());
-        }
-    }
-
-    private void execAiFlavorScript(String filePath) throws Exception {
-        Exception lastException = null;
-        for (String pythonCmd : new String[]{"python3", "python"}) {
-            try {
-                List<String> command = new ArrayList<>();
-                command.add(pythonCmd);
-                command.add(replacePeriodsScriptPath);
-                command.add(filePath);
-
-                log.info("[TaskController] 执行去AI味脚本: {}", command);
-                ProcessBuilder pb = new ProcessBuilder(command);
-                pb.redirectErrorStream(true);
-                Process process = pb.start();
-
-                StringBuilder stdout = new StringBuilder();
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        stdout.append(line).append("\n");
-                    }
-                }
-
-                boolean finished = process.waitFor(60, TimeUnit.SECONDS);
-                if (!finished) {
-                    process.destroyForcibly();
-                    throw new RuntimeException("去AI味脚本执行超时");
-                }
-
-                int exitCode = process.exitValue();
-                if (exitCode != 0) {
-                    throw new RuntimeException("去AI味脚本执行失败: " + stdout.toString().trim());
-                }
-                log.info("[TaskController] 去AI味脚本执行成功: cmd={}, output={}", pythonCmd, stdout.toString().trim());
-                return;
-            } catch (Exception e) {
-                lastException = e;
-                log.warn("[TaskController] 使用 {} 执行去AI味脚本失败: {}", pythonCmd, e.getMessage());
-            }
-        }
-        throw new RuntimeException("去AI味脚本无法执行，已尝试 python3 和 python", lastException);
     }
 }

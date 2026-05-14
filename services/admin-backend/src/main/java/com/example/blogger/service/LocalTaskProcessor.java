@@ -1,6 +1,7 @@
 package com.example.blogger.service;
 
 import com.example.blogger.entity.TitleGenerationTask;
+import com.example.blogger.util.AiFlavorRemover;
 import com.example.blogger.util.DocxGenerator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,6 +33,7 @@ public class LocalTaskProcessor {
     private final TitleGenerationTaskService taskService;
     private final ClaudeCodeService claudeCodeService;
     private final DocxGenerator docxGenerator;
+    private final AiFlavorRemover aiFlavorRemover;
     private final RestTemplate restTemplate;
 
     @Value("${local.task-processor.server-url:http://localhost:8080}")
@@ -43,10 +45,12 @@ public class LocalTaskProcessor {
     public LocalTaskProcessor(TitleGenerationTaskService taskService,
                               ClaudeCodeService claudeCodeService,
                               DocxGenerator docxGenerator,
+                              AiFlavorRemover aiFlavorRemover,
                               RestTemplate restTemplate) {
         this.taskService = taskService;
         this.claudeCodeService = claudeCodeService;
         this.docxGenerator = docxGenerator;
+        this.aiFlavorRemover = aiFlavorRemover;
         this.restTemplate = restTemplate;
     }
 
@@ -80,6 +84,10 @@ public class LocalTaskProcessor {
                 String content = claudeCodeService.callClaude(task.getPrompt());
                 System.out.println("[LocalTaskProcessor] Claude CLI 返回内容长度: " + content.length());
 
+                // Step 1.5: 去除 AI 味及思考标签
+                String cleanedContent = aiFlavorRemover.removeAiFlavor(content);
+                System.out.println("[LocalTaskProcessor] 去除 AI 味后内容长度: " + cleanedContent.length());
+
                 // Step 2: 生成本地 DOCX 文件
                 String fileName = "article_" + task.getTitleLibraryId() + "_" + System.currentTimeMillis() + ".docx";
                 String tmpDirPath = System.getProperty("user.dir") + File.separator + "tmp";
@@ -90,7 +98,7 @@ public class LocalTaskProcessor {
                 String localFilePath = tmpDirPath + File.separator + fileName;
 
                 System.out.println("[LocalTaskProcessor] 生成 DOCX: " + localFilePath);
-                docxGenerator.generateDocx(task.getTitle(), content, localFilePath);
+                docxGenerator.generateDocx(task.getTitle(), cleanedContent, localFilePath);
 
                 // Step 3: 上传文件到服务器
                 System.out.println("[LocalTaskProcessor] 上传文件到服务器...");

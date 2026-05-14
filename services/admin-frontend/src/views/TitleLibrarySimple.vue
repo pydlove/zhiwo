@@ -1,8 +1,12 @@
 <script setup>
 import { ref, onMounted, computed, h } from 'vue'
-import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination } from 'ant-design-vue'
-import { listTitles, markTitleUsed, batchChangeTrack, generateTitles } from '../api/titleLibrary.js'
+import { useRoute, useRouter } from 'vue-router'
+import { Card, Input, Select, Button, Table, Tag, Modal, Form, message, Pagination, Row, Col, Statistic } from 'ant-design-vue'
+import { listTitles, markTitleUsed, batchChangeTrack } from '../api/titleLibrary.js'
 import { listTracks } from '../api/track.js'
+
+const route = useRoute()
+const router = useRouter()
 
 // ---- 数据状态 ----
 const tableData = ref([])
@@ -142,82 +146,6 @@ async function handleChangeTrackConfirm() {
   }
 }
 
-// ---- 生成标题 ----
-const generateModalOpen = ref(false)
-const generateCount = ref(3)
-const generatePlatforms = ref([])
-const generateTrackIds = ref([])
-const generateInstruction = ref('')
-const generating = ref(false)
-
-const GENERATE_CONFIG_KEY = 'titleLibrarySimple_generateConfig'
-const savedGenerateConfig = JSON.parse(localStorage.getItem(GENERATE_CONFIG_KEY) || 'null')
-if (savedGenerateConfig) {
-  generateCount.value = savedGenerateConfig.count || 3
-  generatePlatforms.value = savedGenerateConfig.platforms || []
-  generateTrackIds.value = savedGenerateConfig.trackIds || []
-  generateInstruction.value = savedGenerateConfig.instruction || ''
-}
-
-const filteredTracksForGenerate = computed(() => {
-  if (!generatePlatforms.value || generatePlatforms.value.length === 0) {
-    return tracks.value
-  }
-  return tracks.value.filter(t => {
-    if (!t.platforms) return false
-    const trackPlatforms = t.platforms.split(',')
-    return generatePlatforms.value.some(p => trackPlatforms.includes(p))
-  })
-})
-
-function onPlatformChange() {
-  if (!generatePlatforms.value || generatePlatforms.value.length === 0) {
-    return
-  }
-  generateTrackIds.value = generateTrackIds.value.filter(trackId => {
-    const track = tracks.value.find(t => t.id === trackId)
-    if (!track || !track.platforms) return false
-    const trackPlatforms = track.platforms.split(',')
-    return generatePlatforms.value.some(p => trackPlatforms.includes(p))
-  })
-}
-
-function saveGenerateConfig() {
-  localStorage.setItem(GENERATE_CONFIG_KEY, JSON.stringify({
-    count: generateCount.value,
-    platforms: generatePlatforms.value,
-    trackIds: generateTrackIds.value,
-    instruction: generateInstruction.value,
-  }))
-}
-
-function openGenerateModal() {
-  generateModalOpen.value = true
-}
-
-async function handleGenerate() {
-  if (!generateCount.value || generateCount.value < 1) {
-    message.warning('请输入有效的生成数量')
-    return
-  }
-  generating.value = true
-  try {
-    await generateTitles({
-      count: parseInt(generateCount.value),
-      platforms: generatePlatforms.value,
-      trackIds: generateTrackIds.value,
-      instruction: generateInstruction.value.trim(),
-    })
-    generateModalOpen.value = false
-    saveGenerateConfig()
-    message.success('生成任务已提交')
-  } catch (e) {
-    message.error('提交失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
-  } finally {
-    generating.value = false
-  }
-}
-
 // ---- 表格列 ----
 const columns = [
   {
@@ -285,6 +213,11 @@ const columns = [
     },
   },
   {
+    title: '创建时间',
+    dataIndex: 'createdAt',
+    width: 160,
+  },
+  {
     title: '操作',
     key: 'action',
     width: 100,
@@ -299,13 +232,34 @@ onMounted(() => {
   loadData()
   listTracks().then(res => {
     tracks.value = res || []
+    // 如果 URL 带有 trackId，自动设置筛选并查询
+    const queryTrackId = route.query.trackId
+    if (queryTrackId) {
+      const track = tracks.value.find(t => t.id === queryTrackId)
+      if (track && track.platforms) {
+        const firstPlatform = track.platforms.split(/[,，\s]+/).filter(Boolean)[0]
+        if (firstPlatform) searchPlatform.value = firstPlatform
+      }
+      searchTrack.value = queryTrackId
+      currentPage.value = 1
+      loadData()
+    }
   }).catch(() => {})
 })
+
+function goBackToMatch() {
+  router.push('/title-match')
+}
 </script>
 
 <template>
   <div>
     <Card title="标题库" :bordered="false">
+      <template #extra>
+        <Button size="small" @click="router.push('/title-library-track-stats')">赛道统计视图</Button>
+        <Button size="small" @click="router.push('/title-generate')" style="margin-left: 8px;">生成标题</Button>
+        <Button size="small" @click="goBackToMatch" style="margin-left: 8px;">返回标题匹配</Button>
+      </template>
       <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
         <Input v-model:value="searchKeyword" placeholder="搜索标题关键词" style="width: 220px;" @pressEnter="handleSearch" />
         <Select show-search v-model:value="searchPlatform" placeholder="选择平台" style="width: 140px;" allowClear>
@@ -320,7 +274,6 @@ onMounted(() => {
         </Select>
         <Button type="primary" @click="handleSearch">查询</Button>
         <Button @click="handleReset">重置</Button>
-        <Button @click="openGenerateModal" style="margin-left: auto;">生成标题</Button>
       </div>
 
       <div v-if="selectedRowKeys.length > 0" style="margin-bottom: 12px;">
@@ -368,51 +321,6 @@ onMounted(() => {
       </Form>
     </Modal>
 
-    <!-- 生成标题弹窗 -->
-    <Modal
-      v-model:open="generateModalOpen"
-      title="生成标题"
-      :mask-closable="false"
-      :confirm-loading="generating"
-      @ok="handleGenerate"
-    >
-      <Form layout="vertical" style="margin-top: 12px;">
-        <Form.Item label="选择平台">
-          <Select
-            show-search
-            v-model:value="generatePlatforms"
-            mode="multiple"
-            placeholder="不选则生成全部平台"
-            style="width: 100%;"
-            @change="onPlatformChange"
-          >
-            <Select.Option v-for="p in platformOptions" :key="p.value" :value="p.value" :label="p.label">{{ p.label }}</Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item label="选择赛道">
-          <Select
-            show-search
-            v-model:value="generateTrackIds"
-            mode="multiple"
-            placeholder="不选则生成全部赛道"
-            style="width: 100%;"
-          >
-            <Select.Option v-for="t in filteredTracksForGenerate" :key="t.id" :value="t.id" :label="t.name">{{ t.name }}</Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item label="每个组合生成数量" required>
-          <Input v-model:value="generateCount" type="number" min="1" max="20" placeholder="例如：3" />
-        </Form.Item>
-        <Form.Item label="生成方向（可选）">
-          <Input.TextArea
-            v-model:value="generateInstruction"
-            placeholder="例如：更口语化、更具悬念、突出数字效果..."
-            :rows="2"
-            :maxlength="1000"
-            show-count
-          />
-        </Form.Item>
-      </Form>
-    </Modal>
   </div>
 </template>
+

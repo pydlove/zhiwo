@@ -44,21 +44,24 @@ public interface TitleGenerateTaskMapper {
             @Result(property = "progressMessage", column = "progress_message"),
             @Result(property = "createdAt", column = "created_at"),
             @Result(property = "updatedAt", column = "updated_at"),
-            @Result(property = "processedAt", column = "processed_at")
+            @Result(property = "processedAt", column = "processed_at"),
+            @Result(property = "duplicateCount", column = "duplicate_count"),
+            @Result(property = "insertedCount", column = "inserted_count")
     })
     List<TitleGenerateTask> findAllWithSearch(@Param("status") String status);
 
-    @Insert("INSERT INTO tu_title_generate_task(id, status, platforms, track_ids, count_per_combo, instruction, result_file_url, result_file_name, error_message, progress_step, progress_message, created_at, updated_at) " +
-            "VALUES(#{id}, #{status}, #{platforms}, #{trackIds}, #{countPerCombo}, #{instruction}, #{resultFileUrl}, #{resultFileName}, #{errorMessage}, #{progressStep}, #{progressMessage}, #{createdAt}, #{updatedAt})")
+    @Insert("INSERT INTO tu_title_generate_task(id, status, platforms, track_ids, count_per_combo, instruction, result_file_url, result_file_name, error_message, progress_step, progress_message, duplicate_count, inserted_count, created_at, updated_at) " +
+            "VALUES(#{id}, #{status}, #{platforms}, #{trackIds}, #{countPerCombo}, #{instruction}, #{resultFileUrl}, #{resultFileName}, #{errorMessage}, #{progressStep}, #{progressMessage}, #{duplicateCount}, #{insertedCount}, #{createdAt}, #{updatedAt})")
     int insert(TitleGenerateTask task);
 
     @Update("UPDATE tu_title_generate_task SET status = #{status}, updated_at = #{updatedAt} WHERE id = #{id}")
     int updateStatus(@Param("id") String id, @Param("status") String status, @Param("updatedAt") LocalDateTime updatedAt);
 
-    @Update("UPDATE tu_title_generate_task SET status = #{status}, result_file_url = #{resultFileUrl}, result_file_name = #{resultFileName}, processed_at = #{processedAt}, updated_at = #{updatedAt} WHERE id = #{id}")
+    @Update("UPDATE tu_title_generate_task SET status = #{status}, result_file_url = #{resultFileUrl}, result_file_name = #{resultFileName}, processed_at = #{processedAt}, duplicate_count = #{duplicateCount}, inserted_count = #{insertedCount}, updated_at = #{updatedAt} WHERE id = #{id}")
     int updateCompleted(@Param("id") String id, @Param("status") String status,
                         @Param("resultFileUrl") String resultFileUrl, @Param("resultFileName") String resultFileName,
-                        @Param("processedAt") LocalDateTime processedAt, @Param("updatedAt") LocalDateTime updatedAt);
+                        @Param("processedAt") LocalDateTime processedAt, @Param("updatedAt") LocalDateTime updatedAt,
+                        @Param("duplicateCount") Integer duplicateCount, @Param("insertedCount") Integer insertedCount);
 
     @Update("UPDATE tu_title_generate_task SET status = 'failed', error_message = #{errorMessage}, updated_at = #{updatedAt} WHERE id = #{id}")
     int updateFailed(@Param("id") String id, @Param("errorMessage") String errorMessage, @Param("updatedAt") LocalDateTime updatedAt);

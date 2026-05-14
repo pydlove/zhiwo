@@ -20,6 +20,7 @@ import argparse
 import json
 import re
 from docx import Document
+from docx.oxml.ns import qn
 
 
 def replace_periods(text, custom_rules=None):
@@ -77,27 +78,86 @@ def _delete_paragraph(paragraph):
     paragraph._p = paragraph._element = None
 
 
+def _is_chinese_char(char):
+    """判断字符是否为中文（含中文标点、全角字符）"""
+    code = ord(char)
+    return (
+        0x4e00 <= code <= 0x9fff or   # CJK 统一表意文字
+        0x3000 <= code <= 0x303f or   # CJK 符号和标点（、。，！？等）
+        0xff00 <= code <= 0xffef      # 全角字符
+    )
+
+
 def _apply_paragraph_text(paragraph, new_text):
-    """将处理后的文本安全地应用到段落（尽量保留格式）"""
+    """将处理后的文本应用到段落，中文用微软雅黑，英文/数字/标点用 Arial"""
     if not new_text:
         paragraph.clear()
         return
-    # 如果段落只有一个 run，直接修改
-    if len(paragraph.runs) == 1:
-        paragraph.runs[0].text = new_text
-        return
-    # 多个 runs：清空后重建
+
     paragraph.clear()
-    paragraph.add_run(new_text)
+
+    current_chars = []
+    current_is_chinese = None
+
+    def flush_run():
+        nonlocal current_chars, current_is_chinese
+        if not current_chars:
+            return
+        run = paragraph.add_run(''.join(current_chars))
+        if current_is_chinese:
+            run.font.name = '微软雅黑'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '微软雅黑')
+        else:
+            run.font.name = 'Arial'
+        current_chars = []
+
+    for char in new_text:
+        is_chinese = _is_chinese_char(char)
+        if current_is_chinese != is_chinese and current_chars:
+            flush_run()
+        current_chars.append(char)
+        current_is_chinese = is_chinese
+
+    flush_run()
 
 
 def _remove_empty_paragraphs(paragraphs):
-    """删除段落列表中的所有空段落（从后往前删，避免索引错乱）"""
+    """删除多余空段落：
+    - 删除段落列表开头和结尾的空段落
+    - 连续多个空段落只保留一个
+    从后往前删，避免索引错乱。
+    """
+    if not paragraphs:
+        return
+
+    texts = [p.text.strip() for p in paragraphs]
     to_remove = []
-    for i, p in enumerate(paragraphs):
-        if not p.text.strip():
-            to_remove.append(i)
-    for idx in reversed(to_remove):
+
+    # 删除开头的空段落
+    i = 0
+    while i < len(texts) and not texts[i]:
+        to_remove.append(i)
+        i += 1
+
+    # 删除结尾的空段落
+    j = len(texts) - 1
+    while j >= 0 and not texts[j]:
+        if j not in to_remove:
+            to_remove.append(j)
+        j -= 1
+
+    # 中间连续空段落只保留一个
+    last_was_empty = False
+    for k in range(len(texts)):
+        is_empty = not texts[k]
+        if is_empty:
+            if last_was_empty and k not in to_remove:
+                to_remove.append(k)
+            last_was_empty = True
+        else:
+            last_was_empty = False
+
+    for idx in sorted(to_remove, reverse=True):
         _delete_paragraph(paragraphs[idx])
 
 
@@ -238,6 +298,20 @@ def main():
     # 支持传入单个文件或目录
     if os.path.isfile(input_path):
         # 处理单个文件
+        if input_path.lower().endswith('.txt'):
+            # 纯文本模式：直接读写文本，不依赖 python-docx
+            try:
+                with open(input_path, 'r', encoding='utf-8') as f:
+                    text = f.read()
+                new_text = replace_periods(text, custom_rules)
+                out_path = os.path.abspath(args.output) if args.output else input_path
+                with open(out_path, 'w', encoding='utf-8') as f:
+                    f.write(new_text)
+                print("完成")
+            except Exception as e:
+                print(f"  错误: {e}")
+                sys.exit(1)
+            return
         if not input_path.lower().endswith('.docx'):
             print(f"错误: '{input_path}' 不是 .docx 文件")
             sys.exit(1)

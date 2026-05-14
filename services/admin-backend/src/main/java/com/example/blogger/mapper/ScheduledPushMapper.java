@@ -17,6 +17,12 @@ public interface ScheduledPushMapper {
     @Update("UPDATE tu_scheduled_push SET status = #{status}, last_executed_date = #{lastExecutedDate} WHERE id = #{id}")
     int updateStatus(@Param("id") String id, @Param("status") Integer status, @Param("lastExecutedDate") String lastExecutedDate);
 
+    @Update("UPDATE tu_scheduled_push SET push_time = #{pushTime}, last_executed_date = NULL WHERE id = #{id}")
+    int updatePushTime(@Param("id") String id, @Param("pushTime") String pushTime);
+
+    @Delete("DELETE FROM tu_scheduled_push WHERE id = #{id}")
+    int deleteById(@Param("id") String id);
+
     @Select("SELECT * FROM tu_scheduled_push WHERE status = 0 ORDER BY created_at ASC")
     List<ScheduledPush> findActive();
 

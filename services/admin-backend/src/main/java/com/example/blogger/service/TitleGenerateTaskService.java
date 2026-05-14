@@ -39,6 +39,8 @@ public class TitleGenerateTaskService {
         task.setInstruction(instruction);
         task.setProgressStep(0);
         task.setProgressMessage("排队中");
+        task.setDuplicateCount(0);
+        task.setInsertedCount(0);
         task.setCreatedAt(LocalDateTime.now());
         task.setUpdatedAt(LocalDateTime.now());
         taskMapper.insert(task);
@@ -57,12 +59,21 @@ public class TitleGenerateTaskService {
         taskMapper.updateProgress(id, step, message, LocalDateTime.now());
     }
 
-    public void updateCompleted(String id, String resultFileUrl, String resultFileName) {
-        taskMapper.updateCompleted(id, "completed", resultFileUrl, resultFileName, LocalDateTime.now(), LocalDateTime.now());
+    public void updateCompleted(String id, String resultFileUrl, String resultFileName, Integer duplicateCount, Integer insertedCount) {
+        taskMapper.updateCompleted(id, "completed", resultFileUrl, resultFileName, LocalDateTime.now(), LocalDateTime.now(), duplicateCount, insertedCount);
     }
 
     public boolean cancelTask(String id) {
         int rows = taskMapper.deletePendingById(id);
         return rows > 0;
+    }
+
+    public boolean stopTask(String id) {
+        TitleGenerateTask task = taskMapper.findById(id);
+        if (task == null || !"processing".equals(task.getStatus())) {
+            return false;
+        }
+        taskMapper.updateStatus(id, "stopped", LocalDateTime.now());
+        return true;
     }
 }

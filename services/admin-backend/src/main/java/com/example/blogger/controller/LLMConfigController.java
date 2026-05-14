@@ -43,6 +43,9 @@ public class LLMConfigController {
     public Result<Void> saveConfig(@RequestBody Map<String, Object> req) {
         String selectedProvider = req.get("selectedProvider") != null ? req.get("selectedProvider").toString() : "kimi";
 
+        // 先清零所有激活状态，避免 ON DUPLICATE KEY UPDATE 失效导致出现多条 is_active=1 的记录
+        llmConfigMapper.clearAllActive();
+
         // Save kimi config
         Object kimiObj = req.get("kimi");
         if (kimiObj instanceof Map) {

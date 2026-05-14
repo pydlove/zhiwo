@@ -7,7 +7,7 @@ import {
 } from 'ant-design-vue'
 import { SearchOutlined } from '@ant-design/icons-vue'
 import { getPushOverview, batchPushEmail, getUserHistory } from '../api/titleLibrary.js'
-import { createScheduledPush, listScheduledPush, cancelScheduledPush } from '../api/scheduledPush.js'
+import { createScheduledPush, listScheduledPush, cancelScheduledPush, updateScheduledPush, deleteScheduledPush, triggerScheduledPush } from '../api/scheduledPush.js'
 
 const STORAGE_KEY = 'push-overview-filters'
 
@@ -197,6 +197,14 @@ const scheduledTasksTotal = ref(0)
 const scheduledTasksPage = ref(1)
 const scheduledTasksLoading = ref(false)
 
+// ---- Edit Scheduled Push ----
+const editScheduledModalOpen = ref(false)
+const editScheduledLoading = ref(false)
+const editScheduledForm = ref({
+  id: null,
+  pushTime: null,
+})
+
 async function loadScheduledTasks() {
   scheduledTasksLoading.value = true
   try {
@@ -222,6 +230,53 @@ async function handleCancelTask(id) {
     loadScheduledTasks()
   } catch (e) {
     message.error(e?.response?.data?.msg || e.message || '取消失败')
+  }
+}
+
+function handleEditTask(record) {
+  editScheduledForm.value = {
+    id: record.id,
+    pushTime: record.pushTime ? dayjs(record.pushTime + ':00', 'HH:mm:ss') : null,
+  }
+  editScheduledModalOpen.value = true
+}
+
+async function handleUpdateTask() {
+  if (!editScheduledForm.value.pushTime) {
+    message.warning('请选择推送时间')
+    return
+  }
+  const timeStr = editScheduledForm.value.pushTime.format('HH:mm')
+  editScheduledLoading.value = true
+  try {
+    await updateScheduledPush(editScheduledForm.value.id, { pushTime: timeStr })
+    message.success('任务时间已更新')
+    editScheduledModalOpen.value = false
+    loadScheduledTasks()
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e.message || '更新失败')
+  } finally {
+    editScheduledLoading.value = false
+  }
+}
+
+async function handleDeleteTask(id) {
+  try {
+    await deleteScheduledPush(id)
+    message.success('任务已删除')
+    loadScheduledTasks()
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e.message || '删除失败')
+  }
+}
+
+async function handleTriggerNow(record) {
+  try {
+    await triggerScheduledPush(record.id)
+    message.success('任务已触发，请在日志中查看执行结果')
+    loadScheduledTasks()
+  } catch (e) {
+    message.error(e?.response?.data?.msg || e.message || '触发失败')
   }
 }
 
@@ -270,16 +325,29 @@ const scheduledColumns = [
   {
     title: '操作',
     key: 'action',
-    width: 100,
+    width: 160,
     align: 'center',
     customRender: ({ record }) => {
       if (record.status === 0) {
+        return h('div', { style: 'display: flex; gap: 8px; justify-content: center;' }, [
+          h(Button, { type: 'link', size: 'small', onClick: () => handleEditTask(record) }, () => '编辑'),
+          h(Button, { type: 'link', size: 'small', onClick: () => handleTriggerNow(record) }, () => '立即执行'),
+          h(Popconfirm, {
+            title: '确认取消该任务？',
+            okText: '确认',
+            cancelText: '取消',
+            onConfirm: () => handleCancelTask(record.id),
+          }, () => h(Button, { type: 'link', size: 'small', danger: true }, () => '取消')),
+        ])
+      }
+      if (record.status === 3) {
         return h(Popconfirm, {
-          title: '确认取消该任务？',
+          title: '确认删除该任务？删除后不可恢复',
           okText: '确认',
           cancelText: '取消',
-          onConfirm: () => handleCancelTask(record.id),
-        }, () => h(Button, { type: 'link', size: 'small', danger: true }, () => '取消'))
+          okButtonProps: { danger: true },
+          onConfirm: () => handleDeleteTask(record.id),
+        }, () => h(Button, { type: 'link', size: 'small', danger: true }, () => '删除'))
       }
       return h('span', { style: 'color: #999;' }, '—')
     },
@@ -377,14 +445,12 @@ const columns = [
           size: 'small',
           onClick: () => openDrawer(record),
         }, () => '查看详情'),
-        record.tracksUnpushed > 0
-          ? h(Button, {
-              type: 'primary',
-              size: 'small',
-              loading: pushLoadingId.value === record.userId,
-              onClick: () => handlePushSingle(record),
-            }, () => '推送邮件')
-          : null,
+        h(Button, {
+          type: record.isEmailPushed ? 'default' : 'primary',
+          size: 'small',
+          loading: pushLoadingId.value === record.userId,
+          onClick: () => handlePushSingle(record),
+        }, () => record.isEmailPushed ? '再次推送' : '推送邮件'),
       ].filter(Boolean))
     },
   },
@@ -418,6 +484,7 @@ async function handlePushSingle(record) {
     await batchPushEmail({
       date: selectedDate.value.format('YYYY-MM-DD'),
       userIds: [record.userId],
+      allowRepeat: true,
     })
     message.success('推送成功')
     record.isEmailPushed = true
@@ -506,22 +573,38 @@ async function handleBatchPush() {
         </Card>
       </Col>
       <Col :span="4" :xs="12" :sm="8" :md="6" :lg="4">
-        <Card size="small">
+        <Card
+          size="small"
+          :style="filterEmailPushed === '1' ? { border: '2px solid #52c41a', background: '#f6ffed', cursor: 'pointer' } : { cursor: 'pointer' }"
+          @click="filterEmailPushed = filterEmailPushed === '1' ? '' : '1'; onFilterChange()"
+        >
           <Statistic title="已推送" :value="stats.pushed" value-style="color: #52c41a;" />
         </Card>
       </Col>
       <Col :span="4" :xs="12" :sm="8" :md="6" :lg="4">
-        <Card size="small">
+        <Card
+          size="small"
+          :style="filterEmailPushed === '0' ? { border: '2px solid #f5222d', background: '#fff2f0', cursor: 'pointer' } : { cursor: 'pointer' }"
+          @click="filterEmailPushed = filterEmailPushed === '0' ? '' : '0'; onFilterChange()"
+        >
           <Statistic title="未推送" :value="stats.unpushed" value-style="color: #f5222d;" />
         </Card>
       </Col>
       <Col :span="4" :xs="12" :sm="8" :md="6" :lg="4">
-        <Card size="small">
+        <Card
+          size="small"
+          :style="filterArticleComplete === '1' ? { border: '2px solid #52c41a', background: '#f6ffed', cursor: 'pointer' } : { cursor: 'pointer' }"
+          @click="filterArticleComplete = filterArticleComplete === '1' ? '' : '1'; onFilterChange()"
+        >
           <Statistic title="文章完整" :value="stats.complete" value-style="color: #52c41a;" />
         </Card>
       </Col>
       <Col :span="4" :xs="12" :sm="8" :md="6" :lg="4">
-        <Card size="small">
+        <Card
+          size="small"
+          :style="filterArticleComplete === '0' ? { border: '2px solid #f5222d', background: '#fff2f0', cursor: 'pointer' } : { cursor: 'pointer' }"
+          @click="filterArticleComplete = filterArticleComplete === '0' ? '' : '0'; onFilterChange()"
+        >
           <Statistic title="文章缺失" :value="stats.incomplete" value-style="color: #f5222d;" />
         </Card>
       </Col>
@@ -640,6 +723,29 @@ async function handleBatchPush() {
       </div>
       <div style="font-size: 12px; color: #8c8c8c;">
         系统每日在设定时间自动执行推送（每分钟检查一次），已执行的任务会显示在"上次执行"列。
+      </div>
+    </div>
+  </Modal>
+
+  <!-- 编辑定时推送弹窗 -->
+  <Modal
+    v-model:open="editScheduledModalOpen"
+    title="编辑定时推送时间"
+    :confirm-loading="editScheduledLoading"
+    @ok="handleUpdateTask"
+  >
+    <div style="display: flex; flex-direction: column; gap: 16px; padding-top: 8px;">
+      <div>
+        <div style="font-size: 13px; color: #595959; margin-bottom: 6px;">每日推送时间 <span style="color: #ff4d4f;">*</span></div>
+        <TimePicker
+          v-model:value="editScheduledForm.pushTime"
+          style="width: 100%;"
+          format="HH:mm"
+          placeholder="选择每日推送时间"
+        />
+      </div>
+      <div style="font-size: 12px; color: #8c8c8c;">
+        修改后任务将按新的时间执行，已执行过的日期不受影响。
       </div>
     </div>
   </Modal>

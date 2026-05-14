@@ -1,13 +1,21 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Layout, Avatar, Modal, Form, Input, message, Dropdown } from 'ant-design-vue'
+import { Layout, Avatar, Modal, Form, Input, message, Dropdown, Menu, Space, Breadcrumb } from 'ant-design-vue'
+import { SearchOutlined, DownOutlined, LockOutlined, LogoutOutlined, BulbOutlined, BulbFilled } from '@ant-design/icons-vue'
 import request from '../api/request.js'
 
 const route = useRoute()
 const router = useRouter()
 
+const toggleTheme = inject('toggleTheme')
+const isDark = inject('isDark')
+
 const pageTitle = computed(() => route.meta?.title || '管理后台')
+
+const layoutBg = computed(() => isDark.value ? '#141414' : '#f0f2f5')
+const pageHeaderBg = computed(() => isDark.value ? '#1f1f1f' : '#fff')
+const pageHeaderBorder = computed(() => isDark.value ? '#333' : '#f0f0f0')
 
 const adminUser = computed(() => {
   try {
@@ -32,34 +40,6 @@ function hasPerm(perm) {
   return adminPerms.value.includes(perm)
 }
 
-const allMenuItems = [
-  { key: '/dashboard', label: '仪表盘', perm: 'dashboard' },
-  { key: '/tracks', label: '赛道管理', perm: 'track' },
-  { key: '/bloggers', label: '博主管理', perm: 'blogger' },
-  { key: '/posts', label: '文章管理', perm: 'post' },
-  { key: '/users', label: '用户管理', perm: 'user' },
-  { key: '/guides', label: '创作技巧', perm: 'guide' },
-  { key: '/helps', label: '帮助文档', perm: 'help' },
-  { key: '/styles', label: '样式管理', perm: 'style' },
-  { key: '/subscription-posts', label: '订阅文章', perm: 'subscription-post' },
-  { key: '/admins', label: '管理员管理', perm: 'admin' },
-  { key: '/roles', label: '角色权限', perm: 'role' },
-  { key: '/model-config', label: '模型配置', perm: 'config' },
-  { key: '/config', label: '系统配置', perm: 'config' },
-  { key: '/membership-plans', label: '会员权益', perm: 'membership-plan' },
-  { key: '/title-library', label: '标题库', perm: 'title-library' },
-  { key: '/title-match', label: '标题匹配', perm: 'title-library' },
-  { key: '/push-overview', label: '推送概览', perm: 'title-library' },
-  { key: '/task-list', label: '生成文章任务', perm: 'task-list' },
-  { key: '/title-generate', label: '生成标题', perm: 'title-generate' },
-  { key: '/banned-words', label: '违禁词管理', perm: 'config' },
-  { key: '/orders', label: '收益管理', perm: 'config' },
-  { key: '/expire-reminder', label: '到期提醒', perm: 'user' },
-  { key: '/process', label: '流程管理', perm: 'title-library' },
-  { key: '/customer-dialogues', label: '客服对话', perm: 'config' },
-  { key: '/ai-flavor-rules', label: 'AI去除规则', perm: 'config' },
-]
-
 const menuGroups = [
   {
     label: '概览',
@@ -72,8 +52,9 @@ const menuGroups = [
       { key: '/bloggers', label: '博主管理', perm: 'blogger' },
       { key: '/posts', label: '文章管理', perm: 'post' },
       { key: '/subscription-posts', label: '订阅文章', perm: 'subscription-post' },
-      // FIXME: AI 检测功能暂时禁用
-      // { key: '/article-ai-detect', label: 'AI检测', perm: 'title-library' },
+      { key: '/styles', label: '样式管理', perm: 'style' },
+      { key: '/guides', label: '创作技巧', perm: 'guide' },
+      { key: '/helps', label: '帮助文档', perm: 'help' },
     ],
   },
   {
@@ -82,6 +63,21 @@ const menuGroups = [
       { key: '/users', label: '用户管理', perm: 'user' },
       { key: '/orders', label: '收益管理', perm: 'config' },
       { key: '/expire-reminder', label: '到期提醒', perm: 'user' },
+      { key: '/membership-plans', label: '会员权益', perm: 'membership-plan' },
+    ],
+  },
+  {
+    label: '工作管理',
+    items: [
+      { key: '/title-library', label: '标题库', perm: 'title-library' },
+      { key: '/title-match', label: '标题匹配', perm: 'title-library' },
+      { key: '/article-review', label: '文章审核', perm: 'title-library' },
+      { key: '/push-overview', label: '推送概览', perm: 'title-library' },
+      { key: '/announcements', label: '公告管理', perm: 'title-library' },
+      { key: '/title-generate', label: '生成标题任务', perm: 'title-generate' },
+      { key: '/task-list', label: '生成文章任务', perm: 'task-list' },
+      { key: '/prompt-templates', label: '提示词管理', perm: 'title-generate' },
+      { key: '/image-library', label: '图片库', perm: 'title-library' },
     ],
   },
   {
@@ -100,15 +96,6 @@ const menuGroups = [
       { key: '/roles', label: '角色权限', perm: 'role' },
       { key: '/model-config', label: '模型配置', perm: 'config' },
       { key: '/config', label: '系统配置', perm: 'config' },
-      { key: '/membership-plans', label: '会员权益', perm: 'membership-plan' },
-      { key: '/title-library', label: '标题库', perm: 'title-library' },
-      { key: '/title-match', label: '标题匹配', perm: 'title-library' },
-      { key: '/push-overview', label: '推送概览', perm: 'title-library' },
-      { key: '/task-list', label: '生成文章任务', perm: 'task-list' },
-      { key: '/title-generate', label: '生成标题', perm: 'title-generate' },
-      { key: '/styles', label: '样式管理', perm: 'style' },
-      { key: '/guides', label: '创作技巧', perm: 'guide' },
-      { key: '/helps', label: '帮助文档', perm: 'help' },
     ],
   },
 ]
@@ -120,43 +107,92 @@ const filteredGroups = computed(() => {
   })).filter(group => group.items.length > 0)
 })
 
+const menuItems = computed(() => {
+  return filteredGroups.value.map(group => ({
+    key: group.label,
+    label: group.label,
+    children: group.items.map(item => ({
+      key: item.key,
+      label: item.label,
+    })),
+  }))
+})
+
+const selectedKeys = ref([])
+
+watch(
+  () => route.path,
+  () => {
+    for (const group of filteredGroups.value) {
+      for (const item of group.items) {
+        if (route.path === item.key) {
+          selectedKeys.value = [item.key]
+          return
+        }
+      }
+    }
+    selectedKeys.value = []
+  },
+  { immediate: true }
+)
+
 const searchKeyword = ref('')
+const searchOpen = ref(false)
+
+const allMenuItems = [
+  { key: '/dashboard', label: '仪表盘', perm: 'dashboard' },
+  { key: '/tracks', label: '赛道管理', perm: 'track' },
+  { key: '/bloggers', label: '博主管理', perm: 'blogger' },
+  { key: '/posts', label: '文章管理', perm: 'post' },
+  { key: '/users', label: '用户管理', perm: 'user' },
+  { key: '/guides', label: '创作技巧', perm: 'guide' },
+  { key: '/helps', label: '帮助文档', perm: 'help' },
+  { key: '/styles', label: '样式管理', perm: 'style' },
+  { key: '/subscription-posts', label: '订阅文章', perm: 'subscription-post' },
+  { key: '/admins', label: '管理员管理', perm: 'admin' },
+  { key: '/roles', label: '角色权限', perm: 'role' },
+  { key: '/model-config', label: '模型配置', perm: 'config' },
+  { key: '/config', label: '系统配置', perm: 'config' },
+  { key: '/membership-plans', label: '会员权益', perm: 'membership-plan' },
+  { key: '/title-library', label: '标题库', perm: 'title-library' },
+  { key: '/title-match', label: '标题匹配', perm: 'title-library' },
+  { key: '/push-overview', label: '推送概览', perm: 'title-library' },
+  { key: '/announcements', label: '公告管理', perm: 'title-library' },
+  { key: '/task-list', label: '生成文章任务', perm: 'task-list' },
+  { key: '/title-generate', label: '生成标题任务', perm: 'title-generate' },
+  { key: '/prompt-templates', label: '提示词管理', perm: 'title-generate' },
+  { key: '/image-library', label: '图片库', perm: 'title-library' },
+  { key: '/banned-words', label: '违禁词管理', perm: 'config' },
+  { key: '/orders', label: '收益管理', perm: 'config' },
+  { key: '/expire-reminder', label: '到期提醒', perm: 'user' },
+  { key: '/process', label: '流程管理', perm: 'title-library' },
+  { key: '/customer-dialogues', label: '客服对话', perm: 'config' },
+  { key: '/ai-flavor-rules', label: 'AI去除规则', perm: 'config' },
+]
 
 const filteredMenuItems = computed(() => {
-  if (!searchKeyword.value.trim()) return null
+  if (!searchKeyword.value.trim()) return []
   const kw = searchKeyword.value.trim().toLowerCase()
   return allMenuItems
     .filter(i => hasPerm(i.perm) && i.label.toLowerCase().includes(kw))
     .slice(0, 8)
 })
 
-function onMenuClick(key) {
+function onMenuClick({ key }) {
   router.push(key)
   searchKeyword.value = ''
-  closeAll()
+  searchOpen.value = false
+}
+
+function closeSearchDropdown() {
+  setTimeout(() => {
+    searchOpen.value = false
+  }, 200)
 }
 
 const logoImage = computed(() => {
   return new URL('/src/assets/wechat.png', import.meta.url).href
 })
-
-const openGroup = ref('')
-
-function toggleGroup(label) {
-  if (openGroup.value === label) {
-    openGroup.value = ''
-  } else {
-    openGroup.value = label
-  }
-}
-
-function closeAll() {
-  openGroup.value = ''
-}
-
-function onSearchFocus() {
-  openGroup.value = ''
-}
 
 const pwdModalOpen = ref(false)
 const pwdForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' })
@@ -198,110 +234,93 @@ async function handlePwdOk() {
 </script>
 
 <template>
-  <div class="mac-layout">
-    <!-- macOS 风格顶部菜单栏 -->
-    <div class="mac-menu-bar" @click.stop>
-      <div class="mac-menu-bar-left">
-        <div class="mac-logo">
-          <img :src="logoImage" style="width: 22px; height: 22px; object-fit: cover;">
-        </div>
-        <div>
-            <span class="mac-logo-text" style="color:#fff">知我创作</span>
-        </div>
+  <Layout class="layout">
+    <Layout.Header class="header">
+      <div class="logo">
+        <img :src="logoImage" />
+        <span class="logo-text">知我创作</span>
+      </div>
 
-        <div class="mac-menus">
-          <div
-            v-for="group in filteredGroups"
-            :key="group.label"
-            class="mac-menu-item"
-            :class="{ active: openGroup === group.label }"
-            @click.stop="toggleGroup(group.label)"
+      <Menu
+        v-model:selectedKeys="selectedKeys"
+        mode="horizontal"
+        :items="menuItems"
+        theme="dark"
+        class="header-menu"
+        @click="onMenuClick"
+      />
+
+      <Space class="header-right" size="middle">
+        <div class="search-wrap">
+          <Input
+            v-model:value="searchKeyword"
+            placeholder="搜索菜单..."
+            size="small"
+            class="search-input"
+            @focus="searchOpen = true"
+            @blur="closeSearchDropdown"
           >
-            <span class="mac-menu-label">{{ group.label }}</span>
-            <!-- 下拉面板 -->
-            <div v-if="openGroup === group.label" class="mac-dropdown" @click.stop>
-              <div
-                v-for="item in group.items"
-                :key="item.key"
-                class="mac-dropdown-item"
-                :class="{ current: route.path === item.key }"
-                @click="onMenuClick(item.key)"
-              >
-                <span>{{ item.label }}</span>
-                <span v-if="route.path === item.key" class="current-dot"></span>
-              </div>
+            <template #prefix>
+              <SearchOutlined />
+            </template>
+          </Input>
+          <div v-if="searchOpen && filteredMenuItems.length > 0" class="search-dropdown">
+            <div
+              v-for="item in filteredMenuItems"
+              :key="item.key"
+              class="search-item"
+              :class="{ active: route.path === item.key }"
+              @mousedown="onMenuClick({ key: item.key })"
+            >
+              {{ item.label }}
             </div>
           </div>
         </div>
-      </div>
 
-      <div class="mac-menu-bar-right">
-        <!-- 搜索框 -->
-        <div class="mac-search-wrap">
-          <svg class="mac-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
-          <input
-            v-model="searchKeyword"
-            class="mac-search-input"
-            placeholder="搜索菜单..."
-            @focus="onSearchFocus"
-          />
-        </div>
-        <!-- 搜索结果 -->
-        <div v-if="filteredMenuItems !== null" class="mac-search-result" @click.stop>
-          <div v-if="filteredMenuItems.length === 0" class="mac-search-empty">无匹配结果</div>
-          <div
-            v-for="item in filteredMenuItems"
-            :key="item.key"
-            class="mac-dropdown-item"
-            :class="{ current: route.path === item.key }"
-            @click="onMenuClick(item.key)"
-          >
-            <span>{{ item.label }}</span>
-          </div>
+        <div @click="toggleTheme" style="cursor: pointer; color: rgba(255,255,255,0.85); font-size: 16px;">
+          <BulbFilled v-if="isDark" />
+          <BulbOutlined v-else />
         </div>
 
-        <!-- 管理员下拉 -->
-        <Dropdown @click.stop>
-          <div class="mac-admin-info">
-            <Avatar size="small" style="background: #1890ff; color: #fff; font-size: 11px;">
+        <Dropdown>
+          <div class="user-info">
+            <Avatar size="small" style="background: #1890ff;">
               {{ (adminUser.name || adminUser.username || 'A')[0].toUpperCase() }}
             </Avatar>
-            <span class="mac-admin-name">{{ adminUser.name || adminUser.username }}</span>
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <span class="user-name">{{ adminUser.name || adminUser.username }}</span>
+            <DownOutlined />
           </div>
           <template #overlay>
-            <div class="mac-admin-dropdown">
-              <div class="mac-admin-dropdown-item" @click="handleDropdownClick({ key: 'password' })">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0110 0v4"></path></svg>
+            <Menu @click="handleDropdownClick">
+              <Menu.Item key="password">
+                <LockOutlined />
                 修改密码
-              </div>
-              <div class="mac-admin-dropdown-divider"></div>
-              <div class="mac-admin-dropdown-item danger" @click="handleDropdownClick({ key: 'logout' })">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+              </Menu.Item>
+              <Menu.Divider />
+              <Menu.Item key="logout">
+                <LogoutOutlined />
                 退出登录
-              </div>
-            </div>
+              </Menu.Item>
+            </Menu>
           </template>
         </Dropdown>
-      </div>
-    </div>
+      </Space>
+    </Layout.Header>
 
-    <!-- 全局遮罩，点击关闭下拉 -->
-    <div v-if="openGroup || filteredMenuItems !== null" class="mac-overlay" @click="closeAll(); searchKeyword = ''"></div>
-
-    <!-- 内容区域 -->
-    <div class="mac-content">
-      <div class="mac-page-header">
-        <div class="mac-page-title">{{ pageTitle }}</div>
+    <Layout.Content class="content">
+      <div class="page-header">
+        <Breadcrumb>
+          <Breadcrumb.Item>
+            <router-link to="/dashboard">首页</router-link>
+          </Breadcrumb.Item>
+          <Breadcrumb.Item>{{ pageTitle }}</Breadcrumb.Item>
+        </Breadcrumb>
       </div>
-      <div class="mac-page-content">
+      <div class="page-content">
         <router-view />
       </div>
-    </div>
-  </div>
+    </Layout.Content>
+  </Layout>
 
   <Modal v-model:open="pwdModalOpen" title="修改密码" :mask-closable="false" width="400" @ok="handlePwdOk">
     <Form layout="vertical" style="margin-top: 12px;">
@@ -321,244 +340,158 @@ async function handlePwdOk() {
 
 <style>
 * { box-sizing: border-box; }
+</style>
 
-.mac-layout {
+<style scoped>
+.layout {
   min-height: 100vh;
-  background: #f0f2f5;
+  background: v-bind(layoutBg);
 }
 
-/* ---- macOS 菜单栏 ---- */
-.mac-menu-bar {
+.header {
   position: fixed;
-  top: 0; left: 0; right: 0;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 1000;
-  height: 52px;
-  background: rgba(30, 30, 30, 0.97);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-bottom: 1px solid rgba(255,255,255,0.07);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  user-select: none;
+  padding: 0 24px;
+  height: 64px;
+  background: #001529;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.mac-menu-bar-left {
+.logo {
   display: flex;
   align-items: center;
-  gap: 2px;
-}
-
-.mac-logo {
-  width: 30px; height: 30px;
-  border-radius: 6px; overflow: hidden;
-  display: flex; align-items: center; justify-content: center;
-  margin-right: 10px;
-  background: rgba(255,255,255,0.08);
-}
-
-.mac-menus {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.mac-menu-item {
-  position: relative;
-  padding: 5px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.15s;
-  color: rgba(255,255,255,0.8);
-  font-size: 13px;
-}
-
-.mac-menu-item:hover { background: rgba(255,255,255,0.1); color: #fff; }
-.mac-menu-item.active { background: rgba(255,255,255,0.14); color: #fff; }
-
-/* ---- 下拉面板 ---- */
-.mac-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 210px;
-  background: rgba(44, 44, 44, 0.98);
-  backdrop-filter: blur(24px);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 10px;
-  padding: 6px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.5), 0 0 0 0.5px rgba(255,255,255,0.05) inset;
-  z-index: 1001;
-}
-
-.mac-dropdown-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  color: rgba(255,255,255,0.85);
-  cursor: pointer;
-  transition: background 0.1s;
-  gap: 8px;
-}
-
-.mac-dropdown-item:hover { background: rgba(255,255,255,0.1); color: #fff; }
-.mac-dropdown-item.current { background: rgba(24,144,255,0.22); color: #69b1ff; }
-
-.current-dot {
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: #1890ff;
+  gap: 10px;
+  margin-right: 32px;
   flex-shrink: 0;
 }
 
-/* ---- 搜索 ---- */
-.mac-menu-bar-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.logo img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 4px;
 }
 
-.mac-search-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.mac-search-icon {
-  position: absolute;
-  left: 10px;
-  color: rgba(255,255,255,0.35);
-  pointer-events: none;
-}
-
-.mac-search-input {
-  width: 200px; height: 30px;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 8px;
-  padding: 0 12px 0 32px;
-  font-size: 12px;
+.logo-text {
   color: #fff;
-  outline: none;
-  transition: all 0.2s;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.mac-search-input::placeholder { color: rgba(255,255,255,0.3); }
-.mac-search-input:focus {
-  width: 240px;
-  background: rgba(255,255,255,0.13);
-  border-color: rgba(255,255,255,0.22);
+.header-menu {
+  flex: 1;
+  background: transparent;
+  border-bottom: none;
+  min-width: 0;
 }
 
-.mac-search-result {
+.header-right {
+  flex-shrink: 0;
+  margin-left: 16px;
+}
+
+.search-wrap {
+  position: relative;
+}
+
+.search-input {
+  width: 180px;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.search-input :deep(.ant-input) {
+  background: transparent;
+  color: #fff;
+}
+
+.search-input :deep(.ant-input::placeholder) {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.search-input:hover,
+.search-input:focus {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.search-dropdown {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 4px);
   right: 0;
   min-width: 200px;
-  background: rgba(44, 44, 44, 0.98);
-  backdrop-filter: blur(24px);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 10px;
-  padding: 6px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  padding: 4px;
   z-index: 1001;
 }
 
-.mac-search-empty {
-  padding: 12px 14px;
+.search-item {
+  padding: 8px 12px;
+  border-radius: 4px;
   font-size: 13px;
-  color: rgba(255,255,255,0.35);
-  text-align: center;
-}
-
-/* ---- 管理员信息 ---- */
-.mac-admin-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: 8px;
+  color: #262626;
   cursor: pointer;
   transition: background 0.15s;
-  color: rgba(255,255,255,0.7);
 }
 
-.mac-admin-info:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.search-item:hover {
+  background: #f5f5f5;
+}
 
-.mac-admin-name {
-  font-size: 12px;
-  color: rgba(255,255,255,0.8);
+.search-item.active {
+  color: #1890ff;
+  background: #e6f7ff;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.user-info:hover {
+  color: #fff;
+}
+
+.user-name {
+  font-size: 13px;
   max-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.mac-admin-dropdown {
-  background: rgba(44, 44, 44, 0.98);
-  backdrop-filter: blur(24px);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 10px;
-  padding: 6px;
-  min-width: 160px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+.content {
+  padding-top: 64px;
 }
 
-.mac-admin-dropdown-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  color: rgba(255,255,255,0.85);
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.mac-admin-dropdown-item:hover { background: rgba(255,255,255,0.1); color: #fff; }
-.mac-admin-dropdown-item.danger:hover { background: rgba(255,59,48,0.2); color: #ff8080; }
-
-.mac-admin-dropdown-divider {
-  height: 1px;
-  background: rgba(255,255,255,0.08);
-  margin: 4px 0;
-}
-
-/* ---- 全局遮罩 ---- */
-.mac-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 999;
-}
-
-/* ---- 内容区域 ---- */
-.mac-content {
-  padding-top: 52px;
-}
-
-.mac-page-header {
+.page-header {
   height: 52px;
-  background: #fff;
+  background: v-bind(pageHeaderBg);
   padding: 0 24px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid v-bind(pageHeaderBorder);
   display: flex;
   align-items: center;
 }
 
-.mac-page-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #262626;
+.page-header .ant-breadcrumb {
+  font-size: 14px;
 }
 
-.mac-page-content {
+.page-content {
   padding: 20px 24px;
-  min-height: calc(100vh - 52px);
+  min-height: calc(100vh - 64px - 52px);
 }
 </style>

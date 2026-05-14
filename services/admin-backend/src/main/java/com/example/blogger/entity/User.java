@@ -32,6 +32,8 @@ public class User {
     private LocalDateTime updatedAt;
     private String styleConfig;
     private String themeColor;
+    private Integer titleFontSize;
+    private Integer contentFontSize;
     private java.util.List<String> trackIds;
 
     public String getId() { return id; }
@@ -93,6 +95,12 @@ public class User {
 
     public String getThemeColor() { return themeColor; }
     public void setThemeColor(String themeColor) { this.themeColor = themeColor; }
+
+    public Integer getTitleFontSize() { return titleFontSize; }
+    public void setTitleFontSize(Integer titleFontSize) { this.titleFontSize = titleFontSize; }
+
+    public Integer getContentFontSize() { return contentFontSize; }
+    public void setContentFontSize(Integer contentFontSize) { this.contentFontSize = contentFontSize; }
 
     public java.util.List<String> getTrackIds() { return trackIds; }
     public void setTrackIds(java.util.List<String> trackIds) { this.trackIds = trackIds; }

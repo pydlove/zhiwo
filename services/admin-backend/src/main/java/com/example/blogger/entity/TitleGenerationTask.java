@@ -18,9 +18,11 @@ public class TitleGenerationTask {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime processedAt;
+    private LocalDateTime processStartedAt; // 开始生成（进入processing）的时间
     private Integer progressStep;
     private String progressMessage;
     private String generatedContent; // 大模型生成的原始内容
+    private String duration; // 耗时（格式化后的字符串，如 1分30秒）
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -55,6 +57,9 @@ public class TitleGenerationTask {
     public LocalDateTime getProcessedAt() { return processedAt; }
     public void setProcessedAt(LocalDateTime processedAt) { this.processedAt = processedAt; }
 
+    public LocalDateTime getProcessStartedAt() { return processStartedAt; }
+    public void setProcessStartedAt(LocalDateTime processStartedAt) { this.processStartedAt = processStartedAt; }
+
     public Integer getProgressStep() { return progressStep; }
     public void setProgressStep(Integer progressStep) { this.progressStep = progressStep; }
 
@@ -63,4 +68,7 @@ public class TitleGenerationTask {
 
     public String getGeneratedContent() { return generatedContent; }
     public void setGeneratedContent(String generatedContent) { this.generatedContent = generatedContent; }
+
+    public String getDuration() { return duration; }
+    public void setDuration(String duration) { this.duration = duration; }
 }

@@ -15,3 +15,15 @@ export function getScheduledPush(id) {
 export function cancelScheduledPush(id) {
   return request.delete('/scheduled-push/' + id)
 }
+
+export function updateScheduledPush(id, data) {
+  return request.put('/scheduled-push/' + id, data)
+}
+
+export function deleteScheduledPush(id) {
+  return request.delete('/scheduled-push/' + id + '/delete')
+}
+
+export function triggerScheduledPush(id) {
+  return request.post('/scheduled-push/' + id + '/trigger')
+}

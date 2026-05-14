@@ -57,6 +57,26 @@ function scrollToCases() {
   if (el) el.scrollIntoView({ behavior: 'smooth' })
 }
 
+function scrollToFeatures() {
+  const el = document.getElementById('features-section')
+  if (el) el.scrollIntoView({ behavior: 'smooth' })
+}
+
+function scrollToPushPreview() {
+  const el = document.getElementById('push-preview-section')
+  if (el) el.scrollIntoView({ behavior: 'smooth' })
+}
+
+function scrollToValuePitch() {
+  const el = document.getElementById('value-pitch-section')
+  if (el) el.scrollIntoView({ behavior: 'smooth' })
+}
+
+function scrollToMatrix() {
+  const el = document.getElementById('matrix-section')
+  if (el) el.scrollIntoView({ behavior: 'smooth' })
+}
+
 function doCopy(text) {
   const textarea = document.createElement('textarea')
   textarea.value = text
@@ -72,6 +92,7 @@ function doCopy(text) {
   return success
 }
 
+// 点击导航栏「分销活动」时跳转，若 URL 带有运营人员参数 op 则透传
 function goAffiliate() {
   const op = route.query.op
   if (op) {
@@ -81,6 +102,7 @@ function goAffiliate() {
   }
 }
 
+// 分享活动：复制当前登录用户的专属邀请码，用于分销返利
 async function copyInviteCode() {
   if (!currentUser.value || !currentUser.value.inviteCode) {
     message.warning('请先登录后再复制邀请码')
@@ -251,9 +273,12 @@ onMounted(() => {
         <span class="nav-title">知我公众号创作助手</span>
       </div>
       <div style="display: flex; align-items: center; gap: 16px;">
+        <a class="nav-link" @click="scrollToFeatures">功能特点</a>
+        <a class="nav-link" @click="scrollToPushPreview">每日推送</a>
         <a class="nav-link" @click="scrollToCases">真实案例</a>
+        <a class="nav-link" @click="scrollToValuePitch">算笔账</a>
         <a class="nav-link" @click="scrollToMembership">会员权益</a>
-        <a class="nav-link" @click="goAffiliate">分销活动</a>
+        <!-- <a class="nav-link" @click="goAffiliate">分销活动</a> -->
         <a class="nav-link" @click="contactModalOpen = true">联系客服</a>
         <button class="login-btn" @click="goLogin">登录</button>
       </div>
@@ -397,7 +422,7 @@ onMounted(() => {
     </section>
 
     <!-- Features Section -->
-    <section class="section features-section">
+    <section id="features-section" class="section features-section">
       <div class="section-container">
         <div class="section-header center">
           <span class="section-label">03 / 核心功能</span>
@@ -491,7 +516,245 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- Membership Section -->
+    <!-- ==================== 文章推送展示区块 ==================== -->
+    <section id="push-preview-section" class="section push-preview-section">
+      <div class="section-container">
+        <div class="section-header center">
+          <span class="section-label">03 / 每日推送</span>
+          <h2 class="section-title">每天一篇，精准送达</h2>
+          <p class="section-subtitle">订阅你感兴趣的赛道，系统每日为你推送优质原创文章</p>
+        </div>
+
+        <div class="push-preview-body">
+          <!-- 左侧：邮件推送卡片 -->
+          <div class="push-email-card">
+            <div class="push-email-header">
+              <div class="push-email-brand">知我公众号创作助手</div>
+              <div class="push-email-sub">让 AI 成为你的创作引擎</div>
+            </div>
+            <div class="push-email-content">
+              <div class="push-email-greeting">尊敬的 <strong>创作者</strong>，您好！</div>
+              <div class="push-email-intro">
+                今日为您推荐 <span class="push-tag">历史文化</span> 赛道的优质文章，附件已随邮件送达，请查收。
+              </div>
+              <div class="push-article-box">
+                <div class="push-article-label">文章标题</div>
+                <div class="push-article-title">古人临终前留下的8个字，藏着中国人千年都没看透的智慧</div>
+                <div class="push-article-meta">
+                  <span class="push-meta-tag">发布平台：公众号</span>
+                </div>
+              </div>
+              <div class="push-email-tips">
+                <div class="push-tips-title">温馨提示：</div>
+                <ol>
+                  <li>附件为 Word 文档（.docx），可保存到本地；</li>
+                  <li>保存后可直接上传至公众号平台使用；</li>
+                  <li>文章内容已根据您的个人风格偏好进行排版。</li>
+                </ol>
+              </div>
+            </div>
+            <div class="push-email-footer">
+              知我公众号创作助手 · 让创作更简单，让变现更高效<br>
+              如您不希望继续收到此类邮件，可登录后台取消订阅。
+            </div>
+          </div>
+
+          <!-- 右侧：推送特性说明 -->
+          <div class="push-features">
+            <div class="push-feature-item">
+              <div class="push-feature-icon">📬</div>
+              <div class="push-feature-title">邮件 + 站内双通道推送</div>
+              <div class="push-feature-desc">每日早 8 点准时送达，支持邮箱订阅和站内消息两种接收方式，不错过任何一篇好文。</div>
+            </div>
+            <div class="push-feature-item">
+              <div class="push-feature-icon">🎯</div>
+              <div class="push-feature-title">按赛道精准匹配</div>
+              <div class="push-feature-desc">根据你订阅的赛道和偏好标签，AI 自动筛选最符合你账号定位的文章主题。</div>
+            </div>
+            <div class="push-feature-item">
+              <div class="push-feature-icon">📎</div>
+              <div class="push-feature-title">Word 附件直接可用</div>
+              <div class="push-feature-desc">推送邮件附带排版精美的 .docx 文件，下载后可直接复制到公众号编辑器发布。</div>
+            </div>
+            <div class="push-feature-item">
+              <div class="push-feature-icon">🎨</div>
+              <div class="push-feature-title">多种风格自由切换</div>
+              <div class="push-feature-desc">清新文艺、商务正式、科技简约……10+ 种排版风格随心选择，总有一款适合你。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- ==================== 文章推送展示区块结束 ==================== -->
+
+    <!-- ==================== 文章内容样式展示区块 ==================== -->
+    <section id="article-style-section" class="section article-style-section">
+      <div class="section-container">
+        <div class="section-header center">
+          <span class="section-label">04 / 排版样式</span>
+          <h2 class="section-title">精美排版，即拿即用</h2>
+          <p class="section-subtitle">多种文章风格模板，下载后直接复制到编辑器即可发布</p>
+        </div>
+
+        <div class="article-style-showcase">
+          <!-- 左侧：样式导航 -->
+          <div class="style-nav">
+            <div class="style-nav-item active">
+              <span class="style-nav-dot" style="background: #4ade80;"></span>
+              清新律动风
+            </div>
+            <div class="style-nav-item">
+              <span class="style-nav-dot" style="background: #60a5fa;"></span>
+              科技蓝标签风
+            </div>
+            <div class="style-nav-item">
+              <span class="style-nav-dot" style="background: #f472b6;"></span>
+              北欧杂志风
+            </div>
+            <div class="style-nav-item">
+              <span class="style-nav-dot" style="background: #9ca3af;"></span>
+              工业水泥风
+            </div>
+          </div>
+
+          <!-- 右侧：文章预览 -->
+          <div class="article-preview-card">
+            <div class="article-preview-header">
+              <div class="article-preview-badge">清新律动风</div>
+            </div>
+            <div class="article-preview-body docx-qingxin">
+              <h1 class="qx-title">人永远赚不到认知以外的钱</h1>
+              <div class="qx-divider">—— 🌿 ——</div>
+              <p class="qx-subtitle">▲ 认知，决定你能走多远</p>
+              <div class="qx-divider">—— 🌿 ——</div>
+              <p class="qx-para">
+                最近，一个年轻人靠内容创作月入过万的故事引发了热议。有人羡慕，有人质疑，但很少有人看到背后的真相：他的成功，本质是认知的胜利。
+              </p>
+              <h2 class="qx-heading">认知差，才是最大的贫富差距</h2>
+              <p class="qx-para">
+                同样的时代，同样的机会，为什么有人能抓住，有人只能旁观？答案就是认知差。
+              </p>
+              <p class="qx-para">
+                他懂得平台规则、内容逻辑、用户心理，而这些认知，很多人至今一片空白。不是他多聪明，而是他的认知维度更高。
+              </p>
+              <ul class="qx-list">
+                <li><span class="qx-emoji">🌱</span> 你永远赚不到认知以外的钱，除非靠运气；但靠运气赚到的钱，最后往往靠实力亏掉。</li>
+                <li><span class="qx-emoji">🍃</span> 认知决定选择，选择决定命运</li>
+                <li><span class="qx-emoji">🍃</span> 提升认知，比埋头苦干更重要</li>
+                <li><span class="qx-emoji">🍃</span> 向有结果的人学习，是最快的捷径</li>
+              </ul>
+              <div class="qx-divider">—— 🌿 ——</div>
+              <h2 class="qx-heading">信息差正在消失，认知差正在拉大</h2>
+              <p class="qx-para">
+                过去，赚钱靠信息差——你知道的，别人不知道。如今互联网让信息透明，信息差越来越小。
+              </p>
+              <p class="qx-para">
+                但认知差却在拉大。同样的信息，有人看到机会，有人看到热闹；有人立刻行动，有人只会观望。这就是差距的根源。
+              </p>
+              <blockquote class="qx-quote">
+                "你所赚的每一分钱，都是你对这个世界认知的变现。"
+                <span class="qx-quote-source">—— 投资名言</span>
+              </blockquote>
+              <ul class="qx-list">
+                <li><span class="qx-emoji">🍃</span> 不要只收集信息，要提升认知</li>
+                <li><span class="qx-emoji">🍃</span> 学会深度思考，而非浅层浏览</li>
+                <li><span class="qx-emoji">🍃</span> 把信息转化为行动，才能创造价值</li>
+              </ul>
+              <div class="qx-divider">—— 🌿 ——</div>
+              <h2 class="qx-heading">认知升级，永远不晚</h2>
+              <p class="qx-para">
+                有人觉得，自己起步晚了，学不动了。但认知升级和年龄无关，和心态有关。
+              </p>
+              <p class="qx-para">
+                很多后来居上的创作者，都在用行动证明：只要愿意打开自己，任何时候都可以重新开始。
+              </p>
+              <p class="qx-para qx-highlight">
+                🌱 限制你的从来不是时间，而是你以为自己不行了的念头。
+              </p>
+              <div class="qx-divider">—— 🌿 ——</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- ==================== 文章内容样式展示区块结束 ==================== -->
+
+    <!-- ==================== 价值说服区块 ==================== -->
+    <section id="value-pitch-section" class="section value-pitch-section">
+      <div class="section-container">
+        <div class="value-pitch-body">
+          <div class="value-pitch-left">
+            <div class="value-pitch-tag">算一笔账</div>
+            <h2 class="value-pitch-title">为什么聪明人选择借力，<br>而不是独自死磕？</h2>
+            <div class="value-math-card">
+              <div class="value-math-row">
+                <span class="value-math-label">标准版年费</span>
+                <span class="value-math-num">≈ ¥400</span>
+              </div>
+              <div class="value-math-row">
+                <span class="value-math-label">平均每天</span>
+                <span class="value-math-num">¥1.1</span>
+              </div>
+              <div class="value-math-divider"></div>
+              <div class="value-math-highlight">
+                <div class="value-math-result">爆一篇 5 万阅读</div>
+                <div class="value-math-result-sub">流量主收益即可回本</div>
+              </div>
+              <div class="value-math-multi">
+                <div class="value-math-multi-title">🚀 一文多发，收益放大</div>
+                <div class="value-math-multi-row">
+                  <span class="value-math-multi-platform">公众号 5 万阅读</span>
+                  <span class="value-math-multi-money">≈ ¥100</span>
+                </div>
+                <div class="value-math-multi-row">
+                  <span class="value-math-multi-platform">今日头条 5 万阅读</span>
+                  <span class="value-math-multi-money">≈ ¥40</span>
+                </div>
+                <div class="value-math-multi-row">
+                  <span class="value-math-multi-platform">百家号 5 万阅读</span>
+                  <span class="value-math-multi-money">≈ ¥30</span>
+                </div>
+                <div class="value-math-multi-total">
+                  同一篇文章发到 3 个平台，单篇合计 ≈ <strong>¥170</strong>，回本速度快 3 倍
+                </div>
+              </div>
+              <div class="value-math-note">
+                而且账号和粉丝是你永久的数字资产，只会越积越值钱。
+              </div>
+            </div>
+          </div>
+          <div class="value-pitch-right">
+            <div class="value-pain-card">
+              <div class="value-pain-header">
+                <span class="value-pain-icon">💔</span>
+                <span class="value-pain-title">90% 的人倒在了起跑线</span>
+              </div>
+              <p class="value-pain-text">
+                连续发 30 篇文章，阅读量始终个位数——这不是你不够努力，是<strong>选题、素材、排版</strong>每个环节都在无声消耗你的意志力。
+              </p>
+              <p class="value-pain-text">
+                付出和收获长期不成正比，谁都会想放弃。<span class="value-pain-emphasis">这是人性，不是缺陷。</span>
+              </p>
+            </div>
+            <div class="value-solution-card">
+              <div class="value-solution-header">
+                <span class="value-solution-icon">🚀</span>
+                <span class="value-solution-title">我们帮你跨过这道坎</span>
+              </div>
+              <p class="value-solution-text">
+                每天把一篇<strong>现成的优质文章</strong>送到你手上，排版精美、选题精准、多平台可用。
+              </p>
+              <p class="value-solution-text">
+                你不需要再为"今天写什么"发愁，把有限的精力留给<strong>坚持和放大</strong>，而不是从 0 开始死磕。
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- ==================== 价值说服区块结束 ==================== -->
+
+    <!-- ==================== 会员权益 / 套餐选择区块 ==================== -->
     <section id="membership-section" class="section membership-section">
       <div class="section-container">
         <div class="section-header center">
@@ -499,9 +762,22 @@ onMounted(() => {
           <h2 class="section-title">选择适合你的套餐</h2>
           <p class="section-subtitle">多种档位，满足不同需求，按月订阅，随时可退</p>
         </div>
+
+        <!-- 套餐推荐建议 -->
+        <div class="plan-recommend-bar">
+          <div class="rec-item">
+            <span class="rec-dot" style="background: #07C160;"></span>
+            <strong>个人创作者</strong>推荐「标准版」，性价比之王，每天不到一杯奶茶钱
+          </div>
+          <div class="rec-item">
+            <span class="rec-dot" style="background: #f59e0b;"></span>
+            <strong>做矩阵运营</strong>推荐「旗舰版」或「专业版」，多账号多渠道收益翻倍
+          </div>
+        </div>
+
         <div class="membership-grid">
-          <div v-for="(plan, i) in membershipPlans" :key="plan.id" class="membership-card" :class="{ popular: i === 2 }">
-            <div v-if="i === 2" class="popular-badge">最受欢迎</div>
+          <div v-for="(plan, i) in membershipPlans" :key="plan.id" class="membership-card" :class="{ popular: plan.name && plan.name.includes('标准') }">
+            <div v-if="plan.name && plan.name.includes('标准')" class="popular-badge">标准版</div>
             <div class="membership-name">{{ plan.name }}</div>
             <div class="membership-price-row">
               <span class="membership-price">¥{{ plan.price }}</span>
@@ -510,6 +786,10 @@ onMounted(() => {
             <div v-if="plan.originalPrice && plan.originalPrice > 0" class="membership-original">
               原价 ¥{{ plan.originalPrice }}
             </div>
+            <!-- 标准版专属高性价比宣传语 -->
+            <div v-if="plan.name && plan.name.includes('标准')" class="plan-promo">
+              平均每天不到 1 块钱，平台每日为你推送一篇原创好文，一年下来就是 365 篇素材。你只需要花几分钟复制粘贴发布，就有可能获得流量主收益。这笔账怎么算都值。
+            </div>
             <div class="membership-divider"></div>
             <ul class="membership-features">
               <li v-for="(f, j) in parseFeatures(plan)" :key="j">
@@ -517,15 +797,102 @@ onMounted(() => {
                 {{ f }}
               </li>
             </ul>
-            <button class="membership-btn" :class="{ primary: i === 2 }" @click="goLogin">
-              {{ i === 2 ? '立即开通' : '选择此套餐' }}
+            <button class="membership-btn" :class="{ primary: plan.name && plan.name.includes('标准') }" @click="goLogin">
+              {{ (plan.name && plan.name.includes('标准')) ? '立即开通' : '选择此套餐' }}
             </button>
           </div>
         </div>
       </div>
     </section>
+    <!-- ==================== 会员权益 / 套餐选择区块结束 ==================== -->
 
-    <!-- Affiliate Section -->
+    <!-- ==================== 矩阵运营与收益说明区块 ==================== -->
+    <section id="matrix-section" class="section matrix-section">
+      <div class="section-container">
+        <div class="section-header center">
+          <span class="section-label">进阶玩法</span>
+          <h2 class="section-title">一文多发，收益多倍</h2>
+          <p class="section-subtitle">了解矩阵运营和收益来源，让你的创作回报最大化</p>
+        </div>
+
+        <div class="matrix-grid">
+          <!-- 什么是矩阵 -->
+          <div class="matrix-card">
+            <div class="matrix-icon">🌐</div>
+            <h3 class="matrix-card-title">什么是矩阵？</h3>
+            <p class="matrix-card-desc">
+              矩阵运营就是同时在多个平台、多个账号上发布内容。比如你可以同时运营 3 个公众号、2 个百家号、2 个今日头条号，形成内容分发网络。
+              <br><br>
+              平台每天推送的同一篇文章，你可以稍作调整后发到所有账号上。1 篇文章变成 7 篇，曝光量和收益机会也随之乘以 7。
+            </p>
+          </div>
+
+          <!-- 什么是一文多发 -->
+          <div class="matrix-card">
+            <div class="matrix-icon">🚀</div>
+            <h3 class="matrix-card-title">什么是一文多发？</h3>
+            <p class="matrix-card-desc">
+              平台每天为你生成的原创文章，你可以在<strong>公众号、百家号、今日头条</strong>等多个平台同步发布。
+              <br><br>
+              同一篇文章在不同平台的推荐算法是独立的，意味着你在公众号没爆的文章，可能在今日头条获得 10w+ 阅读。多平台分发 = 多倍曝光 = 多倍收益可能。
+            </p>
+          </div>
+
+          <!-- 公众号收益 -->
+          <div class="matrix-card">
+            <div class="matrix-icon">💰</div>
+            <h3 class="matrix-card-title">公众号收益来源</h3>
+            <p class="matrix-card-desc">
+              <strong>流量主广告：</strong>开通后文章底部自动展示广告，按曝光和点击计费。1 万阅读通常收益 100-300 元，高价值领域（如金融、教育）可达 500-1000 元。
+              <br><br>
+              <strong>互选广告：</strong>粉丝达 500 即可开通，广告主直接找你投放软文。按阅读计费，单价通常 0.5-2 元/阅读，头部账号单条广告收入可达 5 万元以上。
+            </p>
+          </div>
+
+          <!-- 今日头条收益 -->
+          <div class="matrix-card">
+            <div class="matrix-icon">📈</div>
+            <h3 class="matrix-card-title">今日头条收益来源</h3>
+            <p class="matrix-card-desc">
+              <strong>阅读分成：</strong>收益 = 千次阅读单价 × 互动系数 × 获利阅读量 ÷ 1000。
+              <br><br>
+              2025 年头条新增<strong>互动系数</strong>（上限 3 倍）：评论、收藏、进入主页等行为越多，收益越高。粉丝阅读价值是非粉丝的 10-20 倍。首发平台声明首发可获得 3 倍收益加成。
+            </p>
+          </div>
+
+          <!-- 百家号收益 -->
+          <div class="matrix-card">
+            <div class="matrix-icon">📰</div>
+            <h3 class="matrix-card-title">百家号收益来源</h3>
+            <p class="matrix-card-desc">
+              <strong>广告分成：</strong>基于广告展现量和内容质量动态计算。图文内容万次阅读收益约 30-80 元，垂直领域和原创内容单价更高。
+              <br><br>
+              粉丝阅读收益明显高于非粉丝流量。内容完成率越高、用户停留时间越长，收益越高。优质账号还可获得平台专项奖励。
+            </p>
+          </div>
+
+          <!-- 收益总结 -->
+          <div class="matrix-card highlight">
+            <div class="matrix-icon">✨</div>
+            <h3 class="matrix-card-title">算一笔账</h3>
+            <p class="matrix-card-desc">
+              假设你每天花 10 分钟发布 1 篇文章到 3 个平台（公众号 + 今日头条 + 百家号），平均每个平台获得 5000 阅读：
+              <br><br>
+              公众号 5000 阅读 ≈ 50-150 元<br>
+              今日头条 5000 阅读 ≈ 15-60 元<br>
+              百家号 5000 阅读 ≈ 15-40 元<br>
+              <strong>单日合计 ≈ 80-250 元</strong>
+              <br><br>
+              一个月就是 2400-7500 元。而你的投入只是一杯奶茶钱的月费和每天 10 分钟。
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- ==================== 矩阵运营与收益说明区块结束 ==================== -->
+
+    <!-- ==================== 分享活动 / 分销活动区块（已注释） ==================== -->
+    <!--
     <section id="affiliate-section" class="section affiliate-section">
       <div class="section-container">
         <div class="section-header center">
@@ -554,7 +921,6 @@ onMounted(() => {
                 <div class="affiliate-step-desc">您可获得好友会员费用的 30% 作为佣金</div>
               </div>
             </div>
-
             <div class="affiliate-invite-box">
               <div v-if="currentUser && currentUser.inviteCode" class="affiliate-invite-active">
                 <div class="affiliate-invite-label">我的专属邀请码</div>
@@ -568,7 +934,6 @@ onMounted(() => {
                 <button class="affiliate-copy-btn" @click="goLogin">立即登录</button>
               </div>
             </div>
-
             <div class="affiliate-contact">
               <div class="affiliate-qr">
                 <img v-if="qrCodeUrl" :src="qrCodeUrl" alt="客服二维码" class="affiliate-qr-img">
@@ -588,6 +953,8 @@ onMounted(() => {
         </div>
       </div>
     </section>
+    -->
+    <!-- ==================== 分享活动 / 分销活动区块结束（已注释） ==================== -->
 
     <!-- CTA Section -->
     <section class="section cta-section">
@@ -1346,6 +1713,682 @@ onMounted(() => {
   box-shadow: 0 6px 20px rgba(7, 193, 96, 0.4);
 }
 
+/* 套餐推荐建议栏 */
+.plan-recommend-bar {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-bottom: 32px;
+  flex-wrap: wrap;
+}
+
+.rec-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 100px;
+  font-size: 14px;
+  color: #4b5563;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* 标准版专属高性价比宣传语 */
+.plan-promo {
+  font-size: 13px;
+  color: #07C160;
+  line-height: 1.6;
+  padding: 10px 12px;
+  background: rgba(7, 193, 96, 0.06);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  border: 1px dashed rgba(7, 193, 96, 0.2);
+}
+
+/* ========== Matrix Section ========== */
+.matrix-section {
+  background: #fff;
+}
+
+.matrix-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.matrix-card {
+  padding: 28px 24px;
+  border-radius: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  transition: all 0.3s;
+}
+
+.matrix-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.06);
+  border-color: #cbd5e1;
+}
+
+.matrix-card.highlight {
+  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+  border-color: #86efac;
+}
+
+.matrix-icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+  line-height: 1;
+}
+
+.matrix-card-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 12px;
+}
+
+.matrix-card-desc {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #4b5563;
+}
+
+.matrix-card-desc strong {
+  color: #07C160;
+}
+
+/* ========== Push Preview Section ========== */
+.push-preview-section {
+  background: #f8fafc;
+}
+
+.push-preview-body {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 40px;
+  align-items: start;
+}
+
+.push-email-card {
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.push-email-header {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  padding: 28px 24px;
+  text-align: center;
+}
+
+.push-email-brand {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.push-email-sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.push-email-content {
+  padding: 28px 24px;
+}
+
+.push-email-greeting {
+  font-size: 15px;
+  color: #374151;
+  margin-bottom: 16px;
+}
+
+.push-email-intro {
+  font-size: 14px;
+  color: #4b5563;
+  line-height: 1.7;
+  margin-bottom: 20px;
+}
+
+.push-tag {
+  display: inline-block;
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 20px;
+}
+
+.push-article-box {
+  border-left: 3px solid #3b82f6;
+  background: #f8fafc;
+  padding: 16px 20px;
+  border-radius: 0 10px 10px 0;
+  margin-bottom: 20px;
+}
+
+.push-article-label {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-bottom: 6px;
+}
+
+.push-article-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.push-article-meta {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.push-meta-tag {
+  display: inline-block;
+  background: rgba(59, 130, 246, 0.08);
+  color: #2563eb;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.push-email-tips {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+
+.push-tips-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #b45309;
+  margin-bottom: 8px;
+}
+
+.push-email-tips ol {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.push-email-tips li {
+  font-size: 12px;
+  color: #92400e;
+  line-height: 1.7;
+}
+
+.push-email-footer {
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  padding: 16px 24px;
+  font-size: 12px;
+  color: #9ca3af;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.push-features {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.push-feature-item {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 24px;
+  transition: all 0.3s;
+}
+
+.push-feature-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+  border-color: #cbd5e1;
+}
+
+.push-feature-icon {
+  font-size: 28px;
+  margin-bottom: 10px;
+  line-height: 1;
+}
+
+.push-feature-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 6px;
+}
+
+.push-feature-desc {
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+/* ========== Article Style Section ========== */
+.article-style-section {
+  background: #fff;
+}
+
+.article-style-showcase {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.style-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.style-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #4b5563;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.style-nav-item:hover {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.style-nav-item.active {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #166534;
+  font-weight: 600;
+}
+
+.style-nav-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.article-preview-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.article-preview-header {
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.article-preview-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 20px;
+}
+
+.article-preview-body {
+  padding: 36px 40px;
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+/* 清新律动风排版 */
+.docx-qingxin {
+  font-family: 'PingFang SC', 'Microsoft YaHei', '微软雅黑', sans-serif;
+  color: #2c3e50;
+}
+
+.docx-qingxin .qx-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1e293b;
+  text-align: center;
+  margin-bottom: 16px;
+  letter-spacing: 1px;
+}
+
+.docx-qingxin .qx-divider {
+  text-align: center;
+  font-size: 14px;
+  color: #86efac;
+  margin: 20px 0;
+  letter-spacing: 4px;
+}
+
+.docx-qingxin .qx-subtitle {
+  text-align: center;
+  font-size: 14px;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.docx-qingxin .qx-heading {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 20px 0 12px;
+  text-align: center;
+}
+
+.docx-qingxin .qx-para {
+  font-size: 14px;
+  line-height: 2;
+  color: #4b5563;
+  margin-bottom: 12px;
+  text-indent: 2em;
+}
+
+.docx-qingxin .qx-para.qx-highlight {
+  background: rgba(74, 222, 128, 0.08);
+  border-radius: 8px;
+  padding: 12px 16px;
+  text-indent: 0;
+  color: #166534;
+  font-weight: 500;
+}
+
+.docx-qingxin .qx-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+
+.docx-qingxin .qx-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 2;
+  color: #4b5563;
+  padding: 4px 0;
+}
+
+.docx-qingxin .qx-emoji {
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.docx-qingxin .qx-quote {
+  background: #f8fafc;
+  border-left: 3px solid #4ade80;
+  padding: 16px 20px;
+  margin: 16px 0;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #374151;
+  font-style: italic;
+  border-radius: 0 8px 8px 0;
+}
+
+.docx-qingxin .qx-quote-source {
+  display: block;
+  font-size: 12px;
+  color: #9ca3af;
+  font-style: normal;
+  margin-top: 6px;
+}
+
+/* ========== Value Pitch Section ========== */
+.value-pitch-section {
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+}
+
+.value-pitch-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  align-items: start;
+}
+
+.value-pitch-tag {
+  display: inline-block;
+  background: rgba(7, 193, 96, 0.1);
+  color: #07C160;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 14px;
+  border-radius: 20px;
+  margin-bottom: 16px;
+}
+
+.value-pitch-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.4;
+  margin-bottom: 28px;
+}
+
+.value-math-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.04);
+}
+
+.value-math-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+}
+
+.value-math-label {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.value-math-num {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.value-math-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 12px 0;
+}
+
+.value-math-highlight {
+  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  margin: 16px 0;
+}
+
+.value-math-result {
+  font-size: 18px;
+  font-weight: 700;
+  color: #07C160;
+  margin-bottom: 4px;
+}
+
+.value-math-result-sub {
+  font-size: 13px;
+  color: #166534;
+}
+
+.value-math-note {
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.value-math-multi {
+  background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%);
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 12px 0;
+}
+
+.value-math-multi-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d4ed8;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.value-math-multi-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.value-math-multi-platform {
+  color: #4b5563;
+}
+
+.value-math-multi-money {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.value-math-multi-total {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #bfdbfe;
+  font-size: 13px;
+  color: #1d4ed8;
+  text-align: center;
+  font-weight: 500;
+}
+
+.value-math-multi-total strong {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.value-pain-card {
+  background: #fff;
+  border: 1px solid #fee2e2;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+}
+
+.value-pain-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.value-pain-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.value-pain-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #b91c1c;
+}
+
+.value-pain-text {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #4b5563;
+  margin-bottom: 10px;
+}
+
+.value-pain-text strong {
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.value-pain-emphasis {
+  display: inline-block;
+  background: rgba(239, 68, 68, 0.08);
+  color: #dc2626;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: 4px;
+}
+
+.value-solution-card {
+  background: linear-gradient(135deg, #f0fdf4 0%, #f6fef9 100%);
+  border: 1px solid #bbf7d0;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 16px rgba(7, 193, 96, 0.06);
+}
+
+.value-solution-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.value-solution-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.value-solution-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #166534;
+}
+
+.value-solution-text {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #374151;
+  margin-bottom: 10px;
+}
+
+.value-solution-text strong {
+  color: #07C160;
+  font-weight: 600;
+}
+
 /* ========== Stats Section ========== */
 .stats-section {
   position: relative;
@@ -1994,6 +3037,49 @@ onMounted(() => {
     gap: 32px;
   }
 
+  .push-preview-body {
+    grid-template-columns: 1fr;
+  }
+
+  .push-features {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .push-feature-item {
+    flex: 1;
+    min-width: 220px;
+  }
+
+  .article-style-showcase {
+    grid-template-columns: 1fr;
+  }
+
+  .style-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .style-nav-item {
+    flex: 1;
+    min-width: 140px;
+    justify-content: center;
+  }
+
+  .article-preview-body {
+    padding: 24px;
+    max-height: 480px;
+  }
+
+  .value-pitch-body {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+
+  .value-pitch-title {
+    font-size: 24px;
+  }
+
   .stat-num {
     font-size: 32px;
   }
@@ -2019,6 +3105,19 @@ onMounted(() => {
   .membership-grid,
   .cases-grid {
     grid-template-columns: 1fr;
+  }
+
+  .push-feature-item {
+    min-width: 100%;
+  }
+
+  .style-nav-item {
+    min-width: 100%;
+  }
+
+  .article-preview-body {
+    padding: 20px;
+    max-height: 400px;
   }
 
   .hero-title {

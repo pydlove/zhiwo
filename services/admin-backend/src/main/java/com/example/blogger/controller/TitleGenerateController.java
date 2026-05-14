@@ -2,6 +2,8 @@ package com.example.blogger.controller;
 
 import com.example.blogger.entity.Result;
 import com.example.blogger.entity.TitleGenerateTask;
+import com.example.blogger.entity.TitleLibrary;
+import com.example.blogger.mapper.TitleLibraryMapper;
 import com.example.blogger.service.TitleGenerateTaskService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -19,10 +21,12 @@ public class TitleGenerateController {
     private static final Logger log = LoggerFactory.getLogger(TitleGenerateController.class);
 
     private final TitleGenerateTaskService taskService;
+    private final TitleLibraryMapper titleLibraryMapper;
     private final ObjectMapper objectMapper;
 
-    public TitleGenerateController(TitleGenerateTaskService taskService, ObjectMapper objectMapper) {
+    public TitleGenerateController(TitleGenerateTaskService taskService, TitleLibraryMapper titleLibraryMapper, ObjectMapper objectMapper) {
         this.taskService = taskService;
+        this.titleLibraryMapper = titleLibraryMapper;
         this.objectMapper = objectMapper;
     }
 
@@ -81,5 +85,29 @@ public class TitleGenerateController {
         }
         log.info("[TitleGenerateController] 任务已取消: id={}", id);
         return Result.ok(null);
+    }
+
+    @PostMapping("/tasks/{id}/stop")
+    public Result<Void> stopTask(@PathVariable String id) {
+        TitleGenerateTask task = taskService.findById(id);
+        if (task == null) {
+            return Result.error("任务不存在");
+        }
+        boolean success = taskService.stopTask(id);
+        if (!success) {
+            return Result.error("只能停止进行中的任务");
+        }
+        log.info("[TitleGenerateController] 任务已停止: id={}", id);
+        return Result.ok(null);
+    }
+
+    @GetMapping("/tasks/{id}/titles")
+    public Result<List<TitleLibrary>> getTaskTitles(@PathVariable String id) {
+        TitleGenerateTask task = taskService.findById(id);
+        if (task == null) {
+            return Result.error("任务不存在");
+        }
+        List<TitleLibrary> list = titleLibraryMapper.findByTaskId(id);
+        return Result.ok(list);
     }
 }

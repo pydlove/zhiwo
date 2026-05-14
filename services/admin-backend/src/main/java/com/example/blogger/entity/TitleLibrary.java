@@ -12,7 +12,7 @@ public class TitleLibrary {
     private Integer useCount;
     private Integer isUsed;
     private Integer isDeleted;
-    private Integer isAiPassed;
+    private Integer aiFlavorStatus; // 0/null=未检测 1=已通过 2=AI味重
     private Integer isCopied;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -20,8 +20,11 @@ public class TitleLibrary {
     private String generatedFileName;
     private LocalDateTime generatedAt;
     private Integer generateStatus; // 0=未生成 1=生成成功
+    private Integer isConfirmed; // 0=未确认 1=已确认 (兼容旧字段)
+    private Integer confirmStatus; // 0=未确认 1=已确认 2=已拒绝
 
     // display fields
+    private String taskId;
     private String trackName;
 
     // recommendation display fields
@@ -41,7 +44,7 @@ public class TitleLibrary {
     public void setTitle(String title) { this.title = title; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
-    public java.time.LocalDate getPushDate() { return pushDate; }
+    public java.time.LocalDate getPushDate() { return recommendDate != null ? recommendDate : pushDate; }
     public void setPushDate(java.time.LocalDate pushDate) { this.pushDate = pushDate; }
     public String getPlatform() { return platform; }
     public void setPlatform(String platform) { this.platform = platform; }
@@ -53,8 +56,8 @@ public class TitleLibrary {
     public void setIsUsed(Integer isUsed) { this.isUsed = isUsed; }
     public Integer getIsDeleted() { return isDeleted; }
     public void setIsDeleted(Integer isDeleted) { this.isDeleted = isDeleted; }
-    public Integer getIsAiPassed() { return isAiPassed; }
-    public void setIsAiPassed(Integer isAiPassed) { this.isAiPassed = isAiPassed; }
+    public Integer getAiFlavorStatus() { return aiFlavorStatus; }
+    public void setAiFlavorStatus(Integer aiFlavorStatus) { this.aiFlavorStatus = aiFlavorStatus; }
     public Integer getIsCopied() { return isCopied; }
     public void setIsCopied(Integer isCopied) { this.isCopied = isCopied; }
     public LocalDateTime getCreatedAt() { return createdAt; }
@@ -86,4 +89,10 @@ public class TitleLibrary {
 
     public Integer getGenerateStatus() { return generateStatus; }
     public void setGenerateStatus(Integer generateStatus) { this.generateStatus = generateStatus; }
+    public Integer getIsConfirmed() { return isConfirmed; }
+    public void setIsConfirmed(Integer isConfirmed) { this.isConfirmed = isConfirmed; }
+    public Integer getConfirmStatus() { return confirmStatus; }
+    public void setConfirmStatus(Integer confirmStatus) { this.confirmStatus = confirmStatus; }
+    public String getTaskId() { return taskId; }
+    public void setTaskId(String taskId) { this.taskId = taskId; }
 }

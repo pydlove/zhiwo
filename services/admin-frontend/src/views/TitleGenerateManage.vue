@@ -1,8 +1,16 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, h } from 'vue'
+import { useRouter } from 'vue-router'
 import { Table, Tag, Input, Select, Button, Modal, Form, message, Popconfirm } from 'ant-design-vue'
 import { listTracks } from '../api/track.js'
-import { createTitleGenerateTask, listTitleGenerateTasks, cancelTitleGenerateTask } from '../api/titleGenerate.js'
+import { createTitleGenerateTask, listTitleGenerateTasks, cancelTitleGenerateTask, stopTitleGenerateTask, getTaskTitles } from '../api/titleGenerate.js'
+import { listPromptTemplates } from '../api/promptTemplate.js'
+
+const router = useRouter()
+
+function goToTitleLibrary() {
+  router.push('/title-library')
+}
 
 // ---- 生成弹框状态 ----
 const GENERATE_CONFIG_KEY = 'titleGenerate_generateConfig'
@@ -15,6 +23,9 @@ const generatePlatforms = ref(savedGenerateConfig?.platforms || [])
 const generateTrackIds = ref(savedGenerateConfig?.trackIds || [])
 const generateInstruction = ref(savedGenerateConfig?.instruction || '')
 const generating = ref(false)
+const instructionMode = ref('manual')
+const promptTemplates = ref([])
+const selectedPromptId = ref('')
 
 const platformOptions = [
   { label: '公众号', value: '公众号' },
@@ -45,8 +56,25 @@ function saveGenerateConfig() {
   }))
 }
 
-function openGenerateModal() {
+async function openGenerateModal() {
   generateModalOpen.value = true
+  instructionMode.value = 'manual'
+  selectedPromptId.value = ''
+  try {
+    const res = await listPromptTemplates({ type: 'generate_title' })
+    promptTemplates.value = (res || []).filter(p => p.type === 'generate_title')
+  } catch (e) {
+    promptTemplates.value = []
+  }
+}
+
+function onPromptChange(val) {
+  const tpl = promptTemplates.value.find(p => p.id === val)
+  if (tpl) {
+    generateInstruction.value = tpl.content
+  } else {
+    generateInstruction.value = ''
+  }
 }
 
 function onPlatformChange() {
@@ -90,6 +118,27 @@ async function handleGenerate() {
 const tasks = ref([])
 const loading = ref(false)
 const statusFilter = ref('')
+
+// ---- 详情弹框状态 ----
+const detailModalOpen = ref(false)
+const detailTaskId = ref('')
+const detailTitles = ref([])
+const detailLoading = ref(false)
+
+async function openDetailModal(record) {
+  detailTaskId.value = record.id
+  detailModalOpen.value = true
+  detailLoading.value = true
+  try {
+    const res = await getTaskTitles(record.id)
+    detailTitles.value = res || []
+  } catch (e) {
+    message.error('加载详情失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
+    detailTitles.value = []
+  } finally {
+    detailLoading.value = false
+  }
+}
 
 const statusOptions = [
   { label: '全部', value: '' },
@@ -155,6 +204,16 @@ async function handleCancel(record) {
   }
 }
 
+async function handleStop(record) {
+  try {
+    await stopTitleGenerateTask(record.id)
+    message.success('任务已停止')
+    fetchTasks()
+  } catch (e) {
+    message.error(e?.response?.data?.msg || '停止失败')
+  }
+}
+
 const columns = [
   {
     title: '任务ID',
@@ -203,6 +262,28 @@ const columns = [
     },
   },
   {
+    title: '重复数',
+    dataIndex: 'duplicateCount',
+    key: 'duplicateCount',
+    width: 80,
+    align: 'center',
+    customRender: ({ record }) => {
+      const val = record.duplicateCount
+      return val != null && val > 0 ? h('span', { style: 'color: #ff4d4f; font-weight: 500;' }, val) : h('span', { style: 'color: #999;' }, '0')
+    },
+  },
+  {
+    title: '插入数',
+    dataIndex: 'insertedCount',
+    key: 'insertedCount',
+    width: 80,
+    align: 'center',
+    customRender: ({ record }) => {
+      const val = record.insertedCount
+      return val != null && val > 0 ? h('span', { style: 'color: #52c41a; font-weight: 500;' }, val) : h('span', { style: 'color: #999;' }, '0')
+    },
+  },
+  {
     title: '创建时间',
     dataIndex: 'createdAt',
     key: 'createdAt',
@@ -212,22 +293,27 @@ const columns = [
     title: '操作',
     key: 'action',
     width: 140,
+    fixed: 'right',
     align: 'center',
     customRender: ({ record }) => {
+      const buttons = []
+      buttons.push(h(Button, { type: 'link', size: 'small', onClick: () => openDetailModal(record) }, () => '详情'))
       if (record.status === 'pending') {
-        return h('div', { style: 'display: flex; justify-content: center;' }, [
-          h(Popconfirm, {
-            title: '确定取消该任务吗？',
-            onConfirm: () => handleCancel(record),
-          }, () => h(Button, { type: 'link', size: 'small', danger: true }, () => '取消')),
-        ])
+        buttons.push(h(Popconfirm, {
+          title: '确定取消该任务吗？',
+          onConfirm: () => handleCancel(record),
+        }, () => h(Button, { type: 'link', size: 'small', danger: true }, () => '取消')))
+      }
+      if (record.status === 'processing') {
+        buttons.push(h(Popconfirm, {
+          title: '确定停止该任务吗？',
+          onConfirm: () => handleStop(record),
+        }, () => h(Button, { type: 'link', size: 'small', danger: true }, () => '停止')))
       }
       if (record.status === 'completed' && record.resultFileUrl) {
-        return h('div', { style: 'display: flex; justify-content: center;' }, [
-          h('a', { href: record.resultFileUrl, target: '_blank', rel: 'noopener noreferrer' }, () => '下载结果'),
-        ])
+        buttons.push(h('a', { href: record.resultFileUrl, target: '_blank', rel: 'noopener noreferrer', style: 'font-size: 13px;' }, () => '下载结果'))
       }
-      return null
+      return h('div', { style: 'display: flex; justify-content: center; align-items: center; gap: 8px;' }, buttons)
     },
   },
 ]
@@ -246,6 +332,7 @@ onMounted(() => {
   <div>
     <div style="display: flex; gap: 12px; margin-bottom: 16px;">
       <Button type="primary" @click="openGenerateModal">生成标题</Button>
+      <Button @click="goToTitleLibrary">标题库</Button>
       <Select
         v-model:value="statusFilter"
         :options="statusOptions"
@@ -262,7 +349,7 @@ onMounted(() => {
       rowKey="id"
       :pagination="{ pageSize: 20 }"
       size="small"
-      :scroll="{ x: 1000 }"
+      :scroll="{ x: 1200 }"
     />
 
     <Modal
@@ -312,16 +399,64 @@ onMounted(() => {
           <Input v-model:value="generateCount" type="number" min="1" max="20" placeholder="例如：3" />
         </Form.Item>
         <Form.Item label="生成方向（可选）">
+          <div style="display: flex; gap: 12px; margin-bottom: 8px;">
+            <label style="font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+              <input type="radio" v-model="instructionMode" value="manual" />
+              手动输入
+            </label>
+            <label style="font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+              <input type="radio" v-model="instructionMode" value="template" />
+              选择提示词模板
+            </label>
+          </div>
+          <div v-if="instructionMode === 'template'">
+            <Select
+              v-model:value="selectedPromptId"
+              placeholder="请选择提示词模板"
+              style="width: 100%;"
+              @change="onPromptChange"
+            >
+              <Select.Option v-for="p in promptTemplates" :key="p.id" :value="p.id">{{ p.name }}</Select.Option>
+            </Select>
+          </div>
           <Input.TextArea
             v-model:value="generateInstruction"
             placeholder="例如：更口语化、更具悬念、突出数字效果、适合抖音风格、偏新闻报道类..."
-            :rows="2"
-            :maxlength="1000"
+            :rows="4"
+            :maxlength="2000"
             show-count
+            :disabled="instructionMode === 'template'"
           />
           <div style="font-size: 12px; color: #999; margin-top: 4px;">不填则使用默认策略生成</div>
         </Form.Item>
       </Form>
+    </Modal>
+
+    <Modal
+      v-model:open="detailModalOpen"
+      :title="`任务详情 (${detailTaskId})`"
+      :footer="null"
+      :width="720"
+    >
+      <div style="margin-top: 12px;">
+        <Table
+          :dataSource="detailTitles"
+          :loading="detailLoading"
+          rowKey="id"
+          size="small"
+          :pagination="{ pageSize: 10 }"
+          :scroll="{ y: 400 }"
+        >
+          <Table.Column title="标题" dataIndex="title" key="title" ellipsis />
+          <Table.Column title="平台" dataIndex="platform" key="platform" width="100" />
+          <Table.Column title="赛道" dataIndex="trackName" key="trackName" width="140" />
+          <Table.Column title="描述" dataIndex="description" key="description" ellipsis />
+          <Table.Column title="创建时间" dataIndex="createdAt" key="createdAt" width="160" />
+        </Table>
+        <div v-if="!detailLoading && detailTitles.length === 0" style="text-align: center; padding: 24px; color: #999;">
+          该任务暂无生成的标题
+        </div>
+      </div>
     </Modal>
   </div>
 </template>

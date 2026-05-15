@@ -108,6 +108,7 @@ public class UserAuthController {
         user.setUsername(username.trim());
         user.setPassword(passwordEncoder.encode(password));
         user.setStatus(0);
+        user.setUserType(1);
         user.setAiLimit(50);
         user.setTrackLimit(0);
         user.setPlatformLimit("");

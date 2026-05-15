@@ -158,7 +158,8 @@ async function handlePreview(record) {
     return
   }
   try {
-    const res = await fetch(fileUrl)
+    const cacheBustUrl = fileUrl + (fileUrl.includes('?') ? '&' : '?') + '_t=' + Date.now()
+    const res = await fetch(cacheBustUrl)
     const blob = await res.blob()
     if (blob.size === 0) {
       throw new Error('文件内容为空')
@@ -208,7 +209,7 @@ function handleDownload(record) {
     return
   }
   const link = document.createElement('a')
-  link.href = fileUrl + '?download=1'
+  link.href = fileUrl + (fileUrl.includes('?') ? '&' : '?') + '_t=' + Date.now() + '&download=1'
   link.download = record.generatedFileName || record.subscriptionPostTitle || (record.title + '.docx')
   document.body.appendChild(link)
   link.click()
@@ -258,6 +259,10 @@ function fallbackCopyText(text) {
 
 function handleGoToMatch(record) {
   router.push({ path: '/title-match', query: { keyword: record.title } })
+}
+
+function handleGoToMatchByDate() {
+  router.push({ path: '/title-match', query: { recommendDate: selectedDate.value.format('YYYY-MM-DD') } })
 }
 
 function getAiFlavorTag(record) {
@@ -338,7 +343,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <Card title="文章审核管理" :bordered="false">
+  <Card :bordered="false">
+    <template #title>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span>文章审核管理</span>
+        <Button size="small" @click="handleGoToMatchByDate">标题匹配</Button>
+      </div>
+    </template>
     <!-- 日期选择 -->
     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
       <span style="font-size: 14px; color: #595959;">推荐日期：</span>
@@ -389,7 +400,7 @@ onMounted(() => {
   </Card>
 
   <!-- 预览弹窗 -->
-  <Modal v-model:open="previewModalOpen" :title="previewRecord?.recommendUserName ? `文章预览（${previewRecord.recommendUserName}）` : '文章预览'" :footer="null" :mask-closable="true" width="900">
+  <Modal v-model:open="previewModalOpen" :title="previewRecord?.recommendUserName ? `文章预览（${previewRecord.recommendUserName}）` : '文章预览'" :footer="null" :mask-closable="true" width="700">
     <div style="max-height: 70vh; overflow-y: auto;">
       <div v-if="!previewLoading && previewRecord" style="position: sticky; top: 0; background: #fff; z-index: 10; display: flex; gap: 12px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap;">
         <Button size="small" @click="handleDownload(previewRecord)">
@@ -403,6 +414,8 @@ onMounted(() => {
         <div v-if="activeTab === 'pending'" style="display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap;">
           <Button type="primary" size="small" @click="() => handlePreviewAction('confirm')">确认</Button>
           <Button danger size="small" @click="() => handlePreviewAction('reject')">打回</Button>
+          <Button size="small" @click="() => handlePreviewAction('aiPass')">AI味通过</Button>
+          <Button size="small" @click="() => handlePreviewAction('aiHeavy')">AI味重</Button>
         </div>
       </div>
       <div v-if="previewLoading" style="padding: 24px; text-align: center; color: #999;">正在加载预览...</div>

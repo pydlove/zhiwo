@@ -2020,6 +2020,10 @@ public class TitleLibraryController {
                 item.put("username", user.getUsername());
                 item.put("userEmail", user.getEmail());
                 item.put("editedTitle", title.getTitle());
+                item.put("generatedFileUrl", title.getGeneratedFileUrl());
+                item.put("generatedFileName", title.getGeneratedFileName());
+                item.put("subscriptionPostFileUrl", title.getSubscriptionPostFileUrl());
+                item.put("subscriptionPostTitle", title.getSubscriptionPostTitle());
                 proposedMatches.add(item);
             }
 

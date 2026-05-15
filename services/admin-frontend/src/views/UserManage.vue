@@ -386,7 +386,9 @@ async function handleRecommendPreview() {
     previewLoading.value = true
     previewMode.value = true
     try {
-      const res = await fetch(recommendForm.value.fileUrl)
+      const fileUrl = recommendForm.value.fileUrl
+      const cacheBustUrl = fileUrl + (fileUrl.includes('?') ? '&' : '?') + '_t=' + Date.now()
+      const res = await fetch(cacheBustUrl)
       const text = await res.text()
       previewContent.value = text
     } catch (e) {

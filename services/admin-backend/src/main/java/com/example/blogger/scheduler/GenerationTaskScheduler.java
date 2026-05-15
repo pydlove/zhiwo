@@ -5,11 +5,13 @@ import com.example.blogger.entity.SubscriptionPost;
 import com.example.blogger.entity.TitleGenerationTask;
 import com.example.blogger.entity.TitleLibrary;
 import com.example.blogger.entity.TitleRecommendation;
+import com.example.blogger.entity.Track;
 import com.example.blogger.entity.User;
 import com.example.blogger.mapper.ConfigMapper;
 import com.example.blogger.mapper.SubscriptionPostMapper;
 import com.example.blogger.mapper.TitleGenerationTaskMapper;
 import com.example.blogger.mapper.TitleRecommendationMapper;
+import com.example.blogger.mapper.TrackMapper;
 import com.example.blogger.service.LLMService;
 import com.example.blogger.service.TaskInterruptManager;
 import com.example.blogger.service.TitleGenerationTaskService;
@@ -25,9 +27,21 @@ import org.springframework.stereotype.Component;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
+import java.util.Date;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +51,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * 文章生成任务定时处理器
@@ -63,6 +78,8 @@ public class GenerationTaskScheduler {
     private final ConfigMapper configMapper;
     private final SubscriptionPostMapper subscriptionPostMapper;
     private final TitleRecommendationMapper titleRecommendationMapper;
+    private final com.example.blogger.mapper.ImageLibraryMapper imageLibraryMapper;
+    private final TrackMapper trackMapper;
 
     private final ExecutorService executorService;
     private final Set<String> runningTasks = ConcurrentHashMap.newKeySet();
@@ -77,7 +94,9 @@ public class GenerationTaskScheduler {
                                    AiFlavorRemover aiFlavorRemover,
                                    ConfigMapper configMapper,
                                    SubscriptionPostMapper subscriptionPostMapper,
-                                   TitleRecommendationMapper titleRecommendationMapper) {
+                                   TitleRecommendationMapper titleRecommendationMapper,
+                                   com.example.blogger.mapper.ImageLibraryMapper imageLibraryMapper,
+                                   TrackMapper trackMapper) {
         this.taskMapper = taskMapper;
         this.taskService = taskService;
         this.llmService = llmService;
@@ -89,6 +108,8 @@ public class GenerationTaskScheduler {
         this.configMapper = configMapper;
         this.subscriptionPostMapper = subscriptionPostMapper;
         this.titleRecommendationMapper = titleRecommendationMapper;
+        this.imageLibraryMapper = imageLibraryMapper;
+        this.trackMapper = trackMapper;
         this.executorService = Executors.newFixedThreadPool(MAX_CONCURRENCY);
     }
 
@@ -199,16 +220,58 @@ public class GenerationTaskScheduler {
             if (titleInterrupted) {
                 throw new InterruptedException("任务被停止");
             }
-            log.info("[GenerationTaskScheduler] 标题生成返回长度: {}", titleResponse.length());
-            String mergedContent = mergeTitlesIntoContent(content, titleResponse);
+            log.info("[GenerationTaskScheduler] 标题生成返回长度: {}, 标题: {}", titleResponse.length(), titleResponse);
+            titleResponse = aiFlavorRemover.removeThinkingTags(titleResponse);
+            log.info("[GenerationTaskScheduler] 过滤标题 think 标签: {}", titleResponse);
+            TitleMergeResult mergeResult = mergeTitlesIntoContent(content, titleResponse);
+            String mergedContent = mergeResult.content;
+            String keyword = mergeResult.keyword;
             taskService.updateGeneratedContent(task.getId(), mergedContent);
             taskService.updateProgress(task.getId(), 2, "章节标题生成完成");
+            log.info("[GenerationTaskScheduler] 文章生成完成，内容长度: {}, keyword: {}", mergedContent.length(), keyword);
 
             // Step 3: Remove AI flavor
             checkStopped(task.getId());
             taskService.updateProgress(task.getId(), 3, "去除AI味中...");
             String cleanedContent = aiFlavorRemover.removeAiFlavor(mergedContent);
             taskService.updateProgress(task.getId(), 3, "去除AI味完成");
+
+            // Step 3.5: Insert image (keyword download first, fallback to image library)
+            try {
+                TitleLibrary titleLib = titleLibraryService.getById(task.getTitleLibraryId());
+                if (titleLib != null && titleLib.getTrackId() != null && !titleLib.getTrackId().isEmpty()) {
+                    com.example.blogger.entity.ImageLibrary image = null;
+
+                    // 1. 优先根据关键字从百度下载图片
+                    if (keyword != null && !keyword.isEmpty()) {
+                        Track track = trackMapper.findById(titleLib.getTrackId());
+                        if (track != null) {
+                            image = downloadImageByKeyword(keyword, titleLib.getTrackId(), track.getName());
+                            if (image != null) {
+                                log.info("[GenerationTaskScheduler] 已根据关键字下载并插入图片: keyword={}, url={}", keyword, image.getUrl());
+                            } else {
+                                log.info("[GenerationTaskScheduler] 关键字下载图片失败，将回退到图片库: keyword={}", keyword);
+                            }
+                        }
+                    }
+
+                    // 2. 如果下载失败，从图片库随机获取
+                    if (image == null) {
+                        image = imageLibraryMapper.findRandomByTrackId(titleLib.getTrackId());
+                        if (image != null) {
+                            log.info("[GenerationTaskScheduler] 已从图片库随机获取图片: {}, trackId={}", image.getUrl(), titleLib.getTrackId());
+                        } else {
+                            log.info("[GenerationTaskScheduler] 未找到匹配图片, trackId={}", titleLib.getTrackId());
+                        }
+                    }
+
+                    if (image != null) {
+                        cleanedContent = insertImageIntoContent(cleanedContent, image);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("[GenerationTaskScheduler] 插入图片失败，跳过: {}", e.getMessage());
+            }
             taskService.updateGeneratedContent(task.getId(), cleanedContent);
 
             // Step 4: Generate DOCX file
@@ -219,7 +282,7 @@ public class GenerationTaskScheduler {
             if (safeTitle.isEmpty()) {
                 safeTitle = "article_" + task.getTitleLibraryId();
             }
-            String fileName = safeTitle + ".docx";
+            String fileName = safeTitle + "_" + task.getId() + ".docx";
             String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
             File dir = new File(articlesDir);
             if (!dir.exists()) {
@@ -314,39 +377,64 @@ public class GenerationTaskScheduler {
     }
 
     /**
-     * 构建第二步提示词：根据正文生成章节标题及插入位置
+     * 标题合并结果
+     */
+    private static class TitleMergeResult {
+        final String content;
+        final String keyword;
+
+        TitleMergeResult(String content, String keyword) {
+            this.content = content;
+            this.keyword = keyword;
+        }
+    }
+
+    /**
+     * 构建第二步提示词：根据正文生成章节标题及插入位置，同时提取文章关键词
      */
     private String buildTitlePrompt(String content) {
-        return "请根据以下文章内容，生成1~3个适合用作章节小标题的标题，并指出每个标题应该插在正文第几段之前。\n\n"
+        return "请根据以下文章内容，生成1~3个适合用作章节小标题的标题，并指出每个标题应该插在正文第几段之前。同时给出一个总结文章主题的关键词（用于搜索配图），关键词尽量简洁，不超过10个字。\n\n"
             + "要求：\n"
-            + "1. 输出格式必须是纯JSON数组，不要加markdown代码块标记\n"
-            + "2. 每个元素包含：\n"
-            + "   - \"title\": 标题文字（不要加<h3>标签）\n"
-            + "   - \"position\": 插入位置，表示该标题应放在第几段正文之前（从1开始计数）\n"
+            + "1. 输出格式必须是纯JSON对象，不要加markdown代码块标记\n"
+            + "2. JSON对象包含两个字段：\n"
+            + "   - \"titles\": JSON数组，每个元素包含：\n"
+            + "       - \"title\": 标题文字（不要加<h3>标签）\n"
+            + "       - \"position\": 插入位置，表示该标题应放在第几段正文之前（从1开始计数）\n"
+            + "   - \"keyword\": 文章主题关键词，用于搜索配图\n"
             + "3. 标题数量根据文章内容决定，1~3个\n"
-            + "4. 只输出JSON数组，不要输出任何其他文字\n\n"
-            + "示例：[{\"title\":\"为什么习惯如此重要\",\"position\":3},{\"title\":\"如何改变旧习惯\",\"position\":6}]\n\n"
+            + "4. 只输出JSON对象，不要输出任何其他文字\n\n"
+            + "示例：{\"titles\":[{\"title\":\"为什么习惯如此重要\",\"position\":3},{\"title\":\"如何改变旧习惯\",\"position\":6}],\"keyword\":\"习惯养成\"}\n\n"
             + "文章内容：\n" + content;
     }
 
     /**
-     * 将 LLM 返回的标题 JSON 按 position 插入到正文对应段落之前
+     * 将 LLM 返回的标题 JSON 按 position 插入到正文对应段落之前，同时提取关键词
      */
-    private String mergeTitlesIntoContent(String content, String titleResponse) {
+    private TitleMergeResult mergeTitlesIntoContent(String content, String titleResponse) {
         try {
-            // 1. 提取 JSON 数组
-            String json = extractJsonArray(titleResponse);
+            // 1. 提取 JSON
+            String json = extractJson(titleResponse);
             if (json == null || json.isEmpty()) {
                 log.warn("[GenerationTaskScheduler] 无法从标题响应中提取JSON，将标题放在文章最前面");
-                return titleResponse + "\n\n" + content;
+                return new TitleMergeResult(titleResponse + "\n\n" + content, null);
             }
 
             ObjectMapper mapper = new ObjectMapper();
-            List<Map<String, Object>> titles = mapper.readValue(json,
-                mapper.getTypeFactory().constructCollectionType(List.class, Map.class));
-            if (titles == null || titles.isEmpty()) {
+            Map<String, Object> root = mapper.readValue(json, Map.class);
+            if (root == null) {
                 log.warn("[GenerationTaskScheduler] 标题JSON解析为空，跳过插入");
-                return content;
+                return new TitleMergeResult(content, null);
+            }
+
+            String keyword = root.get("keyword") != null ? root.get("keyword").toString().trim() : null;
+            Object titlesObj = root.get("titles");
+            List<Map<String, Object>> titles = new ArrayList<>();
+            if (titlesObj instanceof List) {
+                titles = (List<Map<String, Object>>) titlesObj;
+            }
+            if (titles.isEmpty()) {
+                log.warn("[GenerationTaskScheduler] 标题数组为空，跳过插入");
+                return new TitleMergeResult(content, keyword);
             }
 
             // 2. 按 position 排序
@@ -399,22 +487,227 @@ public class GenerationTaskScheduler {
                 titleIndex++;
             }
 
-            return sb.toString();
+            return new TitleMergeResult(sb.toString(), keyword);
         } catch (Exception e) {
             log.warn("[GenerationTaskScheduler] 标题插入失败，fallback到放在文章最前面: {}", e.getMessage());
-            return titleResponse + "\n\n" + content;
+            return new TitleMergeResult(titleResponse + "\n\n" + content, null);
         }
     }
 
-    private static final Pattern JSON_ARRAY_PATTERN = Pattern.compile("\\[.*\\]", Pattern.DOTALL);
+    private static final Pattern JSON_PATTERN = Pattern.compile("[\\{\\[].*[\\}\\]]", Pattern.DOTALL);
 
-    private String extractJsonArray(String text) {
+    private String extractJson(String text) {
         if (text == null || text.isEmpty()) return null;
-        // 尝试直接找到JSON数组（支持多行）
-        Matcher matcher = JSON_ARRAY_PATTERN.matcher(text);
+        Matcher matcher = JSON_PATTERN.matcher(text);
         if (matcher.find()) {
             return matcher.group();
         }
         return null;
+    }
+
+    /**
+     * 将图片标记随机插入到文章前50%的某个普通段落之后（独占一个段落，前后换行）
+     */
+    private String insertImageIntoContent(String content, com.example.blogger.entity.ImageLibrary image) {
+        if (content == null || content.isEmpty() || image == null || image.getUrl() == null) {
+            return content;
+        }
+        String[] paragraphs = content.split("\n\n+");
+        if (paragraphs.length == 0) return content;
+
+        int half = Math.max(1, (paragraphs.length + 1) / 2);
+        // 收集前50%中的普通段落索引（排除标题和空段落）
+        List<Integer> normalIndices = new ArrayList<>();
+        for (int i = 0; i < half; i++) {
+            String p = paragraphs[i].trim();
+            if (!p.isEmpty() && !p.startsWith("<h3>") && !p.startsWith("<h1>")) {
+                normalIndices.add(i);
+            }
+        }
+        if (normalIndices.isEmpty()) {
+            // 退而求其次，找任意非空段落
+            for (int i = 0; i < half; i++) {
+                if (!paragraphs[i].trim().isEmpty()) {
+                    normalIndices.add(i);
+                    break;
+                }
+            }
+        }
+        if (normalIndices.isEmpty()) return content;
+
+        int targetIndex = normalIndices.get((int) (Math.random() * normalIndices.size()));
+        String imgTag = "<img src=\"" + image.getUrl() + "\">";
+
+        // 在目标段落之后插入一个独立的图片段落
+        List<String> newParagraphs = new ArrayList<>(Arrays.asList(paragraphs));
+        newParagraphs.add(targetIndex + 1, imgTag);
+        return String.join("\n\n", newParagraphs);
+    }
+
+    /**
+     * 根据关键字调用 Python 脚本从百度下载图片，成功则保存到图片库并返回。
+     * 只接受 baidu- 开头的图片（排除 picsum 回退）。
+     */
+    private com.example.blogger.entity.ImageLibrary downloadImageByKeyword(String keyword, String trackId, String trackName) {
+        String scriptPath = resolveScriptPath();
+        if (scriptPath == null) {
+            log.warn("[GenerationTaskScheduler] 找不到下载脚本");
+            return null;
+        }
+
+        String tempDirName = java.util.UUID.randomUUID().toString().replace("-", "");
+        Path tempOutputDir = Paths.get(System.getProperty("user.dir"), "uploads", "temp_downloads", tempDirName);
+        try {
+            Files.createDirectories(tempOutputDir);
+        } catch (Exception e) {
+            log.warn("[GenerationTaskScheduler] 创建临时下载目录失败: {}", e.getMessage());
+            return null;
+        }
+
+        List<String> command = new ArrayList<>();
+        command.add("python3");
+        command.add(scriptPath);
+        command.add(tempOutputDir.toString());
+        command.add("--count");
+        command.add("1");
+        command.add("--source");
+        command.add("baidu");
+        command.add("--category");
+        command.add(trackName);
+        command.add("--keyword");
+        command.add(keyword);
+
+        log.info("[GenerationTaskScheduler] 执行关键字图片下载: {}", String.join(" ", command));
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            StringBuilder output = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append("\n");
+                }
+            }
+
+            boolean finished = process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                log.warn("[GenerationTaskScheduler] 关键字图片下载超时");
+                return null;
+            }
+
+            int exitCode = process.exitValue();
+            String stdout = output.toString();
+            if (exitCode != 0) {
+                log.warn("[GenerationTaskScheduler] 关键字图片下载脚本失败, exitCode={}, stdout={}", exitCode, stdout);
+                return null;
+            }
+
+            // 查找 baidu- 开头的图片文件（排除 picsum 回退）
+            Path categoryDir = tempOutputDir.resolve(trackName);
+            if (!Files.exists(categoryDir) || !Files.isDirectory(categoryDir)) {
+                log.warn("[GenerationTaskScheduler] 下载目录不存在: {}", categoryDir);
+                return null;
+            }
+
+            Path targetImage = null;
+            try (Stream<Path> paths = Files.list(categoryDir)) {
+                targetImage = paths
+                    .filter(p -> {
+                        String name = p.getFileName().toString().toLowerCase();
+                        return name.startsWith("baidu-") && (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png"));
+                    })
+                    .findFirst()
+                    .orElse(null);
+            }
+
+            if (targetImage == null) {
+                log.warn("[GenerationTaskScheduler] 未找到百度来源的图片文件，可能搜索无结果或回退到了picsum");
+                return null;
+            }
+
+            // 复制到 uploads/images/
+            String uploadDir = System.getProperty("user.dir") + "/uploads/images/";
+            Path uploadPath = Paths.get(uploadDir);
+            if (!Files.exists(uploadPath)) {
+                Files.createDirectories(uploadPath);
+            }
+
+            String ext = "";
+            String originalName = targetImage.getFileName().toString();
+            if (originalName.contains(".")) {
+                ext = originalName.substring(originalName.lastIndexOf("."));
+            } else {
+                ext = ".jpg";
+            }
+            String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+            int randomNum = (int) (Math.random() * 10000);
+            String newName = "baidu-" + timestamp + String.format("%04d", randomNum) + ext;
+
+            // 极小概率重名检查
+            com.example.blogger.entity.ImageLibrary existing = imageLibraryMapper.findByName(newName);
+            if (existing != null) {
+                newName = "baidu-" + timestamp + String.format("%04d", (int) (Math.random() * 10000)) + ext;
+            }
+
+            String fileName = java.util.UUID.randomUUID().toString().replace("-", "") + ext;
+            Path destPath = uploadPath.resolve(fileName);
+            Files.copy(targetImage, destPath, StandardCopyOption.REPLACE_EXISTING);
+
+            com.example.blogger.entity.ImageLibrary image = new com.example.blogger.entity.ImageLibrary();
+            image.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
+            image.setName(newName);
+            image.setUrl("/uploads/images/" + fileName);
+            image.setCategories(new ObjectMapper().writeValueAsString(Collections.singletonList(trackId)));
+            imageLibraryMapper.insert(image);
+
+            log.info("[GenerationTaskScheduler] 关键字图片下载成功: name={}, url={}", newName, image.getUrl());
+            return image;
+        } catch (Exception e) {
+            log.warn("[GenerationTaskScheduler] 关键字图片下载异常: {}", e.getMessage());
+            return null;
+        } finally {
+            // 清理临时目录
+            try {
+                deleteDirectory(tempOutputDir);
+            } catch (Exception e) {
+                log.warn("[GenerationTaskScheduler] 清理临时目录失败: {}", e.getMessage());
+            }
+        }
+    }
+
+    private String resolveScriptPath() {
+        Path directPath = Paths.get(System.getProperty("user.dir"), "src", "main", "resources", "py", "download_category_images.py");
+        if (Files.exists(directPath)) {
+            return directPath.toString();
+        }
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream("py/download_category_images.py")) {
+            if (is != null) {
+                Path tempScript = Files.createTempFile("download_category_images", ".py");
+                Files.copy(is, tempScript, StandardCopyOption.REPLACE_EXISTING);
+                tempScript.toFile().deleteOnExit();
+                return tempScript.toString();
+            }
+        } catch (Exception e) {
+            log.warn("[GenerationTaskScheduler] 从 classpath 读取脚本失败: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private void deleteDirectory(Path dir) throws Exception {
+        if (!Files.exists(dir)) return;
+        try (Stream<Path> paths = Files.walk(dir)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.delete(p);
+                } catch (Exception e) {
+                    log.warn("[GenerationTaskScheduler] 删除文件失败: {}", e.getMessage());
+                }
+            });
+        }
     }
 }

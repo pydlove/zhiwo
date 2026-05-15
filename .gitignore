@@ -64,3 +64,7 @@ Thumbs.db
 /services/admin-backend/uploads/articles/
 /services/admin-backend/uploads/
 /services/admin-backend/tmp/
+/services/admin-backend/tmp/
+/export/
+/logs/
+/export/

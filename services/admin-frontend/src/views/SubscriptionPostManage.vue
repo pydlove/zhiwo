@@ -237,11 +237,12 @@ async function handlePreviewFile(record) {
   previewContent.value = ''
 
   const type = previewFileType.value
+  const cacheBustUrl = record.fileUrl + (record.fileUrl.includes('?') ? '&' : '?') + '_t=' + Date.now()
   if (type === 'text') {
     previewModalOpen.value = true
     previewLoading.value = true
     try {
-      const res = await fetch(record.fileUrl)
+      const res = await fetch(cacheBustUrl)
       const text = await res.text()
       previewContent.value = text
     } catch (e) {
@@ -257,7 +258,7 @@ async function handlePreviewFile(record) {
     previewLoading.value = true
     setTimeout(async () => {
       try {
-        const res = await fetch(record.fileUrl)
+        const res = await fetch(cacheBustUrl)
         const blob = await res.blob()
         if (blob.size === 0) {
           throw new Error('文件内容为空')

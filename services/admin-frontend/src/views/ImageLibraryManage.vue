@@ -1,8 +1,8 @@
 <script setup>
 import { ref, onMounted, computed, nextTick } from 'vue'
-import { Input, Select, Button, Modal, Form, message, Popconfirm, Empty, Upload, Image } from 'ant-design-vue'
+import { Input, Select, Button, Modal, Form, message, Popconfirm, Empty, Upload, Image as AImage, Pagination } from 'ant-design-vue'
 import { InboxOutlined, DeleteOutlined, FileImageOutlined, EditOutlined } from '@ant-design/icons-vue'
-import { listImages, uploadImage, deleteImage, updateImage } from '../api/imageLibrary.js'
+import { listImages, uploadImage, deleteImage, updateImage, downloadImages } from '../api/imageLibrary.js'
 import { listTracks } from '../api/track.js'
 
 const images = ref([])
@@ -10,6 +10,9 @@ const tracks = ref([])
 const loading = ref(false)
 const keyword = ref('')
 const categoryFilter = ref([])
+const currentPage = ref(1)
+const pageSize = ref(20)
+const totalCount = ref(0)
 
 const uploadModalOpen = ref(false)
 const uploadFiles = ref([])
@@ -21,6 +24,22 @@ const editModalOpen = ref(false)
 const editingImage = ref(null)
 const editCategories = ref([])
 const editSaving = ref(false)
+
+// 下载图片
+const downloadModalOpen = ref(false)
+const downloadSource = ref('picsum')
+const downloadCount = ref(15)
+const downloadTrackId = ref(null)
+const downloading = ref(false)
+
+const sourceOptions = [
+  { label: 'Picsum (稳定随机)', value: 'picsum' },
+  { label: 'Unsplash (按主题)', value: 'unsplash' },
+  { label: 'Mixed (混合)', value: 'mixed' },
+  { label: '必应壁纸 (国内CDN)', value: 'bing' },
+  { label: '百度图片 (中文内容)', value: 'baidu' },
+]
+
 const sourceCanvasRef = ref(null)
 const previewCanvasRef = ref(null)
 const cropRect = ref({ x: 0, y: 0, w: 0, h: 0 })
@@ -64,14 +83,20 @@ function getTrackNames(categoriesJson) {
 
 function fetchImages() {
   loading.value = true
-  const params = {}
+  const params = { page: currentPage.value, pageSize: pageSize.value }
   if (keyword.value.trim()) params.keyword = keyword.value.trim()
   if (categoryFilter.value && categoryFilter.value.length > 0) {
     params.category = JSON.stringify(categoryFilter.value)
   }
   listImages(params)
     .then(res => {
-      images.value = res || []
+      if (res && Array.isArray(res.list)) {
+        images.value = res.list
+        totalCount.value = res.total || 0
+      } else {
+        images.value = res || []
+        totalCount.value = res?.length || 0
+      }
     })
     .catch(() => {
       message.error('加载图片库失败')
@@ -81,11 +106,18 @@ function fetchImages() {
     })
 }
 
+function onPageChange(page) {
+  currentPage.value = page
+  fetchImages()
+}
+
 function onSearch() {
+  currentPage.value = 1
   fetchImages()
 }
 
 function onCategoryChange() {
+  currentPage.value = 1
   fetchImages()
 }
 
@@ -93,6 +125,45 @@ function openUploadModal() {
   uploadModalOpen.value = true
   uploadFiles.value = []
   uploadCategories.value = []
+}
+
+function openDownloadModal() {
+  downloadModalOpen.value = true
+  downloadSource.value = 'picsum'
+  downloadCount.value = 15
+  downloadTrackId.value = null
+}
+
+async function handleDownloadImages() {
+  if (!downloadTrackId.value) {
+    message.warning('请选择赛道')
+    return
+  }
+  if (!downloadCount.value || downloadCount.value < 1 || downloadCount.value > 50) {
+    message.warning('数量必须在 1-50 之间')
+    return
+  }
+  downloading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('source', downloadSource.value)
+    formData.append('count', String(downloadCount.value))
+    formData.append('trackId', downloadTrackId.value)
+    const res = await downloadImages(formData)
+    const importedCount = res?.importedCount || 0
+    const failedCount = res?.failedCount || 0
+    let msg = `下载导入完成：成功 ${importedCount} 张`
+    if (failedCount > 0) {
+      msg += `，失败 ${failedCount} 张`
+    }
+    message.success(msg)
+    downloadModalOpen.value = false
+    fetchImages()
+  } catch (e) {
+    message.error(e?.message || '下载失败')
+  } finally {
+    downloading.value = false
+  }
 }
 
 function handleAddFiles(info) {
@@ -122,8 +193,15 @@ async function handleUpload() {
   }
   uploading.value = true
   try {
-    await uploadImage(formData)
-    message.success(`成功上传 ${uploadFiles.value.length} 张图片`)
+    const res = await uploadImage(formData)
+    const uploadedCount = res?.uploadedCount || 0
+    const skippedCount = res?.skippedCount || 0
+    const skippedNames = res?.skippedNames || []
+    let msg = `成功上传 ${uploadedCount} 张图片`
+    if (skippedCount > 0) {
+      msg += `，跳过 ${skippedCount} 张重复图片（${skippedNames.join('、')}）`
+    }
+    message.success(msg)
     uploadModalOpen.value = false
     uploadFiles.value = []
     fetchImages()
@@ -389,21 +467,31 @@ function onMouseUp() {
 }
 
 async function handleEditSave() {
-  const pCanvas = previewCanvasRef.value
-  if (!pCanvas || cropRect.value.w <= 0 || cropRect.value.h <= 0) {
+  if (!imgObj.value || cropRect.value.w <= 0 || cropRect.value.h <= 0) {
     message.warning('请先选择裁剪区域')
     return
   }
   editSaving.value = true
   try {
-    // 根据原图格式决定输出格式，默认 png
+    const { x, y, w, h } = cropRect.value
+    const srcX = x / scaleFactor.value
+    const srcY = y / scaleFactor.value
+    const srcW = w / scaleFactor.value
+    const srcH = h / scaleFactor.value
+
+    const exportCanvas = document.createElement('canvas')
+    exportCanvas.width = Math.round(srcW)
+    exportCanvas.height = Math.round(srcH)
+    const ctx = exportCanvas.getContext('2d')
+    ctx.drawImage(imgObj.value, srcX, srcY, srcW, srcH, 0, 0, exportCanvas.width, exportCanvas.height)
+
     const originalName = (editingImage.value && editingImage.value.name) || 'cropped.png'
     const extMatch = originalName.toLowerCase().match(/\.(jpe?g|png|webp)$/)
     const ext = extMatch ? extMatch[0] : '.png'
     const mime = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png'
     const blob = await new Promise((resolve, reject) => {
       try {
-        pCanvas.toBlob((b) => {
+        exportCanvas.toBlob((b) => {
           if (b) resolve(b)
           else reject(new Error('裁剪失败'))
         }, mime)
@@ -462,6 +550,7 @@ onMounted(() => {
       />
       <Button type="primary" @click="onSearch">搜索</Button>
       <Button style="margin-left: auto;" type="primary" @click="openUploadModal">上传图片</Button>
+      <Button @click="openDownloadModal">下载图片</Button>
     </div>
 
     <div v-if="loading" style="text-align: center; padding: 40px;">
@@ -479,7 +568,7 @@ onMounted(() => {
         style="border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; background: #fff; position: relative;"
       >
         <div style="width: 100%; aspect-ratio: 16/10; overflow: hidden; background: #f5f5f5; display: flex; align-items: center; justify-content: center;">
-          <Image :src="img.url" :preview="true" style="width: 100%; height: 100%; object-fit: cover;" />
+          <AImage :src="img.url" :preview="true" style="width: 100%; height: 100%; object-fit: cover;" />
         </div>
         <div style="padding: 10px 12px;">
           <div style="font-size: 13px; color: #333; margin-bottom: 6px; word-break: break-all; line-height: 1.4;">
@@ -510,6 +599,18 @@ onMounted(() => {
           </div>
         </div>
       </div>
+    </div>
+
+    <div v-if="totalCount > 0" style="display: flex; justify-content: flex-end; margin-top: 16px;">
+      <Pagination
+        v-model:current="currentPage"
+        v-model:pageSize="pageSize"
+        :total="totalCount"
+        :pageSizeOptions="['20', '40', '60']"
+        show-size-changer
+        @change="onPageChange"
+        @showSizeChange="onPageChange"
+      />
     </div>
 
     <Modal
@@ -626,6 +727,48 @@ onMounted(() => {
             style="width: 100%;"
             allowClear
           />
+        </Form.Item>
+      </Form>
+    </Modal>
+
+    <!-- 下载图片弹窗 -->
+    <Modal
+      v-model:open="downloadModalOpen"
+      title="下载图片"
+      :maskClosable="false"
+      :confirm-loading="downloading"
+      @ok="handleDownloadImages"
+      width="480"
+    >
+      <Form layout="vertical" style="margin-top: 12px;">
+        <Form.Item label="图片来源" required>
+          <Select
+            v-model:value="downloadSource"
+            :options="sourceOptions"
+            style="width: 100%;"
+          />
+        </Form.Item>
+        <Form.Item label="赛道" required>
+          <Select
+            show-search
+            v-model:value="downloadTrackId"
+            :options="trackOptions"
+            placeholder="请选择赛道"
+            style="width: 100%;"
+            allowClear
+          />
+        </Form.Item>
+        <Form.Item label="下载数量" required>
+          <Input
+            v-model:value="downloadCount"
+            type="number"
+            min="1"
+            max="50"
+            style="width: 100%;"
+          />
+          <div style="font-size: 12px; color: #999; margin-top: 4px;">
+            默认15张，范围 1-50
+          </div>
         </Form.Item>
       </Form>
     </Modal>

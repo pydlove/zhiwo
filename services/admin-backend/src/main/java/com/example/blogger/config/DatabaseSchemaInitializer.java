@@ -139,6 +139,9 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
 
             ensureColumn(conn, "tu_title_generate_task", "inserted_count",
                 "ALTER TABLE tu_title_generate_task ADD COLUMN inserted_count INT DEFAULT 0 COMMENT '成功插入标题数量'");
+
+            ensureColumn(conn, "tu_image_library", "updated_at",
+                "ALTER TABLE tu_image_library ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'");
         } catch (Exception e) {
             log.error("[DatabaseSchemaInitializer] 数据库连接失败: {}", e.getMessage(), e);
         }

@@ -75,8 +75,12 @@ public class TitleGenerationTaskService {
         taskMapper.updateProcessStartedAt(id, processStartedAt);
     }
 
-    public List<TitleGenerationTask> listTasks(String keyword, String status) {
-        return taskMapper.findAllWithSearch(keyword, status);
+    public List<TitleGenerationTask> listTasks(String keyword, String status, int limit, int offset) {
+        return taskMapper.findAllWithSearch(keyword, status, limit, offset);
+    }
+
+    public int countTasks(String keyword, String status) {
+        return taskMapper.countWithSearch(keyword, status);
     }
 
     public boolean cancelTask(String id) {

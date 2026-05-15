@@ -1,11 +1,18 @@
 package com.example.blogger.util;
 
+import org.apache.poi.util.Units;
 import org.apache.poi.xwpf.usermodel.*;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTColor;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTFonts;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -13,6 +20,7 @@ import java.util.regex.Pattern;
 @Component
 public class DocxGenerator {
 
+    private static final Logger log = LoggerFactory.getLogger(DocxGenerator.class);
     private static final String HIGHLIGHT_COLOR = "fa541c";
     private static final int DEFAULT_H3_FONT_SIZE = 16; // 16pt
     private static final int DEFAULT_NORMAL_FONT_SIZE = 12; // 12pt
@@ -20,6 +28,7 @@ public class DocxGenerator {
     private static final Pattern H1_PATTERN = Pattern.compile("<h1[^>]*>(.*?)</h1>");
     private static final Pattern H3_PATTERN = Pattern.compile("<h3[^>]*>(.*?)</h3>");
     private static final Pattern S_PATTERN = Pattern.compile("<s>(.*?)</s>");
+    private static final Pattern IMG_PATTERN = Pattern.compile("<img\\s+src=\"([^\"]+)\"[^>]*>");
 
     /**
      * 将文章内容写入 DOCX 文件（使用默认主题色和字号）
@@ -80,6 +89,14 @@ public class DocxGenerator {
                 // 跳过 <h1> 文章标题段落（标题已体现在文件名中）
                 Matcher h1Matcher = H1_PATTERN.matcher(trimmed);
                 if (h1Matcher.matches()) {
+                    continue;
+                }
+
+                // 检查是否是 <img> 图片段落
+                Matcher imgMatcher = IMG_PATTERN.matcher(trimmed);
+                if (imgMatcher.matches()) {
+                    String src = imgMatcher.group(1);
+                    addImageParagraph(document, src);
                     continue;
                 }
 
@@ -164,7 +181,6 @@ public class DocxGenerator {
         p.setAlignment(ParagraphAlignment.BOTH);
 
         // 解析 <s> 标签，将文本分段
-        // 使用正则找到所有 <s>...</s> 和普通文本的混合
         int lastEnd = 0;
         Matcher sMatcher = S_PATTERN.matcher(text);
 
@@ -202,7 +218,46 @@ public class DocxGenerator {
                 setRunFont(remainingRun);
             }
         }
+    }
 
+    private void addImageParagraph(XWPFDocument document, String imageUrl) {
+        XWPFParagraph p = document.createParagraph();
+        p.setAlignment(ParagraphAlignment.CENTER);
+        try {
+            String imagePath = System.getProperty("user.dir") + imageUrl;
+            File imageFile = new File(imagePath);
+            if (!imageFile.exists()) {
+                log.warn("[DocxGenerator] 图片文件不存在: {}", imagePath);
+                return;
+            }
+            BufferedImage bufferedImage = ImageIO.read(imageFile);
+            if (bufferedImage == null) {
+                log.warn("[DocxGenerator] 无法读取图片: {}", imagePath);
+                return;
+            }
+            int maxWidthPt = 400;
+            int imgWidth = bufferedImage.getWidth();
+            int imgHeight = bufferedImage.getHeight();
+            double ratio = (double) imgHeight / imgWidth;
+            int widthEMU = Units.toEMU(maxWidthPt);
+            int heightEMU = Units.toEMU((int) (maxWidthPt * ratio));
+            XWPFRun imageRun = p.createRun();
+            try (FileInputStream fis = new FileInputStream(imageFile)) {
+                int format = getImageFormat(imageFile.getName());
+                imageRun.addPicture(fis, format, imageFile.getName(), widthEMU, heightEMU);
+            }
+        } catch (Exception e) {
+            log.warn("[DocxGenerator] 插入图片失败: {}", e.getMessage());
+        }
+    }
+
+    private int getImageFormat(String fileName) {
+        String lower = fileName.toLowerCase();
+        if (lower.endsWith(".png")) return XWPFDocument.PICTURE_TYPE_PNG;
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return XWPFDocument.PICTURE_TYPE_JPEG;
+        if (lower.endsWith(".gif")) return XWPFDocument.PICTURE_TYPE_GIF;
+        if (lower.endsWith(".bmp")) return XWPFDocument.PICTURE_TYPE_BMP;
+        return XWPFDocument.PICTURE_TYPE_JPEG;
     }
 
     private void setRunFont(XWPFRun run) {

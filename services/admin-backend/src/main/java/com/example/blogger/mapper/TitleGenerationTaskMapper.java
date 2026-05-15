@@ -54,7 +54,9 @@ public interface TitleGenerationTaskMapper {
     int countByStatus(@Param("status") String status);
 
     @Select("<script>" +
-            "SELECT * FROM tu_title_generation_task " +
+            "SELECT id, title_library_id, title, status, result_file_url, result_file_name, " +
+            "error_message, created_at, updated_at, processed_at, progress_step, progress_message " +
+            "FROM tu_title_generation_task " +
             "<where>" +
             "<if test=\"keyword != null and keyword != ''\"> AND title LIKE CONCAT('%', #{keyword}, '%') </if>" +
             "<if test=\"status != null and status != ''\"> AND status = #{status} </if>" +
@@ -68,6 +70,7 @@ public interface TitleGenerationTaskMapper {
             "    ELSE 5 " +
             "  END ASC, " +
             "  created_at DESC" +
+            " LIMIT #{limit} OFFSET #{offset} " +
             "</script>")
     @Results(id = "taskResult", value = {
             @Result(property = "id", column = "id"),
@@ -84,5 +87,15 @@ public interface TitleGenerationTaskMapper {
             @Result(property = "progressStep", column = "progress_step"),
             @Result(property = "progressMessage", column = "progress_message")
     })
-    List<TitleGenerationTask> findAllWithSearch(@Param("keyword") String keyword, @Param("status") String status);
+    List<TitleGenerationTask> findAllWithSearch(@Param("keyword") String keyword, @Param("status") String status,
+                                                @Param("limit") int limit, @Param("offset") int offset);
+
+    @Select("<script>" +
+            "SELECT COUNT(*) FROM tu_title_generation_task " +
+            "<where>" +
+            "<if test=\"keyword != null and keyword != ''\"> AND title LIKE CONCAT('%', #{keyword}, '%') </if>" +
+            "<if test=\"status != null and status != ''\"> AND status = #{status} </if>" +
+            "</where>" +
+            "</script>")
+    int countWithSearch(@Param("keyword") String keyword, @Param("status") String status);
 }

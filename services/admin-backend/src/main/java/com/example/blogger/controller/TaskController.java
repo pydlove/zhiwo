@@ -56,8 +56,13 @@ public class TaskController {
     @GetMapping
     public Result<Map<String, Object>> listTasks(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String status) {
-        List<TitleGenerationTask> list = taskService.listTasks(keyword, status);
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        int limit = Math.max(1, Math.min(100, pageSize));
+        int offset = Math.max(0, (page - 1) * limit);
+        List<TitleGenerationTask> list = taskService.listTasks(keyword, status, limit, offset);
+        int total = taskService.countTasks(keyword, status);
         LocalDateTime now = LocalDateTime.now();
         for (TitleGenerationTask task : list) {
             if ("pending".equals(task.getStatus())) {
@@ -81,7 +86,9 @@ public class TaskController {
         }
         Map<String, Object> result = new HashMap<>();
         result.put("list", list);
-        result.put("total", list.size());
+        result.put("total", total);
+        result.put("page", page);
+        result.put("pageSize", limit);
         return Result.ok(result);
     }
 
@@ -162,7 +169,7 @@ public class TaskController {
             if (safeTitle.isEmpty()) {
                 safeTitle = "article_" + task.getTitleLibraryId();
             }
-            String fileName = safeTitle + ".docx";
+            String fileName = safeTitle + "_" + task.getId() + ".docx";
             String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
             File dir = new File(articlesDir);
             if (!dir.exists()) {

@@ -2064,12 +2064,13 @@ async function handlePreviewPost(record) {
   }
 
   try {
+    const cacheBustUrl = fileUrl + (fileUrl.includes('?') ? '&' : '?') + '_t=' + Date.now()
     const type = previewFileType.value
     if (type === 'text') {
-      const res = await fetch(fileUrl)
+      const res = await fetch(cacheBustUrl)
       previewHtmlContent.value = await res.text()
     } else if (type === 'docx') {
-      const res = await fetch(fileUrl)
+      const res = await fetch(cacheBustUrl)
       const blob = await res.blob()
       if (blob.size === 0) {
         throw new Error('文件内容为空')
@@ -2369,6 +2370,11 @@ onMounted(() => {
     searchKeyword.value = route.query.keyword
     currentPage.value = 1
   }
+  // 如果 URL 带有 recommendDate 查询参数，自动设置推荐日期筛选
+  if (route.query.recommendDate) {
+    searchPushDate.value = dayjs(route.query.recommendDate)
+    currentPage.value = 1
+  }
   loadData()
   loadPanelData()
 })
@@ -2616,7 +2622,7 @@ onMounted(() => {
     title="匹配推荐"
     :confirm-loading="matching"
     @ok="handleMatchConfirm"
-    :width="1100"
+    :width="700"
   >
     <div style="margin-bottom: 12px; display: flex; gap: 12px; align-items: center;">
       <DatePicker v-model:value="matchForm.date" placeholder="推荐日期" @change="() => { localStorage.setItem('matchForm_date', matchForm.date.format('YYYY-MM-DD')); runMatchPreview(); }" />
@@ -2738,7 +2744,7 @@ onMounted(() => {
     title="匹配推荐"
     :confirm-loading="matching"
     @ok="handleMatchConfirm"
-    :width="1100"
+    :width="700"
   >
     <div style="margin-bottom: 12px; display: flex; gap: 12px; align-items: center;">
       <DatePicker v-model:value="matchForm.date" placeholder="推荐日期" @change="() => { localStorage.setItem('matchForm_date', matchForm.date.format('YYYY-MM-DD')); runMatchPreview(); }" />

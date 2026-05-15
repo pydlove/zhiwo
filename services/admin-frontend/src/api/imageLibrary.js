@@ -19,3 +19,9 @@ export function updateImage(id, data) {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }
+
+export function downloadImages(data) {
+  return request.post('/images/download', data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}

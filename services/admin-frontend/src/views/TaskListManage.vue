@@ -13,6 +13,13 @@ const loading = ref(false)
 const keyword = ref('')
 const statusFilter = ref('')
 const actionLoadingId = ref(null)
+const pagination = ref({
+  current: 1,
+  pageSize: 20,
+  total: 0,
+  showSizeChanger: true,
+  pageSizeOptions: ['10', '20', '50'],
+})
 
 const statusOptions = [
   { label: '全部', value: '' },
@@ -36,9 +43,12 @@ function fetchTasks() {
   listTasks({
     keyword: keyword.value || undefined,
     status: statusFilter.value || undefined,
+    page: pagination.value.current,
+    pageSize: pagination.value.pageSize,
   })
     .then(res => {
       tasks.value = res?.list || []
+      pagination.value.total = res?.total || 0
     })
     .catch(() => {
       message.error('加载生成文章任务失败')
@@ -46,6 +56,12 @@ function fetchTasks() {
     .finally(() => {
       loading.value = false
     })
+}
+
+function onTableChange(pager) {
+  pagination.value.current = pager.current
+  pagination.value.pageSize = pager.pageSize
+  fetchTasks()
 }
 
 function onSearch() {
@@ -289,9 +305,10 @@ onMounted(() => {
       :dataSource="tasks"
       :loading="loading"
       rowKey="id"
-      :pagination="{ pageSize: 20 }"
+      :pagination="pagination"
       size="small"
       :scroll="{ x: 1200 }"
+      @change="onTableChange"
     />
   </div>
 </template>

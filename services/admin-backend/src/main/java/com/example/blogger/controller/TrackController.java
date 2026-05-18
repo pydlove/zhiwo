@@ -121,7 +121,7 @@ public class TrackController {
             List<String> mergeIds = ids.stream().filter(id -> !id.equals(targetId)).toList();
 
             int updatedBloggers = 0, updatedTitles = 0, updatedUserTracks = 0;
-            int updatedRecs = 0, updatedDaily = 0, updatedRef = 0, updatedSub = 0;
+            int updatedRecs = 0, updatedDaily = 0, updatedRef = 0;
 
             for (String oldId : mergeIds) {
                 updatedBloggers += stmt.executeUpdate(
@@ -142,9 +142,6 @@ public class TrackController {
                 updatedRef += stmt.executeUpdate(
                     "UPDATE tu_reference_post SET track_id = '" + targetId + "' WHERE track_id = '" + oldId + "'"
                 );
-                updatedSub += stmt.executeUpdate(
-                    "UPDATE tu_subscription_post SET track_id = '" + targetId + "' WHERE track_id = '" + oldId + "'"
-                );
                 // 逻辑删除旧赛道
                 stmt.executeUpdate("UPDATE tu_track SET is_deleted = 1 WHERE id = '" + oldId + "'");
             }
@@ -158,7 +155,6 @@ public class TrackController {
             result.put("updatedRecommendations", updatedRecs);
             result.put("updatedDailyRecommends", updatedDaily);
             result.put("updatedReferencePosts", updatedRef);
-            result.put("updatedSubscriptionPosts", updatedSub);
             return Result.ok(result);
         } catch (Exception e) {
             e.printStackTrace();

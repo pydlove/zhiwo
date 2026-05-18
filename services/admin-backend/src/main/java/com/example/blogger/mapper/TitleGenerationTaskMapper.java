@@ -55,7 +55,7 @@ public interface TitleGenerationTaskMapper {
 
     @Select("<script>" +
             "SELECT id, title_library_id, title, status, result_file_url, result_file_name, " +
-            "error_message, created_at, updated_at, processed_at, progress_step, progress_message " +
+            "error_message, created_at, updated_at, processed_at, process_started_at, progress_step, progress_message " +
             "FROM tu_title_generation_task " +
             "<where>" +
             "<if test=\"keyword != null and keyword != ''\"> AND title LIKE CONCAT('%', #{keyword}, '%') </if>" +
@@ -84,6 +84,7 @@ public interface TitleGenerationTaskMapper {
             @Result(property = "createdAt", column = "created_at"),
             @Result(property = "updatedAt", column = "updated_at"),
             @Result(property = "processedAt", column = "processed_at"),
+            @Result(property = "processStartedAt", column = "process_started_at"),
             @Result(property = "progressStep", column = "progress_step"),
             @Result(property = "progressMessage", column = "progress_message")
     })

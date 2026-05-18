@@ -98,7 +98,7 @@ function handleReset() {
 // ---- 操作 ----
 async function handleMarkUsed(record) {
   try {
-    const isUsed = record.isUsed === 1 || !!(record.subscriptionPostId)
+    const isUsed = record.isUsed === 1
     await markTitleUsed(record.id)
     message.success(isUsed ? '已取消使用' : '已标记使用')
     loadData()
@@ -152,7 +152,7 @@ const columns = [
     title: '标题内容',
     key: 'title',
     customRender: ({ record }) => {
-      const isUsed = record.isUsed === 1 || !!(record.subscriptionPostId)
+      const isUsed = record.isUsed === 1
       return h('div', {
         style: 'display: flex; align-items: center; gap: 8px;'
       }, [
@@ -187,7 +187,7 @@ const columns = [
     width: 90,
     align: 'center',
     customRender: ({ record }) => {
-      const isUsed = record.isUsed === 1 || !!(record.subscriptionPostId)
+      const isUsed = record.isUsed === 1
       return h(Tag, { color: isUsed ? 'green' : 'default' }, () => isUsed ? '已使用' : '未使用')
     },
   },

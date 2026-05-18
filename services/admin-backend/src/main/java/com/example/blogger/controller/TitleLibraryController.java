@@ -9,7 +9,6 @@ import com.example.blogger.entity.UserTrack;
 import com.example.blogger.entity.*;
 import com.example.blogger.mapper.*;
 import com.example.blogger.service.EmailService;
-import com.example.blogger.service.SubscriptionPostService;
 import com.example.blogger.service.TitleLibraryService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -58,11 +57,9 @@ public class TitleLibraryController {
     private final TitleRecommendationMapper titleRecommendationMapper;
     private final DataSource dataSource;
     private final StyleMapper styleMapper;
-    private final SubscriptionPostService subscriptionPostService;
     private final PromptTemplateMapper promptTemplateMapper;
     private final EmailService emailService;
     private final EmailPushLogMapper emailPushLogMapper;
-    private final SubscriptionPostMapper subscriptionPostMapper;
     private final BannedWordMapper bannedWordMapper;
     private final com.example.blogger.service.TitleReviewService titleReviewService;
     private final ArticleFeedbackMapper articleFeedbackMapper;
@@ -73,6 +70,8 @@ public class TitleLibraryController {
     private final DocxGenerator docxGenerator;
     private final com.example.blogger.service.TitleGenerationTaskService titleGenerationTaskService;
     private final com.example.blogger.util.AiFlavorRemover aiFlavorRemover;
+    private final UserHomogeneityMapper userHomogeneityMapper;
+    private final TitleLibraryMapper titleLibraryMapper;
 
     @Value("${app.script.replace-periods-path}")
     private String replacePeriodsScriptPath;
@@ -108,11 +107,9 @@ public class TitleLibraryController {
                                   TitleRecommendationMapper titleRecommendationMapper,
                                   DataSource dataSource,
                                   StyleMapper styleMapper,
-                                  SubscriptionPostService subscriptionPostService,
                                   PromptTemplateMapper promptTemplateMapper,
                                   EmailService emailService,
                                   EmailPushLogMapper emailPushLogMapper,
-                                  SubscriptionPostMapper subscriptionPostMapper,
                                   BannedWordMapper bannedWordMapper,
                                   com.example.blogger.service.TitleReviewService titleReviewService,
                                   ArticleFeedbackMapper articleFeedbackMapper,
@@ -122,7 +119,9 @@ public class TitleLibraryController {
                                   LLMService llmService,
                                   DocxGenerator docxGenerator,
                                   com.example.blogger.service.TitleGenerationTaskService titleGenerationTaskService,
-                                  com.example.blogger.util.AiFlavorRemover aiFlavorRemover) {
+                                  com.example.blogger.util.AiFlavorRemover aiFlavorRemover,
+                                  UserHomogeneityMapper userHomogeneityMapper,
+                                  TitleLibraryMapper titleLibraryMapper) {
         this.titleLibraryService = titleLibraryService;
         this.trackMapper = trackMapper;
         this.userMapper = userMapper;
@@ -130,11 +129,9 @@ public class TitleLibraryController {
         this.titleRecommendationMapper = titleRecommendationMapper;
         this.dataSource = dataSource;
         this.styleMapper = styleMapper;
-        this.subscriptionPostService = subscriptionPostService;
         this.promptTemplateMapper = promptTemplateMapper;
         this.emailService = emailService;
         this.emailPushLogMapper = emailPushLogMapper;
-        this.subscriptionPostMapper = subscriptionPostMapper;
         this.bannedWordMapper = bannedWordMapper;
         this.titleReviewService = titleReviewService;
         this.articleFeedbackMapper = articleFeedbackMapper;
@@ -145,6 +142,25 @@ public class TitleLibraryController {
         this.docxGenerator = docxGenerator;
         this.titleGenerationTaskService = titleGenerationTaskService;
         this.aiFlavorRemover = aiFlavorRemover;
+        this.userHomogeneityMapper = userHomogeneityMapper;
+        this.titleLibraryMapper = titleLibraryMapper;
+    }
+
+    private java.util.List<File> resolveImagePostFiles(String imagePostUrls) {
+        java.util.List<File> files = new java.util.ArrayList<>();
+        if (imagePostUrls == null || imagePostUrls.isEmpty()) return files;
+        try {
+            java.util.List<String> urls = new ObjectMapper().readValue(imagePostUrls,
+                    new com.fasterxml.jackson.core.type.TypeReference<java.util.List<String>>() {});
+            for (String url : urls) {
+                String path = url.startsWith("/") ? System.getProperty("user.dir") + url : url;
+                File f = new File(path);
+                if (f.exists()) files.add(f);
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        return files;
     }
 
     @PostConstruct
@@ -157,38 +173,6 @@ public class TitleLibraryController {
             }
         } catch (SQLException e) {
             System.err.println("Migration check failed: " + e.getMessage());
-        }
-    }
-
-    @PostConstruct
-    public void migrateSubscriptionPostIdColumn() {
-        try (Connection conn = dataSource.getConnection();
-             java.sql.Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SHOW COLUMNS FROM tu_title_recommendation LIKE 'subscription_post_id'")) {
-            if (!rs.next()) {
-                conn.createStatement().execute("ALTER TABLE tu_title_recommendation ADD COLUMN subscription_post_id VARCHAR(64) NULL COMMENT '关联的订阅文章ID'");
-                conn.createStatement().execute("CREATE INDEX idx_title_recommendation_post_id ON tu_title_recommendation(subscription_post_id)");
-                System.out.println("Migration applied: added subscription_post_id column to tu_title_recommendation");
-            }
-        } catch (SQLException e) {
-            System.err.println("Migration check failed for subscription_post_id: " + e.getMessage());
-        }
-    }
-
-    @PostConstruct
-    public void migrateSubscriptionPostDescriptionColumn() {
-        try (Connection conn = dataSource.getConnection();
-             java.sql.Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SHOW COLUMNS FROM tu_subscription_post LIKE 'description'")) {
-            if (rs.next()) {
-                String type = rs.getString("Type");
-                if (type != null && (type.toLowerCase().contains("varchar") || type.toLowerCase().contains("char"))) {
-                    conn.createStatement().execute("ALTER TABLE tu_subscription_post MODIFY COLUMN description TEXT COMMENT '文章描述/内容'");
-                    System.out.println("Migration applied: changed tu_subscription_post.description to TEXT");
-                }
-            }
-        } catch (SQLException e) {
-            System.err.println("Migration check failed for subscription_post.description: " + e.getMessage());
         }
     }
 
@@ -509,25 +493,25 @@ public class TitleLibraryController {
             ResultSet rs1 = stmt.executeQuery("SELECT COUNT(*) as cnt FROM tu_title_recommendation");
             if (rs1.next()) result.put("totalRecommendations", rs1.getInt("cnt"));
 
-            // Count by subscription_post_id status
+            // Count by generated_file_url status (via title_library)
             ResultSet rs2 = stmt.executeQuery(
                 "SELECT " +
-                "  COUNT(CASE WHEN subscription_post_id IS NULL THEN 1 END) as null_count, " +
-                "  COUNT(CASE WHEN subscription_post_id = '' THEN 1 END) as empty_count, " +
-                "  COUNT(CASE WHEN subscription_post_id IS NOT NULL AND subscription_post_id != '' THEN 1 END) as has_post_count " +
-                "FROM tu_title_recommendation");
+                "  COUNT(CASE WHEN t.generated_file_url IS NULL THEN 1 END) as null_count, " +
+                "  COUNT(CASE WHEN t.generated_file_url = '' THEN 1 END) as empty_count, " +
+                "  COUNT(CASE WHEN t.generated_file_url IS NOT NULL AND t.generated_file_url != '' THEN 1 END) as has_post_count " +
+                "FROM tu_title_recommendation r LEFT JOIN tu_title_library t ON r.title_library_id = t.id");
             if (rs2.next()) {
                 result.put("nullCount", rs2.getInt("null_count"));
                 result.put("emptyCount", rs2.getInt("empty_count"));
                 result.put("hasPostCount", rs2.getInt("has_post_count"));
             }
 
-            // Show sample records without post
+            // Show sample records without generated file
             ResultSet rs3 = stmt.executeQuery(
-                "SELECT id, title_library_id, user_id, recommend_date, subscription_post_id, created_at " +
-                "FROM tu_title_recommendation " +
-                "WHERE subscription_post_id IS NULL OR subscription_post_id = '' " +
-                "ORDER BY created_at DESC LIMIT 5");
+                "SELECT r.id, r.title_library_id, r.user_id, r.recommend_date, r.created_at " +
+                "FROM tu_title_recommendation r LEFT JOIN tu_title_library t ON r.title_library_id = t.id " +
+                "WHERE t.generated_file_url IS NULL OR t.generated_file_url = '' " +
+                "ORDER BY r.created_at DESC LIMIT 5");
             List<Map<String, Object>> samples = new ArrayList<>();
             while (rs3.next()) {
                 Map<String, Object> row = new HashMap<>();
@@ -535,7 +519,6 @@ public class TitleLibraryController {
                 row.put("titleLibraryId", rs3.getString("title_library_id"));
                 row.put("userId", rs3.getString("user_id"));
                 row.put("recommendDate", rs3.getString("recommend_date"));
-                row.put("subscriptionPostId", rs3.getString("subscription_post_id"));
                 row.put("createdAt", rs3.getString("created_at"));
                 samples.add(row);
             }
@@ -1053,8 +1036,7 @@ public class TitleLibraryController {
                     row.createCell(3).setCellValue(styleValue != null ? styleValue : "");
                     row.createCell(4).setCellValue(tl.getDescription() != null ? tl.getDescription() : "");
                     row.createCell(5).setCellValue(tl.getRecommendDate() != null ? tl.getRecommendDate().toString() : "");
-                    boolean completed = tl.getSubscriptionPostTitle() != null && !tl.getSubscriptionPostTitle().isEmpty()
-                            || tl.getSubscriptionPostFileUrl() != null && !tl.getSubscriptionPostFileUrl().isEmpty();
+                    boolean completed = tl.getGeneratedFileUrl() != null && !tl.getGeneratedFileUrl().isEmpty();
                     row.createCell(6).setCellValue(completed ? "是" : "");
                     for (int i = 0; i < headers.length; i++) {
                         sheet.setColumnWidth(i, 20 * 256);
@@ -1239,29 +1221,9 @@ public class TitleLibraryController {
                     System.out.println("[ImportArticle] 句号替换完成, 替换数量=" + changed + ", file=" + originalName);
                 }
 
-                // Create or update SubscriptionPost
+                // 更新 TitleLibrary.generated_file_url（废弃 SubscriptionPost）
                 String fileUrl = "/uploads/articles/" + fileName;
-                SubscriptionPost post;
-                if (rec.getSubscriptionPostId() != null && !rec.getSubscriptionPostId().isEmpty()) {
-                    post = subscriptionPostService.getById(rec.getSubscriptionPostId());
-                    if (post == null) {
-                        post = new SubscriptionPost();
-                    }
-                } else {
-                    post = new SubscriptionPost();
-                }
-                post.setUserId(rec.getUserId());
-                post.setTrackId(rec.getTrackId());
-                post.setTitle(matchedTitle.getTitle());
-                post.setDescription(processedText);
-                post.setFileUrl(fileUrl);
-                post.setFileName(fileName);
-                post.setStatus("已上架");
-                post.setUsed(0);
-                subscriptionPostService.save(post);
-
-                // Update recommendation
-                titleRecommendationMapper.updateSubscriptionPostId(rec.getId(), post.getId());
+                titleLibraryService.updateGeneratedFile(matchedTitle.getId(), fileUrl, fileName);
 
                 success++;
                 details.add(Map.of(
@@ -1488,28 +1450,9 @@ public class TitleLibraryController {
             processedText = extractedText.replaceAll("。(?![\\r\\n])", "，");
         }
 
-        // Create or update SubscriptionPost
+        // 更新 TitleLibrary.generated_file_url（废弃 SubscriptionPost）
         String fileUrl = "/uploads/articles/" + fileName;
-        SubscriptionPost post;
-        if (rec.getSubscriptionPostId() != null && !rec.getSubscriptionPostId().isEmpty()) {
-            post = subscriptionPostService.getById(rec.getSubscriptionPostId());
-            if (post == null) {
-                post = new SubscriptionPost();
-            }
-        } else {
-            post = new SubscriptionPost();
-        }
-        post.setUserId(rec.getUserId());
-        post.setTrackId(rec.getTrackId());
-        post.setTitle(matchedTitle.getTitle());
-        post.setDescription(processedText);
-        post.setFileUrl(fileUrl);
-        post.setFileName(fileName);
-        post.setStatus("已上架");
-        post.setUsed(0);
-        subscriptionPostService.save(post);
-
-        titleRecommendationMapper.updateSubscriptionPostId(rec.getId(), post.getId());
+        titleLibraryService.updateGeneratedFile(matchedTitle.getId(), fileUrl, fileName);
 
         return Map.of(
             "status", "success",
@@ -1577,8 +1520,10 @@ public class TitleLibraryController {
             // 排除当天已有推荐组合的用户-赛道
             Set<String> existingCombos = new HashSet<>();
             for (Map<String, Object> row : titleRecommendationMapper.findUserTrackCombosByDate(targetDate)) {
-                String uid = (String) row.get("user_id");
-                String tid = (String) row.get("track_id");
+                String uid = (String) row.get("userId");
+                if (uid == null) uid = (String) row.get("user_id");
+                String tid = (String) row.get("trackId");
+                if (tid == null) tid = (String) row.get("track_id");
                 if (uid != null && tid != null) existingCombos.add(uid + ":" + tid);
             }
 
@@ -1708,8 +1653,10 @@ public class TitleLibraryController {
             // ===== 严格过滤2：目标日期同一用户同一赛道已有推荐的，不再重复匹配（不同赛道可匹配多个） =====
             Set<String> existingCombos = new HashSet<>();
             for (Map<String, Object> row : titleRecommendationMapper.findUserTrackCombosByDate(targetDate)) {
-                String uid = (String) row.get("user_id");
-                String tid = (String) row.get("track_id");
+                String uid = (String) row.get("userId");
+                if (uid == null) uid = (String) row.get("user_id");
+                String tid = (String) row.get("trackId");
+                if (tid == null) tid = (String) row.get("track_id");
                 if (uid != null && tid != null) {
                     existingCombos.add(uid + ":" + tid);
                 }
@@ -1938,8 +1885,10 @@ public class TitleLibraryController {
 
             Set<String> existingCombos = new HashSet<>();
             for (Map<String, Object> row : titleRecommendationMapper.findUserTrackCombosByDate(targetDate)) {
-                String uid = (String) row.get("user_id");
-                String tid = (String) row.get("track_id");
+                String uid = (String) row.get("userId");
+                if (uid == null) uid = (String) row.get("user_id");
+                String tid = (String) row.get("trackId");
+                if (tid == null) tid = (String) row.get("track_id");
                 if (uid != null && tid != null) existingCombos.add(uid + ":" + tid);
             }
 
@@ -2022,8 +1971,6 @@ public class TitleLibraryController {
                 item.put("editedTitle", title.getTitle());
                 item.put("generatedFileUrl", title.getGeneratedFileUrl());
                 item.put("generatedFileName", title.getGeneratedFileName());
-                item.put("subscriptionPostFileUrl", title.getSubscriptionPostFileUrl());
-                item.put("subscriptionPostTitle", title.getSubscriptionPostTitle());
                 proposedMatches.add(item);
             }
 
@@ -2469,6 +2416,254 @@ public class TitleLibraryController {
             e.printStackTrace();
             return Result.error("查询失败：" + e.getMessage());
         }
+    }
+
+    /**
+     * 查询用户历史文章标题的同质化程度
+     * 优先读取预计算结果，没有则实时计算一次
+     */
+    @GetMapping("/user-homogeneity/{userId}")
+    public Result<Integer> getUserHomogeneity(@PathVariable String userId) {
+        try {
+            com.example.blogger.entity.UserHomogeneity record = userHomogeneityMapper.findByUserId(userId);
+            if (record != null && record.getHomogeneityScore() != null) {
+                return Result.ok(record.getHomogeneityScore());
+            }
+            // 没有预计算记录，实时计算一次
+            List<Map<String, Object>> list = titleRecommendationMapper.findHistoryByUserId(userId);
+            if (list == null || list.size() < 2) {
+                return Result.ok(0);
+            }
+            List<String> titles = new ArrayList<>();
+            for (Map<String, Object> item : list) {
+                String t = item.get("titleName") != null ? item.get("titleName").toString() : "";
+                if (!t.isEmpty()) {
+                    titles.add(t);
+                }
+            }
+            if (titles.size() < 2) {
+                return Result.ok(0);
+            }
+            double totalSim = 0;
+            int pairCount = 0;
+            for (int i = 0; i < titles.size(); i++) {
+                for (int j = i + 1; j < titles.size(); j++) {
+                    double sim = com.example.blogger.util.TextSimilarityUtil.similarity(titles.get(i), titles.get(j));
+                    totalSim += sim;
+                    pairCount++;
+                }
+            }
+            double avgSim = pairCount > 0 ? totalSim / pairCount : 0;
+            return Result.ok((int) Math.round(avgSim * 100));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("查询同质化程度失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 查询所有用户的同质化程度列表（支持搜索、排序、分页）
+     */
+    @GetMapping("/user-homogeneity-list")
+    public Result<Map<String, Object>> listUserHomogeneity(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false, defaultValue = "homogeneityScore") String sortField,
+            @RequestParam(required = false, defaultValue = "desc") String sortOrder,
+            @RequestParam(required = false, defaultValue = "1") int page,
+            @RequestParam(required = false, defaultValue = "20") int pageSize) {
+        try {
+            List<com.example.blogger.entity.UserHomogeneity> records = userHomogeneityMapper.findAll();
+            if (records == null) records = new ArrayList<>();
+
+            // 获取所有用户ID
+            Set<String> userIds = records.stream()
+                    .map(com.example.blogger.entity.UserHomogeneity::getUserId)
+                    .filter(id -> id != null && !id.isEmpty())
+                    .collect(Collectors.toSet());
+
+            // 批量查询用户信息
+            Map<String, User> userMap = new HashMap<>();
+            for (String uid : userIds) {
+                User u = userMapper.findById(uid);
+                if (u != null) userMap.put(uid, u);
+            }
+
+            // 构建VO列表
+            List<Map<String, Object>> list = new ArrayList<>();
+            for (com.example.blogger.entity.UserHomogeneity record : records) {
+                User u = userMap.get(record.getUserId());
+                if (u == null) continue;
+
+                // 关键词过滤
+                if (keyword != null && !keyword.isEmpty()) {
+                    String kw = keyword.toLowerCase();
+                    String username = u.getUsername() != null ? u.getUsername().toLowerCase() : "";
+                    String nickName = u.getNickName() != null ? u.getNickName().toLowerCase() : "";
+                    String wxName = u.getWxName() != null ? u.getWxName().toLowerCase() : "";
+                    if (!username.contains(kw) && !nickName.contains(kw) && !wxName.contains(kw)) {
+                        continue;
+                    }
+                }
+
+                Map<String, Object> item = new HashMap<>();
+                item.put("userId", record.getUserId());
+                item.put("username", u.getUsername());
+                item.put("nickName", u.getNickName());
+                item.put("wxName", u.getWxName());
+                item.put("homogeneityScore", record.getHomogeneityScore());
+                item.put("historyCount", record.getHistoryCount());
+                item.put("calculatedAt", record.getCalculatedAt());
+                list.add(item);
+            }
+
+            // 排序
+            Comparator<Map<String, Object>> comparator;
+            if ("historyCount".equals(sortField)) {
+                comparator = Comparator.comparingInt(m -> {
+                    Object v = m.get("historyCount");
+                    return v instanceof Number ? ((Number) v).intValue() : 0;
+                });
+            } else {
+                comparator = Comparator.comparingInt(m -> {
+                    Object v = m.get("homogeneityScore");
+                    return v instanceof Number ? ((Number) v).intValue() : 0;
+                });
+            }
+            if ("desc".equalsIgnoreCase(sortOrder)) {
+                comparator = comparator.reversed();
+            }
+            list.sort(comparator);
+
+            // 分页
+            int total = list.size();
+            int start = (page - 1) * pageSize;
+            int end = Math.min(start + pageSize, total);
+            List<Map<String, Object>> pageList = start < total ? list.subList(start, end) : new ArrayList<>();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("list", pageList);
+            result.put("total", total);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            return Result.ok(result);
+        } catch (Exception e) {
+            log.error("[listUserHomogeneity] 查询失败", e);
+            return Result.error("查询失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 核心贴图生成逻辑（委托给 Service）
+     */
+    private Result<java.util.List<String>> doGenerateImagePost(String id) {
+        try {
+            // 读取用户指定的主题配置（手动触发时优先用配置主题）
+            String theme = null;
+            String fontFamily = null;
+            String bodyFontFamily = null;
+            try {
+                Config cfgTheme = configMapper.findByKey("image_post_theme");
+                if (cfgTheme != null && cfgTheme.getConfigValue() != null && !cfgTheme.getConfigValue().isEmpty()) {
+                    theme = cfgTheme.getConfigValue().trim();
+                }
+                Config cfgFont = configMapper.findByKey("image_post_font");
+                if (cfgFont != null && cfgFont.getConfigValue() != null && !cfgFont.getConfigValue().isEmpty()) {
+                    fontFamily = cfgFont.getConfigValue().trim();
+                }
+                Config cfgBodyFont = configMapper.findByKey("image_post_body_font");
+                if (cfgBodyFont != null && cfgBodyFont.getConfigValue() != null && !cfgBodyFont.getConfigValue().isEmpty()) {
+                    bodyFontFamily = cfgBodyFont.getConfigValue().trim();
+                }
+            } catch (Exception e) {
+                log.warn("[generateImagePost] 读取贴图配置失败，使用随机主题", e);
+            }
+            java.util.List<String> images = titleLibraryService.generateImagePosts(id, theme, fontFamily, bodyFontFamily);
+            return Result.ok(images);
+        } catch (Exception e) {
+            log.error("[generateImagePost] 生成贴图失败: id={}", id, e);
+            return Result.error("生成贴图失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 生成文章贴图：将 DOCX 切分成多张 9:16 PNG
+     */
+    @PostMapping("/{id}/generate-image-post")
+    public Result<java.util.List<String>> generateImagePost(@PathVariable String id) {
+        return doGenerateImagePost(id);
+    }
+
+    /**
+     * 批量生成文章贴图
+     */
+    @PostMapping("/batch-generate-image-post")
+    public Result<Map<String, Object>> batchGenerateImagePost(@RequestBody Map<String, java.util.List<String>> req) {
+        java.util.List<String> titleIds = req.get("titleIds");
+        if (titleIds == null || titleIds.isEmpty()) {
+            return Result.error("请选择要生成贴图的标题");
+        }
+        if (titleIds.size() > 10) {
+            return Result.error("每次最多批量生成 10 条");
+        }
+
+        int success = 0;
+        int failed = 0;
+        java.util.List<String> errors = new ArrayList<>();
+
+        for (String id : titleIds) {
+            Result<java.util.List<String>> result = doGenerateImagePost(id);
+            if (result.getCode() == 200) {
+                success++;
+            } else {
+                failed++;
+                errors.add(id + ": " + (result.getMsg() != null ? result.getMsg() : "失败"));
+            }
+        }
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("success", success);
+        data.put("failed", failed);
+        data.put("errors", errors);
+        return Result.ok(data);
+    }
+
+    /**
+     * 查询文章贴图列表
+     */
+    @GetMapping("/{id}/image-posts")
+    public Result<java.util.List<String>> getImagePosts(@PathVariable String id) {
+        try {
+            TitleLibrary titleLib = titleLibraryService.getById(id);
+            if (titleLib == null || titleLib.getImagePostUrls() == null || titleLib.getImagePostUrls().isEmpty()) {
+                return Result.ok(new ArrayList<>());
+            }
+            java.util.List<String> images = new ObjectMapper().readValue(titleLib.getImagePostUrls(),
+                    new com.fasterxml.jackson.core.type.TypeReference<java.util.List<String>>() {});
+            return Result.ok(images);
+        } catch (Exception e) {
+            log.error("[getImagePosts] 查询失败: id={}", id, e);
+            return Result.error("查询贴图失败: " + e.getMessage());
+        }
+    }
+
+    private String resolveScriptPath(String scriptName) {
+        try {
+            java.nio.file.Path directPath = java.nio.file.Paths.get(System.getProperty("user.dir"), "src", "main", "resources", "py", scriptName);
+            if (java.nio.file.Files.exists(directPath)) {
+                return directPath.toString();
+            }
+            try (InputStream is = getClass().getClassLoader().getResourceAsStream("py/" + scriptName)) {
+                if (is != null) {
+                    java.nio.file.Path tempScript = java.nio.file.Files.createTempFile(scriptName.replace(".py", ""), ".py");
+                    java.nio.file.Files.copy(is, tempScript, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    tempScript.toFile().deleteOnExit();
+                    return tempScript.toString();
+                }
+            }
+        } catch (Exception e) {
+            log.error("[resolveScriptPath] 无法解析脚本路径: {}", scriptName, e);
+        }
+        return null;
     }
 
     /**
@@ -2949,20 +3144,6 @@ public class TitleLibraryController {
             // Update task
             titleGenerationTaskService.updateStatus(taskId, "completed", fileUrl);
 
-            // Create SubscriptionPost for preview/download
-            TitleLibrary titleLib = titleLibraryService.getById(task.getTitleLibraryId());
-            if (titleLib != null) {
-                SubscriptionPost post = new SubscriptionPost();
-                post.setTitleLibraryId(task.getTitleLibraryId());
-                post.setTrackId(titleLib.getTrackId());
-                post.setTitle(titleLib.getTitle());
-                post.setFileUrl(fileUrl);
-                post.setFileName(fileName);
-                post.setStatus("已上架");
-                post.setUsed(0);
-                subscriptionPostService.save(post);
-            }
-
             Map<String, Object> result = new HashMap<>();
             result.put("fileUrl", fileUrl);
             result.put("fileName", fileName);
@@ -3217,18 +3398,9 @@ public class TitleLibraryController {
         if (titleLib == null) {
             return Result.error("标题不存在");
         }
-        // Find the latest subscription post for this title
-        TitleRecommendation rec = titleRecommendationMapper.findLatestByTitleId(id);
-        if (rec == null || rec.getSubscriptionPostId() == null || rec.getSubscriptionPostId().isEmpty()) {
-            return Result.error("该标题尚未生成文章");
-        }
-        SubscriptionPost post = subscriptionPostService.getById(rec.getSubscriptionPostId());
-        if (post == null) {
-            return Result.error("文章不存在");
-        }
         Map<String, Object> result = new HashMap<>();
-        result.put("content", post.getDescription());
-        result.put("postId", post.getId());
+        result.put("content", titleLib.getDescription());
+        result.put("postId", titleLib.getId());
         result.put("trackId", titleLib.getTrackId());
         result.put("platform", titleLib.getPlatform());
         return Result.ok(result);
@@ -3248,13 +3420,9 @@ public class TitleLibraryController {
                 return Result.error("该标题尚未关联用户，无法发送邮件");
             }
 
-            if (rec.getSubscriptionPostId() == null || rec.getSubscriptionPostId().isEmpty()) {
+            String fileUrl = titleLib.getGeneratedFileUrl();
+            if (fileUrl == null || fileUrl.isEmpty()) {
                 return Result.error("该标题尚未生成文章，无法发送邮件");
-            }
-
-            SubscriptionPost post = subscriptionPostService.getById(rec.getSubscriptionPostId());
-            if (post == null) {
-                return Result.error("关联的文章不存在");
             }
 
             User user = userMapper.findById(rec.getUserId());
@@ -3266,11 +3434,6 @@ public class TitleLibraryController {
                 return Result.error("该用户未设置邮箱地址");
             }
 
-            String fileUrl = post.getFileUrl();
-            if (fileUrl == null || fileUrl.isEmpty()) {
-                return Result.error("文章文件路径为空");
-            }
-
             String filePath = fileUrl.startsWith("/")
                     ? System.getProperty("user.dir") + fileUrl
                     : fileUrl;
@@ -3278,7 +3441,7 @@ public class TitleLibraryController {
             if (!articleFile.exists()) {
                 // Try resolving from uploads directory
                 String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
-                articleFile = new File(articlesDir + File.separator + post.getFileName());
+                articleFile = new File(articlesDir + File.separator + titleLib.getGeneratedFileName());
             }
             if (!articleFile.exists()) {
                 return Result.error("文章文件不存在，请重新生成");
@@ -3287,14 +3450,16 @@ public class TitleLibraryController {
             Track userTrack = trackMapper.findById(rec.getTrackId());
             String trackName = userTrack != null ? userTrack.getName() : "";
 
-            emailService.sendDailyRecommendEmail(
+            List<File> imageFiles = resolveImagePostFiles(titleLib.getImagePostUrls());
+            emailService.sendDailyRecommendEmailWithImages(
                     user.getEmail(),
                     user.getUsername(),
                     trackName,
                     titleLib.getTitle(),
                     titleLib.getPlatform(),
                     articleFile,
-                    post.getFileName()
+                    titleLib.getGeneratedFileName(),
+                    imageFiles
             );
 
             // 记录推送日志
@@ -3369,14 +3534,16 @@ public class TitleLibraryController {
             String trackName = track != null ? track.getName() : "";
 
             // 发送邮件（与推送概览使用相同的模板和主题）
-            emailService.sendDailyRecommendEmail(
+            List<File> imageFiles = resolveImagePostFiles(titleLib.getImagePostUrls());
+            emailService.sendDailyRecommendEmailWithImages(
                     toEmail,
                     userName,
                     trackName,
                     titleLib.getTitle(),
                     titleLib.getPlatform(),
                     file,
-                    titleLib.getGeneratedFileName()
+                    titleLib.getGeneratedFileName(),
+                    imageFiles
             );
 
             // 记录推送日志（如有推荐记录）
@@ -3430,16 +3597,10 @@ public class TitleLibraryController {
                         continue;
                     }
 
-                    if (rec.getSubscriptionPostId() == null || rec.getSubscriptionPostId().isEmpty()) {
+                    String fileUrl = titleLib.getGeneratedFileUrl();
+                    if (fileUrl == null || fileUrl.isEmpty()) {
                         failed++;
                         errors.add(Map.of("title", titleLib.getTitle(), "reason", "尚未生成文章"));
-                        continue;
-                    }
-
-                    SubscriptionPost post = subscriptionPostService.getById(rec.getSubscriptionPostId());
-                    if (post == null) {
-                        failed++;
-                        errors.add(Map.of("title", titleLib.getTitle(), "reason", "关联文章不存在"));
                         continue;
                     }
 
@@ -3456,20 +3617,13 @@ public class TitleLibraryController {
                         continue;
                     }
 
-                    String fileUrl = post.getFileUrl();
-                    if (fileUrl == null || fileUrl.isEmpty()) {
-                        failed++;
-                        errors.add(Map.of("title", titleLib.getTitle(), "reason", "文章文件路径为空"));
-                        continue;
-                    }
-
                     String filePath = fileUrl.startsWith("/")
                             ? System.getProperty("user.dir") + fileUrl
                             : fileUrl;
                     File articleFile = new File(filePath);
                     if (!articleFile.exists()) {
                         String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
-                        articleFile = new File(articlesDir + File.separator + post.getFileName());
+                        articleFile = new File(articlesDir + File.separator + titleLib.getGeneratedFileName());
                     }
                     if (!articleFile.exists()) {
                         failed++;
@@ -3480,14 +3634,16 @@ public class TitleLibraryController {
                     Track userTrack = trackMapper.findById(rec.getTrackId());
                     String trackName = userTrack != null ? userTrack.getName() : "";
 
-                    emailService.sendDailyRecommendEmail(
+                    List<File> imageFiles = resolveImagePostFiles(titleLib.getImagePostUrls());
+                    emailService.sendDailyRecommendEmailWithImages(
                             user.getEmail(),
                             user.getUsername(),
                             trackName,
                             titleLib.getTitle(),
                             titleLib.getPlatform(),
                             articleFile,
-                            post.getFileName()
+                            titleLib.getGeneratedFileName(),
+                            imageFiles
                     );
 
                     // 记录推送日志
@@ -3638,9 +3794,10 @@ public class TitleLibraryController {
 
                     boolean anyPushed = false;
                     for (Map<String, Object> recMap : recMaps) {
-                        String subPostId = recMap.get("subscription_post_id") != null ? recMap.get("subscription_post_id").toString() : null;
-                        String trackId = recMap.get("track_id") != null ? recMap.get("track_id").toString() : null;
-                        String titleLibId = recMap.get("title_library_id") != null ? recMap.get("title_library_id").toString() : null;
+                        String trackId = recMap.get("trackId") != null ? recMap.get("trackId").toString() : null;
+                        if (trackId == null) trackId = recMap.get("track_id") != null ? recMap.get("track_id").toString() : null;
+                        String titleLibId = recMap.get("titleLibraryId") != null ? recMap.get("titleLibraryId").toString() : null;
+                        if (titleLibId == null) titleLibId = recMap.get("title_library_id") != null ? recMap.get("title_library_id").toString() : null;
                         // 已推送过的跳过（非重复推送模式）
                         if (!allowRepeat && titleLibId != null && !titleLibId.isEmpty() && pushedSet.contains(titleLibId)) {
                             continue;
@@ -3650,24 +3807,7 @@ public class TitleLibraryController {
                         String articleTitle = null;
                         String platform = null;
 
-                        if (subPostId != null && !subPostId.isEmpty()) {
-                            SubscriptionPost post = subscriptionPostMapper.findById(subPostId);
-                            if (post == null) continue;
-                            String fileUrl = post.getFileUrl();
-                            if (fileUrl == null || fileUrl.isEmpty()) continue;
-                            articleFile = new File(fileUrl.startsWith("/")
-                                    ? System.getProperty("user.dir") + fileUrl
-                                    : fileUrl);
-                            if (!articleFile.exists()) {
-                                String articlesDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles";
-                                articleFile = new File(articlesDir + File.separator + post.getFileName());
-                            }
-                            if (!articleFile.exists()) continue;
-                            fileName = post.getFileName();
-                            articleTitle = post.getTitle();
-                            platform = "";
-                        } else if (titleLibId != null && !titleLibId.isEmpty()) {
-                            // 回退：从 title_library 的 generated_file_url 获取文件
+                        if (titleLibId != null && !titleLibId.isEmpty()) {
                             TitleLibrary titleLib = titleLibraryService.getById(titleLibId);
                             if (titleLib == null) continue;
                             String fileUrl = titleLib.getGeneratedFileUrl();
@@ -3696,14 +3836,16 @@ public class TitleLibraryController {
                         if (platform == null || platform.isEmpty()) {
                             platform = titleLib != null && titleLib.getPlatform() != null ? titleLib.getPlatform() : "";
                         }
-                        emailService.sendDailyRecommendEmail(
+                        List<File> imageFiles = resolveImagePostFiles(titleLib.getImagePostUrls());
+                        emailService.sendDailyRecommendEmailWithImages(
                                 user.getEmail(),
                                 user.getUsername(),
                                 trackName,
                                 articleTitle,
                                 platform,
                                 articleFile,
-                                fileName
+                                fileName,
+                                imageFiles
                         );
                         // 记录推送日志
                         EmailPushLog log = new EmailPushLog();
@@ -3937,20 +4079,8 @@ public class TitleLibraryController {
                     fw.write(fullHtml);
                 }
 
-                // Create subscription post
-                SubscriptionPost post = new SubscriptionPost();
-                post.setUserId(rec.getUserId());
-                post.setTrackId(rec.getTrackId());
-                post.setTitle(titleLib.getTitle());
-                post.setDescription(content);
-                post.setFileUrl("/uploads/articles/" + fileName);
-                post.setFileName(fileName);
-                post.setStatus("已上架");
-                post.setUsed(0);
-                subscriptionPostService.save(post);
-
-                // Update recommendation with subscription_post_id
-                titleRecommendationMapper.updateSubscriptionPostId(rec.getId(), post.getId());
+                // 更新 TitleLibrary.generated_file_url（废弃 SubscriptionPost）
+                titleLibraryService.updateGeneratedFile(titleLib.getId(), "/uploads/articles/" + fileName, fileName);
 
                 successCount++;
                 completed++;

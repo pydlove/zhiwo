@@ -27,7 +27,7 @@ public interface TitleReviewMapper {
             "AND (#{trackId} IS NULL OR #{trackId} = '' OR t.track_id = #{trackId}) " +
             "AND (#{keyword} IS NULL OR #{keyword} = '' OR t.title LIKE CONCAT('%', #{keyword}, '%')) " +
             "AND (t.is_used IS NULL OR t.is_used != 1) " +
-            "AND NOT EXISTS (SELECT 1 FROM tu_title_recommendation tr2 WHERE tr2.title_library_id = t.id AND tr2.subscription_post_id IS NOT NULL) " +
+            "AND (t.generated_file_url IS NULL OR t.generated_file_url = '')" +
             // approved 时排除已推送的
             "AND (#{reviewStatus} != 'approved' OR tr.push_status COLLATE utf8mb4_0900_ai_ci != 'pushed') " +
             "ORDER BY tr.created_at DESC " +
@@ -44,7 +44,7 @@ public interface TitleReviewMapper {
             "AND (#{trackId} IS NULL OR #{trackId} = '' OR t.track_id = #{trackId}) " +
             "AND (#{keyword} IS NULL OR #{keyword} = '' OR t.title LIKE CONCAT('%', #{keyword}, '%')) " +
             "AND (t.is_used IS NULL OR t.is_used != 1) " +
-            "AND NOT EXISTS (SELECT 1 FROM tu_title_recommendation tr2 WHERE tr2.title_library_id = t.id AND tr2.subscription_post_id IS NOT NULL) " +
+            "AND (t.generated_file_url IS NULL OR t.generated_file_url = '')" +
             "AND (#{reviewStatus} != 'approved' OR tr.push_status COLLATE utf8mb4_0900_ai_ci != 'pushed')")
     int countByReviewStatus(@Param("reviewStatus") String reviewStatus, @Param("platform") String platform,
                             @Param("trackId") String trackId, @Param("keyword") String keyword);

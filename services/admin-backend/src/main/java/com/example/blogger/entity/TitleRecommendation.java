@@ -12,8 +12,6 @@ public class TitleRecommendation {
     private LocalDate recommendDate;
     private LocalDateTime createdAt;
 
-    private String subscriptionPostId;
-
     // display fields
     private String userName;
     private String userTemplate;
@@ -36,6 +34,4 @@ public class TitleRecommendation {
     public void setUserName(String userName) { this.userName = userName; }
     public String getUserTemplate() { return userTemplate; }
     public void setUserTemplate(String userTemplate) { this.userTemplate = userTemplate; }
-    public String getSubscriptionPostId() { return subscriptionPostId; }
-    public void setSubscriptionPostId(String subscriptionPostId) { this.subscriptionPostId = subscriptionPostId; }
 }

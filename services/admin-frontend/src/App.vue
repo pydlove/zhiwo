@@ -54,4 +54,17 @@ body {
   top: 0 !important;
   max-width: 1200px !important;
 }
+
+/* 移动端弹框适配 */
+@media (max-width: 768px) {
+  .ant-modal {
+    max-width: 96vw !important;
+    margin: 0 auto !important;
+    top: 24px !important;
+  }
+  .ant-modal-content {
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+  }
+}
 </style>

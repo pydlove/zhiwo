@@ -111,6 +111,12 @@ function onPageChange(page) {
   fetchImages()
 }
 
+function onShowSizeChange(current, size) {
+  pageSize.value = size
+  currentPage.value = 1
+  fetchImages()
+}
+
 function onSearch() {
   currentPage.value = 1
   fetchImages()
@@ -608,8 +614,9 @@ onMounted(() => {
         :total="totalCount"
         :pageSizeOptions="['20', '40', '60']"
         show-size-changer
+        show-total
         @change="onPageChange"
-        @showSizeChange="onPageChange"
+        @showSizeChange="onShowSizeChange"
       />
     </div>
 

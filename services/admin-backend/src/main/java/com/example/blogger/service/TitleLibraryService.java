@@ -1,25 +1,36 @@
 package com.example.blogger.service;
 
 import com.example.blogger.entity.EmailPushLog;
-import com.example.blogger.entity.SubscriptionPost;
 import com.example.blogger.entity.TitleLibrary;
 import com.example.blogger.entity.TitleRecommendation;
 import com.example.blogger.entity.Track;
 import com.example.blogger.entity.User;
 import com.example.blogger.entity.UserTrack;
+import com.example.blogger.entity.Config;
+import com.example.blogger.mapper.ConfigMapper;
 import com.example.blogger.mapper.EmailPushLogMapper;
-import com.example.blogger.mapper.SubscriptionPostMapper;
 import com.example.blogger.mapper.TitleLibraryMapper;
 import com.example.blogger.mapper.TitleRecommendationMapper;
 import com.example.blogger.mapper.TrackMapper;
 import com.example.blogger.mapper.UserMapper;
 import com.example.blogger.mapper.UserTrackMapper;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import jakarta.annotation.PostConstruct;
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -27,10 +38,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Service
 public class TitleLibraryService {
+    private static final Logger log = LoggerFactory.getLogger(TitleLibraryService.class);
+
+    private static final List<String> RANDOM_THEMES = Arrays.asList(
+        "morandi-cream", "mint-fresh", "sunset-blush", "midnight",
+        "lavender", "klein-blue", "gradient-ins", "newspaper"
+    );
 
     private final TitleLibraryMapper titleLibraryMapper;
     private final TitleRecommendationMapper titleRecommendationMapper;
@@ -39,20 +57,20 @@ public class TitleLibraryService {
     private final UserTrackMapper userTrackMapper;
     private final TrackMapper trackMapper;
     private final EmailService emailService;
-    private final SubscriptionPostMapper subscriptionPostMapper;
+    private final ConfigMapper configMapper;
 
     public TitleLibraryService(TitleLibraryMapper titleLibraryMapper, TitleRecommendationMapper titleRecommendationMapper,
                                UserMapper userMapper, EmailPushLogMapper emailPushLogMapper,
                                UserTrackMapper userTrackMapper, TrackMapper trackMapper,
-                               SubscriptionPostMapper subscriptionPostMapper, EmailService emailService) {
+                               EmailService emailService, ConfigMapper configMapper) {
         this.titleLibraryMapper = titleLibraryMapper;
         this.titleRecommendationMapper = titleRecommendationMapper;
         this.userMapper = userMapper;
         this.emailPushLogMapper = emailPushLogMapper;
         this.userTrackMapper = userTrackMapper;
         this.trackMapper = trackMapper;
-        this.subscriptionPostMapper = subscriptionPostMapper;
         this.emailService = emailService;
+        this.configMapper = configMapper;
     }
 
     /**
@@ -216,6 +234,10 @@ public class TitleLibraryService {
         titleLibraryMapper.updateConfirmStatus(id, confirmStatus);
     }
 
+    public void updateBannedWordCheckResult(String id, String result) {
+        titleLibraryMapper.updateBannedWordCheckResult(id, result);
+    }
+
     public List<TitleLibrary> findPendingReview(String recommendDate) {
         return titleLibraryMapper.findPendingReview(recommendDate);
     }
@@ -331,8 +353,7 @@ public class TitleLibraryService {
             String trackId = (String) row.get("trackId");
             String trackName = (String) row.get("trackName");
             String recommendationId = (String) row.get("recommendationId");
-            String subscriptionPostId = row.get("subscriptionPostId") != null ? row.get("subscriptionPostId").toString() : null;
-            String postTitle = (String) row.get("postTitle");
+            // postTitle 已废弃，统一使用 titleName
             String titleLibraryId = row.get("titleLibraryId") != null ? row.get("titleLibraryId").toString() : null;
             String titleName = (String) row.get("titleName");
             String generatedFileUrl = row.get("generatedFileUrl") != null ? row.get("generatedFileUrl").toString() : null;
@@ -354,8 +375,7 @@ public class TitleLibraryService {
 
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> tracks = (List<Map<String, Object>>) user.get("tracks");
-            boolean hasPost = (subscriptionPostId != null && !subscriptionPostId.isEmpty())
-                    || (generatedFileUrl != null && !generatedFileUrl.isEmpty());
+            boolean hasPost = generatedFileUrl != null && !generatedFileUrl.isEmpty();
             boolean hasTitle = titleLibraryId != null && !titleLibraryId.isEmpty();
 
             // 防御重复：同一赛道可能因推荐表多条记录导致重复行，去重并保留有文章的那条
@@ -366,8 +386,7 @@ public class TitleLibraryService {
                     if (hasPost && !Boolean.TRUE.equals(existing.get("hasPost"))) {
                         existing.put("hasPost", true);
                         existing.put("recommendationId", recommendationId);
-                        existing.put("subscriptionPostId", subscriptionPostId);
-                        existing.put("postTitle", postTitle);
+                        existing.put("postTitle", titleName);
                     }
                     if (hasTitle && existing.get("titleName") == null) {
                         existing.put("titleLibraryId", titleLibraryId);
@@ -382,8 +401,7 @@ public class TitleLibraryService {
                 track.put("trackName", trackName);
                 track.put("hasPost", hasPost);
                 track.put("recommendationId", recommendationId);
-                track.put("subscriptionPostId", subscriptionPostId);
-                track.put("postTitle", postTitle);
+                track.put("postTitle", titleName);
                 track.put("titleLibraryId", titleLibraryId);
                 track.put("titleName", titleName);
                 tracks.add(track);
@@ -497,13 +515,15 @@ public class TitleLibraryService {
             List<String> postTitles = new ArrayList<>();
             if (recommendations != null) {
                 for (Map<String, Object> rec : recommendations) {
-                    Object postIdObj = rec.get("subscription_post_id");
-                    if (postIdObj == null || postIdObj.toString().isEmpty()) {
+                    Object titleLibIdObj = rec.get("titleLibraryId");
+                    if (titleLibIdObj == null) titleLibIdObj = rec.get("title_library_id");
+                    if (titleLibIdObj == null || titleLibIdObj.toString().isEmpty()) {
                         continue;
                     }
-                    SubscriptionPost post = subscriptionPostMapper.findById(postIdObj.toString());
-                    if (post != null && post.getTitle() != null && !post.getTitle().isEmpty()) {
-                        postTitles.add(post.getTitle());
+                    TitleLibrary titleLib = titleLibraryMapper.findById(titleLibIdObj.toString());
+                    if (titleLib != null && titleLib.getGeneratedFileUrl() != null && !titleLib.getGeneratedFileUrl().isEmpty()
+                            && titleLib.getTitle() != null && !titleLib.getTitle().isEmpty()) {
+                        postTitles.add(titleLib.getTitle());
                     }
                 }
             }
@@ -518,50 +538,366 @@ return result;
 
     public void batchPushEmailForScheduled(String dateStr, List<String> userIds) {
         LocalDate pushDate = LocalDate.parse(dateStr);
+        int totalUsers = userIds.size();
+        int pushedUsers = 0;
+        int skippedUsers = 0;
         for (String userId : userIds) {
             try {
                 User user = userMapper.findById(userId);
-                if (user == null) continue;
-                if (user.getStatus() == null || user.getStatus() != 1) continue;
-                if (user.getEmail() == null || user.getEmail().isEmpty()) continue;
+                if (user == null) {
+                    log.warn("[batchPushEmailForScheduled] 跳过: 用户不存在, userId={}", userId);
+                    skippedUsers++;
+                    continue;
+                }
+                if (user.getStatus() == null || user.getStatus() != 1) {
+                    log.warn("[batchPushEmailForScheduled] 跳过: 用户已禁用, user={}, userId={}", user.getUsername(), userId);
+                    skippedUsers++;
+                    continue;
+                }
+                if (user.getEmail() == null || user.getEmail().isEmpty()) {
+                    log.warn("[batchPushEmailForScheduled] 跳过: 用户未设置邮箱, user={}, userId={}", user.getUsername(), userId);
+                    skippedUsers++;
+                    continue;
+                }
                 List<Map<String, Object>> recMaps = titleRecommendationMapper.findByUserAndDate(userId, pushDate);
-                if (recMaps == null || recMaps.isEmpty()) continue;
+                if (recMaps == null || recMaps.isEmpty()) {
+                    log.warn("[batchPushEmailForScheduled] 跳过: 当日没有推荐记录, user={}, userId={}", user.getUsername(), userId);
+                    skippedUsers++;
+                    continue;
+                }
                 List<String> pushedTitleIds = emailPushLogMapper.findPushedTitleIdsByUserAndDate(userId, pushDate);
                 Set<String> pushedSet = new HashSet<>(pushedTitleIds != null ? pushedTitleIds : new ArrayList<>());
                 boolean anyPushed = false;
                 for (Map<String, Object> recMap : recMaps) {
-                    String subPostId = recMap.get("subscription_post_id") != null ? recMap.get("subscription_post_id").toString() : null;
-                    String trackId = recMap.get("track_id") != null ? recMap.get("track_id").toString() : null;
-                    String titleLibId = recMap.get("title_library_id") != null ? recMap.get("title_library_id").toString() : null;
-                    if (titleLibId != null && !titleLibId.isEmpty() && pushedSet.contains(titleLibId)) continue;
-                    if (subPostId == null || subPostId.isEmpty()) continue;
-                    SubscriptionPost post = subscriptionPostMapper.findById(subPostId);
-                    if (post == null || post.getFileUrl() == null || post.getFileUrl().isEmpty()) continue;
-                    File articleFile = new File(post.getFileUrl().startsWith("/")
-                            ? System.getProperty("user.dir") + post.getFileUrl()
-                            : post.getFileUrl());
-                    if (!articleFile.exists()) {
-                        articleFile = new File(System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles" + File.separator + post.getFileName());
+                    String trackId = recMap.get("trackId") != null ? recMap.get("trackId").toString() : null;
+                    if (trackId == null) trackId = recMap.get("track_id") != null ? recMap.get("track_id").toString() : null;
+                    String titleLibId = recMap.get("titleLibraryId") != null ? recMap.get("titleLibraryId").toString() : null;
+                    if (titleLibId == null) titleLibId = recMap.get("title_library_id") != null ? recMap.get("title_library_id").toString() : null;
+                    if (titleLibId != null && !titleLibId.isEmpty() && pushedSet.contains(titleLibId)) {
+                        log.info("[batchPushEmailForScheduled] 跳过: 已推送过, user={}, titleLibId={}", user.getUsername(), titleLibId);
+                        continue;
                     }
-                    if (!articleFile.exists()) continue;
+                    TitleLibrary titleLib = this.getById(titleLibId);
+                    if (titleLib == null) {
+                        log.warn("[batchPushEmailForScheduled] 跳过: TitleLibrary不存在, user={}, titleLibId={}", user.getUsername(), titleLibId);
+                        continue;
+                    }
+                    if (titleLib.getGeneratedFileUrl() == null || titleLib.getGeneratedFileUrl().isEmpty()) {
+                        log.warn("[batchPushEmailForScheduled] 跳过: 尚未生成文章, user={}, title={}", user.getUsername(), titleLib.getTitle());
+                        continue;
+                    }
+                    File articleFile = new File(titleLib.getGeneratedFileUrl().startsWith("/")
+                            ? System.getProperty("user.dir") + titleLib.getGeneratedFileUrl()
+                            : titleLib.getGeneratedFileUrl());
+                    if (!articleFile.exists()) {
+                        articleFile = new File(System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "articles" + File.separator + titleLib.getGeneratedFileName());
+                    }
+                    if (!articleFile.exists()) {
+                        log.warn("[batchPushEmailForScheduled] 跳过: 文章文件不存在, user={}, file={}, title={}", user.getUsername(), articleFile.getAbsolutePath(), titleLib.getTitle());
+                        continue;
+                    }
                     Track userTrack = trackMapper.findById(trackId);
                     String trackName = userTrack != null ? userTrack.getName() : "";
-                    TitleLibrary titleLib = this.getById(titleLibId);
-                    String articleTitle = titleLib != null ? titleLib.getTitle() : post.getTitle();
-                    String platform = titleLib != null && titleLib.getPlatform() != null ? titleLib.getPlatform() : "";
-                    emailService.sendDailyRecommendEmail(user.getEmail(), user.getUsername(), trackName, articleTitle, platform, articleFile, post.getFileName());
-                    EmailPushLog log = new EmailPushLog();
-                    log.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
-                    log.setUserId(userId);
-                    log.setPushDate(pushDate);
-                    log.setType("daily_recommend");
-                    log.setTitleLibraryId(titleLibId);
-                    emailPushLogMapper.insert(log);
+                    String articleTitle = titleLib.getTitle();
+                    String platform = titleLib.getPlatform() != null ? titleLib.getPlatform() : "";
+                    List<File> imageFiles = resolveImagePostFiles(titleLib.getImagePostUrls());
+                    log.info("[batchPushEmailForScheduled] 开始发送邮件, user={}, email={}, title={}", user.getUsername(), user.getEmail(), articleTitle);
+                    emailService.sendDailyRecommendEmailWithImages(user.getEmail(), user.getUsername(), trackName, articleTitle, platform, articleFile, titleLib.getGeneratedFileName(), imageFiles);
+                    EmailPushLog pushLog = new EmailPushLog();
+                    pushLog.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
+                    pushLog.setUserId(userId);
+                    pushLog.setPushDate(pushDate);
+                    pushLog.setType("daily_recommend");
+                    pushLog.setTitleLibraryId(titleLibId);
+                    emailPushLogMapper.insert(pushLog);
                     anyPushed = true;
+                    log.info("[batchPushEmailForScheduled] 邮件发送成功, user={}, title={}", user.getUsername(), articleTitle);
+                }
+                if (anyPushed) {
+                    pushedUsers++;
+                } else {
+                    log.warn("[batchPushEmailForScheduled] 用户无有效文章可推送, user={}, recCount={}", user.getUsername(), recMaps.size());
+                    skippedUsers++;
                 }
             } catch (Exception e) {
-                // 单用户失败不影响其他用户
+                log.error("[batchPushEmailForScheduled] 单用户推送异常, userId={}", userId, e);
+                skippedUsers++;
             }
         }
+        log.info("[batchPushEmailForScheduled] 批量推送完成, totalUsers={}, pushedUsers={}, skippedUsers={}", totalUsers, pushedUsers, skippedUsers);
+    }
+
+    public List<File> resolveImagePostFiles(String imagePostUrls) {
+        List<File> files = new ArrayList<>();
+        if (imagePostUrls == null || imagePostUrls.isEmpty()) return files;
+        try {
+            List<String> urls = new com.fasterxml.jackson.databind.ObjectMapper().readValue(imagePostUrls,
+                    new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+            for (String url : urls) {
+                String path = url.startsWith("/") ? System.getProperty("user.dir") + url : url;
+                File f = new File(path);
+                if (f.exists()) files.add(f);
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        return files;
+    }
+
+    /**
+     * 为指定标题生成贴图（支持指定主题，null 则随机；支持指定字体，null 则读取配置或自动选择）
+     */
+    public List<String> generateImagePosts(String titleLibraryId, String theme, String fontFamily, String bodyFontFamily) throws Exception {
+        TitleLibrary titleLib = this.getById(titleLibraryId);
+        if (titleLib == null) {
+            throw new RuntimeException("TitleLibrary不存在: " + titleLibraryId);
+        }
+        String docxPath = titleLib.getGeneratedFileUrl();
+        if (docxPath == null || docxPath.isEmpty()) {
+            throw new RuntimeException("文章文件不存在，请先生成文章: " + titleLibraryId);
+        }
+        if (docxPath.startsWith("/")) {
+            docxPath = System.getProperty("user.dir") + docxPath;
+        }
+        if (!new File(docxPath).exists()) {
+            throw new RuntimeException("文章文件不存在: " + docxPath);
+        }
+
+        // 读取全局贴图配置
+        String splitMode = "height";
+        int imgWidth = 1080;
+        int imgHeight = 1920;
+        String bgColor = "#ffffff";
+        String coverGradient = "#f8f3e0";
+        try {
+            Config cfg = configMapper.findByKey("image_post_split_mode");
+            if (cfg != null && cfg.getConfigValue() != null && !cfg.getConfigValue().isEmpty()) {
+                splitMode = cfg.getConfigValue();
+            }
+            Config cfgW = configMapper.findByKey("image_post_width");
+            if (cfgW != null && cfgW.getConfigValue() != null) {
+                imgWidth = Integer.parseInt(cfgW.getConfigValue().trim());
+            }
+            Config cfgH = configMapper.findByKey("image_post_height");
+            if (cfgH != null && cfgH.getConfigValue() != null) {
+                imgHeight = Integer.parseInt(cfgH.getConfigValue().trim());
+            }
+            Config cfgBg = configMapper.findByKey("image_post_bg_color");
+            if (cfgBg != null && cfgBg.getConfigValue() != null) {
+                bgColor = cfgBg.getConfigValue();
+            }
+            Config cfgGrad = configMapper.findByKey("image_post_cover_gradient");
+            if (cfgGrad != null && cfgGrad.getConfigValue() != null) {
+                coverGradient = cfgGrad.getConfigValue();
+            }
+            if (theme == null || theme.isEmpty()) {
+                Config cfgTheme = configMapper.findByKey("image_post_theme");
+                if (cfgTheme != null && cfgTheme.getConfigValue() != null && !cfgTheme.getConfigValue().isEmpty()) {
+                    theme = cfgTheme.getConfigValue().trim();
+                }
+            }
+            if (fontFamily == null || fontFamily.isEmpty()) {
+                Config cfgFont = configMapper.findByKey("image_post_font");
+                if (cfgFont != null && cfgFont.getConfigValue() != null && !cfgFont.getConfigValue().isEmpty()) {
+                    fontFamily = cfgFont.getConfigValue().trim();
+                }
+            }
+            if (bodyFontFamily == null || bodyFontFamily.isEmpty()) {
+                Config cfgBodyFont = configMapper.findByKey("image_post_body_font");
+                if (cfgBodyFont != null && cfgBodyFont.getConfigValue() != null && !cfgBodyFont.getConfigValue().isEmpty()) {
+                    bodyFontFamily = cfgBodyFont.getConfigValue().trim();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[generateImagePosts] 读取贴图配置失败，使用默认配置", e);
+        }
+
+        // 随机主题
+        if (theme == null || theme.isEmpty()) {
+            int idx = (int) (Math.random() * RANDOM_THEMES.size());
+            theme = RANDOM_THEMES.get(idx);
+            log.info("[generateImagePosts] 使用随机主题: {}", theme);
+        }
+
+        String outputDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "image-posts" + File.separator + titleLibraryId;
+        new File(outputDir).mkdirs();
+
+        String scriptPath = resolveScriptPath("generate_image_posts.py");
+        if (scriptPath == null) {
+            throw new RuntimeException("贴图生成脚本不存在");
+        }
+
+        List<String> command = new ArrayList<>();
+        command.add("python3");
+        command.add(scriptPath);
+        command.add(docxPath);
+        command.add(outputDir);
+        command.add(titleLibraryId);
+        command.add("--split-mode");
+        command.add(splitMode);
+        command.add("--width");
+        command.add(String.valueOf(imgWidth));
+        command.add("--height");
+        command.add(String.valueOf(imgHeight));
+        command.add("--bg-color");
+        command.add(bgColor);
+        command.add("--cover-gradient");
+        command.add(coverGradient);
+        command.add("--subtitle");
+        command.add(titleLib.getPlatform() != null ? titleLib.getPlatform() : "");
+        command.add("--title");
+        command.add(titleLib.getTitle() != null ? titleLib.getTitle() : "");
+        command.add("--theme");
+        command.add(theme);
+
+        if (fontFamily != null && !fontFamily.isEmpty()) {
+            command.add("--font-family");
+            command.add(fontFamily);
+        }
+        if (bodyFontFamily != null && !bodyFontFamily.isEmpty()) {
+            command.add("--body-font-family");
+            command.add(bodyFontFamily);
+        }
+
+        // 传入字体目录绝对路径，避免 JAR 部署时 Python __file__ 为临时路径导致字体加载失败
+        // 优先从 classpath 提取字体到缓存目录；回退到本地相对路径（开发环境）
+        String fontDir = extractFontDir();
+        command.add("--font-dir");
+        command.add(fontDir);
+
+        log.info("[generateImagePosts] 执行脚本: {}", command);
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        StringBuilder stdout = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                stdout.append(line).append("\n");
+            }
+        }
+
+        boolean finished = process.waitFor(120, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            throw new RuntimeException("贴图生成超时（120秒）");
+        }
+
+        int exitCode = process.exitValue();
+        if (exitCode != 0) {
+            log.error("[generateImagePosts] 脚本执行失败 exitCode={} stdout={}", exitCode, stdout);
+            throw new RuntimeException("贴图生成失败: " + stdout.toString().trim());
+        }
+
+        String raw = stdout.toString().trim();
+        // 跳过脚本输出的诊断文本（调试信息走 stderr 而非 stdout）
+        int jsonStart = raw.indexOf('{');
+        int jsonEnd = raw.lastIndexOf('}');
+        if (jsonStart >= 0 && jsonEnd >= jsonStart) {
+            raw = raw.substring(jsonStart, jsonEnd + 1);
+        }
+        com.fasterxml.jackson.databind.JsonNode json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(raw);
+        if (!json.has("success") || !json.get("success").asBoolean()) {
+            String err = json.has("error") ? json.get("error").asText() : "未知错误";
+            throw new RuntimeException("贴图生成失败: " + err);
+        }
+
+        List<String> images = new ArrayList<>();
+        if (json.has("images") && json.get("images").isArray()) {
+            for (com.fasterxml.jackson.databind.JsonNode node : json.get("images")) {
+                images.add(node.asText());
+            }
+        }
+
+        // 保存到数据库
+        String jsonUrls = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(images);
+        titleLibraryMapper.updateImagePostUrls(titleLibraryId, jsonUrls);
+
+        return images;
+    }
+
+    private String resolveScriptPath(String scriptName) {
+        try {
+            Path directPath = Paths.get(System.getProperty("user.dir"), "src", "main", "resources", "py", scriptName);
+            if (Files.exists(directPath)) {
+                return directPath.toString();
+            }
+            try (InputStream is = getClass().getClassLoader().getResourceAsStream("py/" + scriptName)) {
+                if (is != null) {
+                    Path tempScript = Files.createTempFile(scriptName.replace(".py", ""), ".py");
+                    Files.copy(is, tempScript, StandardCopyOption.REPLACE_EXISTING);
+                    tempScript.toFile().deleteOnExit();
+                    return tempScript.toString();
+                }
+            }
+        } catch (Exception e) {
+            log.error("[resolveScriptPath] 无法解析脚本路径: {}", scriptName, e);
+        }
+        return null;
+    }
+
+    /**
+     * 获取字体目录的绝对路径。
+     * 优先从 classpath 提取字体到缓存目录（适合 JAR 部署），回退到本地相对路径（适合开发环境）。
+     */
+    private String extractFontDir() {
+        try {
+            Path cacheDir = Files.createTempDirectory("image_post_fonts");
+            String[] fontFiles = {"NotoSansSC-Bold.ttf", "NotoSansSC-Regular.ttf", "hpFPoQF4VmJz.woff", "hpFPoQF4VmJz.woff2"};
+            String[] subDirFonts = {
+                "阿里妈妈方圆体/AlimamaFangYuanTiVF-Thin.ttf",
+                "阿里妈妈刀隶体/hpFPoQF4VmJz.woff2"
+            };
+            for (String fontFile : fontFiles) {
+                try (InputStream is = getClass().getClassLoader().getResourceAsStream("assets/font/" + fontFile)) {
+                    if (is != null) {
+                        Path target = cacheDir.resolve(fontFile);
+                        Files.copy(is, target, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+            }
+            // 提取子目录中的阿里妈妈方圆体
+            for (String subFont : subDirFonts) {
+                String resourceName = "assets/font/" + subFont;
+                try (InputStream is = getClass().getClassLoader().getResourceAsStream(resourceName)) {
+                    if (is != null) {
+                        Path targetDir = cacheDir.resolve("阿里妈妈方圆体");
+                        Files.createDirectories(targetDir);
+                        Path target = targetDir.resolve(subFont.substring(subFont.lastIndexOf('/') + 1));
+                        Files.copy(is, target, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+            }
+            // 检查是否有任何字体被提取
+            boolean hasFonts = false;
+            for (String fontFile : fontFiles) {
+                if (Files.exists(cacheDir.resolve(fontFile))) {
+                    hasFonts = true;
+                    break;
+                }
+            }
+            if (hasFonts) {
+                log.info("[extractFontDir] 从 classpath 提取字体到缓存目录: {}", cacheDir);
+                return cacheDir.toAbsolutePath().toString();
+            }
+        } catch (Exception e) {
+            log.warn("[extractFontDir] 从 classpath 提取字体失败: {}", e.getMessage());
+        }
+        // 回退：使用服务器上的字体目录
+        String serverFontPath = "/root/app/gzh/admin-frontend/src/assets/font";
+        if (java.nio.file.Files.exists(java.nio.file.Paths.get(serverFontPath))) {
+            log.info("[extractFontDir] 回退到服务器字体路径: {}", serverFontPath);
+            return serverFontPath;
+        }
+        // 最后的回退：本地相对路径（开发环境）
+        String localPath = java.nio.file.Paths.get(System.getProperty("user.dir"))
+                .getParent()
+                .resolve("admin-frontend/src/assets/font")
+                .toAbsolutePath()
+                .normalize()
+                .toString();
+        log.info("[extractFontDir] 回退到本地字体路径: {}", localPath);
+        return localPath;
     }
 }

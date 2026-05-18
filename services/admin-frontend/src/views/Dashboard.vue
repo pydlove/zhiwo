@@ -77,8 +77,8 @@ onMounted(loadStats)
 <template>
   <div>
     <!-- Stats Cards -->
-    <Row :gutter="24" style="margin-bottom: 24px;">
-      <Col :span="6" v-for="s in stats" :key="s.label">
+    <Row :gutter="[16, 16]" style="margin-bottom: 24px;">
+      <Col :xs="12" :sm="12" :md="6" :lg="6" v-for="s in stats" :key="s.label">
         <Card :body-style="{ padding: '0' }" style="border-radius: 2px;">
           <div style="display: flex; align-items: stretch;">
             <div style="width: 4px;" :style="{ background: s.color }"></div>
@@ -110,7 +110,7 @@ onMounted(loadStats)
       <template #title>
         <span style="font-size: 16px; font-weight: 500; color: #262626;">快捷入口</span>
       </template>
-      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+      <div class="quick-actions-grid">
         <div
           v-for="q in quickActions"
           :key="q.label"
@@ -137,9 +137,9 @@ onMounted(loadStats)
       </div>
     </Card>
 
-    <Row :gutter="24">
+    <Row :gutter="[16, 16]">
       <!-- Top Tracks -->
-      <Col :span="16">
+      <Col :xs="24" :sm="24" :md="16" :lg="16">
         <Card :body-style="{ padding: '0' }" style="border-radius: 2px;">
           <template #title>
             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -164,7 +164,7 @@ onMounted(loadStats)
       </Col>
 
       <!-- Platform Distribution -->
-      <Col :span="8">
+      <Col :xs="24" :sm="24" :md="8" :lg="8">
         <Card title="平台文章分布" :body-style="{ padding: '0' }" style="border-radius: 2px;">
           <Table :columns="platformColumns" :data-source="platformDistribution" :pagination="false" size="small">
             <template #bodyCell="{ column, text, record }">
@@ -184,3 +184,17 @@ onMounted(loadStats)
     </Row>
   </div>
 </template>
+
+<style scoped>
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .quick-actions-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+</style>

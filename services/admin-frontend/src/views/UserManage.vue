@@ -4,7 +4,6 @@ import { useRoute } from 'vue-router'
 import { Card, Input, InputNumber, Select, Button, Table, Tag, Modal, Form, message, Pagination, Checkbox, Upload, Switch, Tabs, DatePicker, Dropdown, Menu } from 'ant-design-vue'
 import { listUsers, getUserTracks, addUserTrack, removeUserTrack, exportUsers, importUsers, batchUpdateAdmin } from '../api/user.js'
 import { createOrder } from '../api/order.js'
-import { listSubscriptionPosts, saveSubscriptionPost } from '../api/subscriptionPost.js'
 import { listTracks } from '../api/track.js'
 import { listCreations } from '../api/creation.js'
 import { listStyles } from '../api/style.js'
@@ -41,7 +40,6 @@ function saveUserSearchState() {
 }
 
 const data = ref([])
-const allSubscriptionPosts = ref([])
 const allTracks = ref([])
 const allStyles = ref([])
 const allPlans = ref([])
@@ -312,10 +310,7 @@ const previewFileType = computed(() => {
 
 function needsRecommend(user) {
   const userTracks = user.trackIds || []
-  if (userTracks.length === 0) return false
-  const userPosts = allSubscriptionPosts.value.filter(p => p.userId === user.id)
-  const postedTrackIds = new Set(userPosts.map(p => p.trackId))
-  return userTracks.some(tid => !postedTrackIds.has(tid))
+  return userTracks.length > 0
 }
 
 async function openRecommendModal(record) {
@@ -326,22 +321,16 @@ async function openRecommendModal(record) {
   recommendUserPosts.value = []
 
   try {
-    const [tracks, posts, styles] = await Promise.all([
+    const [tracks, styles] = await Promise.all([
       getUserTracks(record.id),
-      listSubscriptionPosts(),
       listStyles(),
     ])
     allStyles.value = styles || []
     const trackIds = (tracks || []).map(t => t.trackId)
     recommendUserTracks.value = allTracks.value.filter(t => trackIds.includes(t.id))
-    recommendUserPosts.value = (posts || []).filter(p => p.userId === record.id)
+    recommendUserPosts.value = []
 
-    // Auto-select first track that needs a post
-    const postedTrackIds = new Set(recommendUserPosts.value.map(p => p.trackId))
-    const firstMissing = recommendUserTracks.value.find(t => !postedTrackIds.has(t.id))
-    if (firstMissing) {
-      selectedRecommendTrackId.value = firstMissing.id
-    } else if (recommendUserTracks.value.length > 0) {
+    if (recommendUserTracks.value.length > 0) {
       selectedRecommendTrackId.value = recommendUserTracks.value[0].id
     }
   } catch (e) {
@@ -416,25 +405,8 @@ async function saveRecommend() {
     message.warning('请输入文章标题')
     return
   }
-  try {
-    await saveSubscriptionPost({
-      userId: recommendUser.value.id,
-      trackId: selectedRecommendTrackId.value,
-      title: recommendForm.value.title,
-      description: recommendForm.value.description || undefined,
-      fileUrl: recommendForm.value.fileUrl || undefined,
-      fileName: recommendForm.value.fileName || undefined,
-      status: '已上架',
-    })
-    message.success('保存成功')
-    // Refresh posts for this user
-    const posts = await listSubscriptionPosts()
-    recommendUserPosts.value = (posts || []).filter(p => p.userId === recommendUser.value.id)
-    allSubscriptionPosts.value = posts || []
-    recommendForm.value = { title: '', description: '', fileUrl: '', fileName: '' }
-  } catch (e) {
-    message.error('保存失败')
-  }
+  message.info('订阅文章功能已废弃，请通过标题匹配和生成文章流程操作')
+  recommendModalOpen.value = false
 }
 
 async function loadOperators() {
@@ -508,12 +480,10 @@ async function loadData() {
       listTracks(),
       listMembershipPlans(),
       listStyles().catch(() => []),
-      listSubscriptionPosts(),
-    ]).then(([tList, pList, styleList, sList]) => {
+    ]).then(([tList, pList, styleList]) => {
       allTracks.value = tList || []
       allPlans.value = pList || []
       allStyles.value = styleList || []
-      allSubscriptionPosts.value = sList || []
 
       const planMap = {}
       allPlans.value.forEach(p => { planMap[p.id] = p.name })

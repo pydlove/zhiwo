@@ -172,9 +172,36 @@ public class EmailService {
      */
     public void sendDailyRecommendEmail(String to, String userName, String trackName, String articleTitle,
                                          String platform, File articleFile, String fileName) {
+        sendDailyRecommendEmailWithImages(to, userName, trackName, articleTitle, platform, articleFile, fileName, null);
+    }
+
+    public void sendDailyRecommendEmailWithImages(String to, String userName, String trackName, String articleTitle,
+                                                   String platform, File articleFile, String fileName, java.util.List<File> imageFiles) {
         String subject = "【每日推荐】" + articleTitle + " —— 知我公众号创作助手";
         String html = buildDailyRecommendHtml(userName, trackName, articleTitle, platform);
-        sendHtmlEmailWithAttachment(to, subject, html, articleFile, fileName);
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setFrom(fromEmail, fromName);
+            helper.setTo(to);
+            helper.setSubject(subject);
+            helper.setText(html, true);
+            if (articleFile != null && articleFile.exists()) {
+                helper.addAttachment(fileName, new FileSystemResource(articleFile));
+            }
+            if (imageFiles != null) {
+                for (File img : imageFiles) {
+                    if (img != null && img.exists()) {
+                        helper.addAttachment(img.getName(), new FileSystemResource(img));
+                    }
+                }
+            }
+            mailSender.send(message);
+        } catch (java.io.UnsupportedEncodingException | MessagingException e) {
+            throw new RuntimeException("邮件发送失败: " + e.getMessage(), e);
+        } catch (org.springframework.mail.MailException e) {
+            throw new RuntimeException("邮件发送失败，请检查SMTP配置: " + e.getMessage(), e);
+        }
     }
 
     /**

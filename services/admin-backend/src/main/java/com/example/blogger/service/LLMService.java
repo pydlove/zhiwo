@@ -239,10 +239,22 @@ public class LLMService {
             model = "MiniMax-M2.7";
         }
 
+        // 拆分 system prompt 和 user prompt
+        String systemPrompt = "你是一位资深中文自媒体写手，擅长撰写自然流畅、口语化的公众号文章。";
+        String userPrompt = prompt;
+        int sysIdx = prompt.indexOf("【系统指令】");
+        if (sysIdx >= 0) {
+            systemPrompt = "你是一位资深中文自媒体写手，擅长撰写自然流畅、口语化的公众号文章。\n" + prompt.substring(sysIdx);
+            userPrompt = prompt.substring(0, sysIdx).trim();
+        } else {
+            systemPrompt += "请直接输出文章正文，不要输出思考过程，不要复述用户要求，不要加任何前言或总结。";
+        }
+
         Map<String, Object> body = new HashMap<>();
         body.put("model", model);
         body.put("messages", new Object[]{
-            Map.of("role", "user", "content", prompt)
+            Map.of("role", "system", "content", systemPrompt),
+            Map.of("role", "user", "content", userPrompt)
         });
         body.put("stream", true);
         body.put("max_tokens", 4096);

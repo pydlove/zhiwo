@@ -32,8 +32,8 @@ async function handleLogin() {
 </script>
 
 <template>
-  <div style="min-height: 100vh; background: #f0f2f5; display: flex; align-items: center; justify-content: center;">
-    <Card style="width: 360px; border-radius: 2px;">
+  <div class="login-page">
+    <Card class="login-card">
       <div style="text-align: center; margin-bottom: 24px;">
         <div style="width: 48px; height: 48px; border-radius: 4px; background: #1890ff; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 600; margin: 0 auto 12px;">A</div>
         <div style="font-size: 20px; font-weight: 500; color: #262626;">知我公众号创作助手 后台管理</div>
@@ -50,3 +50,26 @@ async function handleLogin() {
     </Card>
   </div>
 </template>
+
+<style scoped>
+.login-page {
+  min-height: 100vh;
+  background: #f0f2f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+}
+
+.login-card {
+  width: 360px;
+  border-radius: 2px;
+}
+
+@media (max-width: 768px) {
+  .login-card {
+    width: 100%;
+    max-width: 360px;
+  }
+}
+</style>

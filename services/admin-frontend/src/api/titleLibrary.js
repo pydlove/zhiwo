@@ -202,6 +202,21 @@ export function getUserHistory(userId) {
   return request.get('/title-library/user-history/' + userId)
 }
 
+export function getUserHomogeneity(userId) {
+  return request.get('/title-library/user-homogeneity/' + userId)
+}
+
+export function listUserHomogeneity(params = {}) {
+  const query = new URLSearchParams()
+  if (params.keyword) query.append('keyword', params.keyword)
+  if (params.sortField) query.append('sortField', params.sortField)
+  if (params.sortOrder) query.append('sortOrder', params.sortOrder)
+  if (params.page) query.append('page', params.page)
+  if (params.pageSize) query.append('pageSize', params.pageSize)
+  const qs = query.toString()
+  return request.get('/title-library/user-homogeneity-list' + (qs ? '?' + qs : ''))
+}
+
 // 文章反馈相关
 export function saveArticleFeedback(data) {
   return request.post('/title-library/feedback', data)
@@ -299,4 +314,19 @@ export function sendArticleEmail(titleId, email) {
     method: 'post',
     data: { email }
   })
+}
+
+// 生成文章贴图
+export function generateImagePost(titleId) {
+  return request.post(`/title-library/${titleId}/generate-image-post`)
+}
+
+// 批量生成文章贴图
+export function batchGenerateImagePost(titleIds) {
+  return request.post('/title-library/batch-generate-image-post', { titleIds })
+}
+
+// 查询文章贴图列表
+export function getImagePosts(titleId) {
+  return request.get(`/title-library/${titleId}/image-posts`)
 }

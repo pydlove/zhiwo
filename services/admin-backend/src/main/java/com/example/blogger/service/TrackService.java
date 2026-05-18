@@ -56,7 +56,6 @@ public class TrackService {
                     int u4 = stmt.executeUpdate("UPDATE tu_title_recommendation SET track_id = '" + keepId + "' WHERE track_id = '" + oldId + "'");
                     int u5 = stmt.executeUpdate("UPDATE tu_daily_recommend SET track_id = '" + keepId + "' WHERE track_id = '" + oldId + "'");
                     int u6 = stmt.executeUpdate("UPDATE tu_reference_post SET track_id = '" + keepId + "' WHERE track_id = '" + oldId + "'");
-                    int u7 = stmt.executeUpdate("UPDATE tu_subscription_post SET track_id = '" + keepId + "' WHERE track_id = '" + oldId + "'");
                     // 关键：先查询当前 is_deleted 值
                     ResultSet beforeRs = stmt.executeQuery("SELECT id, name, is_deleted FROM tu_track WHERE id = '" + oldId + "'");
                     if (beforeRs.next()) {
@@ -75,7 +74,7 @@ public class TrackService {
                     }
                     System.out.println("[合并重复赛道] 强制合并已知: " + oldId + " -> " + keepId
                         + " (blogger=" + u1 + ", title=" + u2 + ", userTrack=" + u3 + ", rec=" + u4
-                        + ", daily=" + u5 + ", ref=" + u6 + ", sub=" + u7 + ", del=" + u8 + ")");
+                        + ", daily=" + u5 + ", ref=" + u6 + ", del=" + u8 + ")");
                 }
             } else {
                 System.out.println("[合并重复赛道] 已知ID查询结果不足2条，实际=" + knownIds.size());
@@ -116,11 +115,10 @@ public class TrackService {
                     int u4 = stmt.executeUpdate("UPDATE tu_title_recommendation SET track_id = '" + keepId + "' WHERE track_id = '" + oldId + "'");
                     int u5 = stmt.executeUpdate("UPDATE tu_daily_recommend SET track_id = '" + keepId + "' WHERE track_id = '" + oldId + "'");
                     int u6 = stmt.executeUpdate("UPDATE tu_reference_post SET track_id = '" + keepId + "' WHERE track_id = '" + oldId + "'");
-                    int u7 = stmt.executeUpdate("UPDATE tu_subscription_post SET track_id = '" + keepId + "' WHERE track_id = '" + oldId + "'");
-                    int u8 = stmt.executeUpdate("UPDATE tu_track SET is_deleted = 1 WHERE id = '" + oldId + "'");
+                    int u7 = stmt.executeUpdate("UPDATE tu_track SET is_deleted = 1 WHERE id = '" + oldId + "'");
                     System.out.println("[合并重复赛道]   合并 " + oldId + " -> " + keepId
                         + " (blogger=" + u1 + ", title=" + u2 + ", userTrack=" + u3 + ", rec=" + u4
-                        + ", daily=" + u5 + ", ref=" + u6 + ", sub=" + u7 + ", del=" + u8 + ")");
+                        + ", daily=" + u5 + ", ref=" + u6 + ", del=" + u7 + ")");
                 }
                 mergedGroups++;
             }

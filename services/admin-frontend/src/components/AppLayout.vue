@@ -1,8 +1,9 @@
 <script setup>
 import { computed, inject, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Layout, Avatar, Modal, Form, Input, message, Dropdown, Menu, Space, Breadcrumb } from 'ant-design-vue'
-import { SearchOutlined, DownOutlined, LockOutlined, LogoutOutlined, BulbOutlined, BulbFilled } from '@ant-design/icons-vue'
+import { Layout, Avatar, Modal, Form, Input, message, Dropdown, Menu, Space, Breadcrumb, Drawer } from 'ant-design-vue'
+import { SearchOutlined, DownOutlined, LockOutlined, LogoutOutlined, BulbOutlined, BulbFilled, MenuOutlined, CloseOutlined } from '@ant-design/icons-vue'
+import { onMounted, onUnmounted } from 'vue'
 import request from '../api/request.js'
 
 const route = useRoute()
@@ -51,7 +52,6 @@ const menuGroups = [
       { key: '/tracks', label: '赛道管理', perm: 'track' },
       { key: '/bloggers', label: '博主管理', perm: 'blogger' },
       { key: '/posts', label: '文章管理', perm: 'post' },
-      { key: '/subscription-posts', label: '订阅文章', perm: 'subscription-post' },
       { key: '/styles', label: '样式管理', perm: 'style' },
       { key: '/guides', label: '创作技巧', perm: 'guide' },
       { key: '/helps', label: '帮助文档', perm: 'help' },
@@ -73,6 +73,7 @@ const menuGroups = [
       { key: '/title-match', label: '标题匹配', perm: 'title-library' },
       { key: '/article-review', label: '文章审核', perm: 'title-library' },
       { key: '/push-overview', label: '推送概览', perm: 'title-library' },
+      { key: '/user-homogeneity', label: '用户同质化', perm: 'title-library' },
       { key: '/announcements', label: '公告管理', perm: 'title-library' },
       { key: '/title-generate', label: '生成标题任务', perm: 'title-generate' },
       { key: '/task-list', label: '生成文章任务', perm: 'task-list' },
@@ -139,6 +140,30 @@ watch(
 const searchKeyword = ref('')
 const searchOpen = ref(false)
 
+const isMobile = ref(false)
+const drawerOpen = ref(false)
+
+function checkMobile() {
+  isMobile.value = window.innerWidth < 768
+}
+
+function toggleDrawer() {
+  drawerOpen.value = !drawerOpen.value
+}
+
+function closeDrawer() {
+  drawerOpen.value = false
+}
+
+onMounted(() => {
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkMobile)
+})
+
 const allMenuItems = [
   { key: '/dashboard', label: '仪表盘', perm: 'dashboard' },
   { key: '/tracks', label: '赛道管理', perm: 'track' },
@@ -157,6 +182,7 @@ const allMenuItems = [
   { key: '/title-library', label: '标题库', perm: 'title-library' },
   { key: '/title-match', label: '标题匹配', perm: 'title-library' },
   { key: '/push-overview', label: '推送概览', perm: 'title-library' },
+  { key: '/user-homogeneity', label: '用户同质化', perm: 'title-library' },
   { key: '/announcements', label: '公告管理', perm: 'title-library' },
   { key: '/task-list', label: '生成文章任务', perm: 'task-list' },
   { key: '/title-generate', label: '生成标题任务', perm: 'title-generate' },
@@ -182,6 +208,9 @@ function onMenuClick({ key }) {
   router.push(key)
   searchKeyword.value = ''
   searchOpen.value = false
+  if (isMobile.value) {
+    drawerOpen.value = false
+  }
 }
 
 function closeSearchDropdown() {
@@ -236,12 +265,18 @@ async function handlePwdOk() {
 <template>
   <Layout class="layout">
     <Layout.Header class="header">
-      <div class="logo">
-        <img :src="logoImage" />
-        <span class="logo-text">知我创作</span>
+      <div class="header-left">
+        <div v-if="isMobile" class="hamburger" @click="toggleDrawer">
+          <MenuOutlined />
+        </div>
+        <div class="logo">
+          <img :src="logoImage" />
+          <span class="logo-text">知我创作</span>
+        </div>
       </div>
 
       <Menu
+        v-if="!isMobile"
         v-model:selectedKeys="selectedKeys"
         mode="horizontal"
         :items="menuItems"
@@ -251,7 +286,7 @@ async function handlePwdOk() {
       />
 
       <Space class="header-right" size="middle">
-        <div class="search-wrap">
+        <div v-if="!isMobile" class="search-wrap">
           <Input
             v-model:value="searchKeyword"
             placeholder="搜索菜单..."
@@ -287,8 +322,8 @@ async function handlePwdOk() {
             <Avatar size="small" style="background: #1890ff;">
               {{ (adminUser.name || adminUser.username || 'A')[0].toUpperCase() }}
             </Avatar>
-            <span class="user-name">{{ adminUser.name || adminUser.username }}</span>
-            <DownOutlined />
+            <span v-if="!isMobile" class="user-name">{{ adminUser.name || adminUser.username }}</span>
+            <DownOutlined v-if="!isMobile" />
           </div>
           <template #overlay>
             <Menu @click="handleDropdownClick">
@@ -321,6 +356,31 @@ async function handlePwdOk() {
       </div>
     </Layout.Content>
   </Layout>
+
+  <!-- 移动端抽屉菜单 -->
+  <Drawer
+    v-model:open="drawerOpen"
+    placement="left"
+    width="280"
+    :closable="false"
+    :body-style="{ padding: 0 }"
+    class="mobile-drawer"
+  >
+    <div class="drawer-header">
+      <div class="logo">
+        <img :src="logoImage" />
+        <span class="logo-text">知我创作</span>
+      </div>
+      <CloseOutlined class="drawer-close" @click="closeDrawer" />
+    </div>
+    <Menu
+      v-model:selectedKeys="selectedKeys"
+      mode="inline"
+      :items="menuItems"
+      theme="light"
+      @click="onMenuClick"
+    />
+  </Drawer>
 
   <Modal v-model:open="pwdModalOpen" title="修改密码" :mask-closable="false" width="400" @ok="handlePwdOk">
     <Form layout="vertical" style="margin-top: 12px;">
@@ -493,5 +553,82 @@ async function handlePwdOk() {
 .page-content {
   padding: 20px 24px;
   min-height: calc(100vh - 64px - 52px);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hamburger {
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.drawer-header .logo {
+  margin-right: 0;
+}
+
+.drawer-header .logo-text {
+  color: #001529;
+}
+
+.drawer-close {
+  font-size: 16px;
+  color: #999;
+  cursor: pointer;
+  padding: 4px;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .header {
+    padding: 0 12px;
+  }
+
+  .logo-text {
+    font-size: 14px;
+  }
+
+  .page-header {
+    padding: 0 12px;
+    height: 44px;
+  }
+
+  .page-header .ant-breadcrumb {
+    font-size: 13px;
+  }
+
+  .page-content {
+    padding: 12px;
+    min-height: calc(100vh - 64px - 44px);
+  }
+
+  /* 全局表格横向滚动 */
+  .page-content :deep(.ant-table-wrapper) {
+    overflow-x: auto;
+  }
+
+  /* 全局 Card 内边距缩减 */
+  .page-content :deep(.ant-card-body) {
+    padding: 12px;
+  }
+
+  /* Modal 在移动端占满宽度 */
+  .page-content :deep(.ant-modal) {
+    max-width: 96vw !important;
+  }
 }
 </style>

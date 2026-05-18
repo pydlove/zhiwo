@@ -101,7 +101,7 @@ public class ProcessAutoScheduler {
             }
         }
 
-        // 获取各组合下已经有关联文章的标题数量（通过 recommend_date = tomorrow 且 subscription_post_id IS NOT NULL）
+        // 获取各组合下已经有关联文章的标题数量（通过 recommend_date = tomorrow 且 title_library.generated_file_url IS NOT NULL）
         Map<String, Long> completedCountMap = new HashMap<>();
         List<Map<String, Object>> completedList = titleLibraryMapper.countCompletedByCombo(pushDateStr);
         if (completedList != null) {

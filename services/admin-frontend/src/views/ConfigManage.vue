@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Card, Input, Select, Button, Form, message } from 'ant-design-vue'
+import { Card, Input, InputNumber, Select, Button, Form, message } from 'ant-design-vue'
 import request from '../api/request.js'
 import { listTracks } from '../api/track.js'
 
@@ -70,6 +70,35 @@ const backupLoading = ref(false)
 const defaultArticleStyle = ref('')
 const generationConcurrency = ref('1')
 
+const imagePostSplitMode = ref('height')
+const imagePostWidth = ref(1080)
+const imagePostHeight = ref(1920)
+const imagePostBgColor = ref('#ffffff')
+const imagePostCoverGradient = ref('#f8f3e0')
+const imagePostTheme = ref('classic-xhs')
+const imagePostFont = ref('')
+const imagePostBodyFont = ref('')
+
+const imagePostThemeOptions = [
+  { label: '经典小红书', value: 'classic-xhs' },
+  { label: '莫兰迪奶油', value: 'morandi-cream' },
+  { label: '薄荷清新', value: 'mint-fresh' },
+  { label: '落日橘粉', value: 'sunset-blush' },
+  { label: '深夜高级', value: 'midnight' },
+  { label: '薰衣草紫', value: 'lavender' },
+  { label: '克莱因蓝', value: 'klein-blue' },
+  { label: '渐变ins风', value: 'gradient-ins' },
+  { label: '报纸复古', value: 'newspaper' },
+]
+
+const imagePostFontOptions = [
+  { label: '自动选择（默认）', value: '' },
+  { label: '思源黑体 Bold', value: 'NotoSansSC-Bold' },
+  { label: '阿里妈妈方圆体', value: 'AlimamaFangYuanTiVF' },
+  { label: '阿里妈妈刀隶体', value: '阿里妈妈刀隶体' },
+  { label: '思源黑体 Regular', value: 'NotoSansSC-Regular' },
+]
+
 async function handleBackupDb() {
   backupLoading.value = true
   try {
@@ -109,6 +138,30 @@ async function loadConfig() {
       }
       if (data.generation_task_concurrency !== undefined) {
         generationConcurrency.value = data.generation_task_concurrency
+      }
+      if (data.image_post_split_mode !== undefined) {
+        imagePostSplitMode.value = data.image_post_split_mode
+      }
+      if (data.image_post_width !== undefined) {
+        imagePostWidth.value = parseInt(data.image_post_width, 10) || 1080
+      }
+      if (data.image_post_height !== undefined) {
+        imagePostHeight.value = parseInt(data.image_post_height, 10) || 1920
+      }
+      if (data.image_post_bg_color !== undefined) {
+        imagePostBgColor.value = data.image_post_bg_color
+      }
+      if (data.image_post_cover_gradient !== undefined) {
+        imagePostCoverGradient.value = data.image_post_cover_gradient
+      }
+      if (data.image_post_theme !== undefined) {
+        imagePostTheme.value = data.image_post_theme
+      }
+      if (data.image_post_font !== undefined) {
+        imagePostFont.value = data.image_post_font
+      }
+      if (data.image_post_body_font !== undefined) {
+        imagePostBodyFont.value = data.image_post_body_font
       }
     }
   } catch (e) {
@@ -153,6 +206,19 @@ async function saveMainOperator() {
 
 async function saveGenerationConcurrency() {
   await savePartial({ generation_task_concurrency: generationConcurrency.value || '1' })
+}
+
+async function saveImagePostConfig() {
+  await savePartial({
+    image_post_split_mode: imagePostSplitMode.value || 'height',
+    image_post_width: String(imagePostWidth.value || 1080),
+    image_post_height: String(imagePostHeight.value || 1920),
+    image_post_bg_color: imagePostBgColor.value || '#ffffff',
+    image_post_cover_gradient: imagePostCoverGradient.value || '#f8f3e0',
+    image_post_theme: imagePostTheme.value || 'classic-xhs',
+    image_post_font: imagePostFont.value || '',
+    image_post_body_font: imagePostBodyFont.value || '',
+  })
 }
 
 async function saveNotifyConfig() {
@@ -389,6 +455,58 @@ onMounted(() => {
           <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">设置同时执行的文章生成任务数量，范围 1-10，默认 1。增大并发会加快队列处理速度，但会占用更多系统资源。</div>
         </Form.Item>
         <Button type="primary" @click="saveGenerationConcurrency">保存</Button>
+      </Form>
+    </Card>
+
+    <Card style="border-radius: 2px; margin-bottom: 24px;">
+      <template #title>
+        <span style="font-size: 16px; font-weight: 500; color: #262626;">贴图设置</span>
+      </template>
+      <Form layout="vertical">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 800px;">
+          <Form.Item label="切分模式">
+            <Select v-model:value="imagePostSplitMode" style="width: 100%;">
+              <Select.Option value="height">按高度切</Select.Option>
+              <Select.Option value="paragraph">按段落切</Select.Option>
+            </Select>
+            <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">按高度切：内容填满即截断；按段落切：不在段落中间断开</div>
+          </Form.Item>
+          <Form.Item label="图片尺寸">
+            <div style="display: flex; gap: 12px; align-items: center;">
+              <InputNumber v-model:value="imagePostWidth" :min="540" :max="1440" style="width: 120px;" />
+              <span style="color: #999;">×</span>
+              <InputNumber v-model:value="imagePostHeight" :min="960" :max="2560" style="width: 120px;" />
+            </div>
+            <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">默认 1080×1920（9:16）</div>
+          </Form.Item>
+          <Form.Item label="内容背景色">
+            <Input v-model:value="imagePostBgColor" style="width: 200px;" />
+            <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">如 #ffffff、#f5f5f5</div>
+          </Form.Item>
+          <Form.Item label="封面背景色">
+            <Input v-model:value="imagePostCoverGradient" style="width: 280px;" />
+            <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">如 #f8f3e0（米白）、#f8df8b（暖黄）</div>
+          </Form.Item>
+          <Form.Item label="封面主题风格" style="grid-column: 1 / -1;">
+            <Select v-model:value="imagePostTheme" style="width: 320px;">
+              <Select.Option v-for="opt in imagePostThemeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
+            </Select>
+            <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">选择贴图封面的视觉风格，不同主题配色和装饰元素不同</div>
+          </Form.Item>
+          <Form.Item label="封面字体" style="grid-column: 1 / -1;">
+            <Select v-model:value="imagePostFont" style="width: 320px;">
+              <Select.Option v-for="opt in imagePostFontOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
+            </Select>
+            <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">选择封面标题字体，留空则由系统按主题自动匹配</div>
+          </Form.Item>
+          <Form.Item label="正文字体" style="grid-column: 1 / -1;">
+            <Select v-model:value="imagePostBodyFont" style="width: 320px;">
+              <Select.Option v-for="opt in imagePostFontOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</Select.Option>
+            </Select>
+            <div style="font-size: 12px; color: #8c8c8c; margin-top: 4px;">选择正文段落字体，留空则由系统按主题自动匹配</div>
+          </Form.Item>
+        </div>
+        <Button type="primary" style="margin-top: 16px;" @click="saveImagePostConfig">保存</Button>
       </Form>
     </Card>
 

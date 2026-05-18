@@ -142,8 +142,60 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
 
             ensureColumn(conn, "tu_image_library", "updated_at",
                 "ALTER TABLE tu_image_library ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'");
+
+            ensureColumn(conn, "tu_title_library", "image_post_urls",
+                "ALTER TABLE tu_title_library ADD COLUMN image_post_urls TEXT COMMENT '贴图URL列表，JSON数组字符串'");
+
+            // 兼容旧版本：如果 image_post_urls 还是 VARCHAR(2000)，升级为 TEXT
+            try (Statement stmt = conn.createStatement()) {
+                stmt.executeUpdate("ALTER TABLE tu_title_library MODIFY COLUMN image_post_urls TEXT COMMENT '贴图URL列表，JSON数组字符串'");
+                log.info("[DatabaseSchemaInitializer] 已调整 image_post_urls 字段类型为 TEXT");
+            } catch (Exception e) {
+                log.debug("[DatabaseSchemaInitializer] 调整 image_post_urls 字段类型跳过: {}", e.getMessage());
+            }
+
+            ensureColumn(conn, "tu_title_library", "banned_word_check_result",
+                "ALTER TABLE tu_title_library ADD COLUMN banned_word_check_result JSON NULL COMMENT '违禁词检测结果'");
+
+            ensureColumn(conn, "tu_title_library", "title_keyword",
+                "ALTER TABLE tu_title_library ADD COLUMN title_keyword VARCHAR(255) DEFAULT NULL COMMENT '标题分词关键词，用于相似度检测'");
+
+            // 用户同质化程度表
+            ensureUserHomogeneityTable(conn);
         } catch (Exception e) {
             log.error("[DatabaseSchemaInitializer] 数据库连接失败: {}", e.getMessage(), e);
+        }
+    }
+
+    private void ensureUserHomogeneityTable(Connection conn) {
+        try {
+            DatabaseMetaData metaData = conn.getMetaData();
+            boolean exists = false;
+            String catalog = conn.getCatalog();
+            try (ResultSet rs = metaData.getTables(catalog, null, "tu_user_homogeneity", null)) {
+                exists = rs.next();
+            }
+            if (!exists) {
+                String createSql = "CREATE TABLE IF NOT EXISTS tu_user_homogeneity (" +
+                    "  id VARCHAR(32) PRIMARY KEY COMMENT '记录ID'," +
+                    "  user_id VARCHAR(32) NOT NULL COMMENT '用户ID'," +
+                    "  homogeneity_score INT DEFAULT 0 COMMENT '同质化程度 0-100'," +
+                    "  history_count INT DEFAULT 0 COMMENT '参与计算的历史标题数量'," +
+                    "  calculated_at DATETIME DEFAULT NULL COMMENT '计算时间'," +
+                    "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'," +
+                    "  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'," +
+                    "  UNIQUE KEY uk_user_id (user_id)," +
+                    "  KEY idx_calculated_at (calculated_at)" +
+                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户同质化程度计算结果'";
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.executeUpdate(createSql);
+                    log.info("[DatabaseSchemaInitializer] 已自动创建表: tu_user_homogeneity");
+                }
+            } else {
+                log.debug("[DatabaseSchemaInitializer] 表 tu_user_homogeneity 已存在，跳过创建");
+            }
+        } catch (Exception e) {
+            log.error("[DatabaseSchemaInitializer] 创建表 tu_user_homogeneity 失败: {}", e.getMessage());
         }
     }
 

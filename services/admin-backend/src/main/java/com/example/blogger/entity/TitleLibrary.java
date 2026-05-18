@@ -22,21 +22,19 @@ public class TitleLibrary {
     private Integer generateStatus; // 0=未生成 1=生成成功
     private Integer isConfirmed; // 0=未确认 1=已确认 (兼容旧字段)
     private Integer confirmStatus; // 0=未确认 1=已确认 2=已拒绝
+    private String imagePostUrls; // JSON 数组字符串，存储贴图 URL 列表
+    private String titleKeyword;   // 标题分词关键词，用于相似度检测
 
     // display fields
     private String taskId;
     private String trackName;
+    private String bannedWordCheckResult;
 
     // recommendation display fields
     private String recommendUserId;
     private String recommendUserName;
     private String recommendUserTemplate;
     private java.time.LocalDate recommendDate;
-
-    // subscription post display fields
-    private String subscriptionPostId;
-    private String subscriptionPostTitle;
-    private String subscriptionPostFileUrl;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -74,12 +72,6 @@ public class TitleLibrary {
     public void setRecommendUserTemplate(String recommendUserTemplate) { this.recommendUserTemplate = recommendUserTemplate; }
     public java.time.LocalDate getRecommendDate() { return recommendDate; }
     public void setRecommendDate(java.time.LocalDate recommendDate) { this.recommendDate = recommendDate; }
-    public String getSubscriptionPostId() { return subscriptionPostId; }
-    public void setSubscriptionPostId(String subscriptionPostId) { this.subscriptionPostId = subscriptionPostId; }
-    public String getSubscriptionPostTitle() { return subscriptionPostTitle; }
-    public void setSubscriptionPostTitle(String subscriptionPostTitle) { this.subscriptionPostTitle = subscriptionPostTitle; }
-    public String getSubscriptionPostFileUrl() { return subscriptionPostFileUrl; }
-    public void setSubscriptionPostFileUrl(String subscriptionPostFileUrl) { this.subscriptionPostFileUrl = subscriptionPostFileUrl; }
     public String getGeneratedFileUrl() { return generatedFileUrl; }
     public void setGeneratedFileUrl(String generatedFileUrl) { this.generatedFileUrl = generatedFileUrl; }
     public String getGeneratedFileName() { return generatedFileName; }
@@ -93,6 +85,12 @@ public class TitleLibrary {
     public void setIsConfirmed(Integer isConfirmed) { this.isConfirmed = isConfirmed; }
     public Integer getConfirmStatus() { return confirmStatus; }
     public void setConfirmStatus(Integer confirmStatus) { this.confirmStatus = confirmStatus; }
+    public String getImagePostUrls() { return imagePostUrls; }
+    public void setImagePostUrls(String imagePostUrls) { this.imagePostUrls = imagePostUrls; }
+    public String getTitleKeyword() { return titleKeyword; }
+    public void setTitleKeyword(String titleKeyword) { this.titleKeyword = titleKeyword; }
     public String getTaskId() { return taskId; }
     public void setTaskId(String taskId) { this.taskId = taskId; }
+    public String getBannedWordCheckResult() { return bannedWordCheckResult; }
+    public void setBannedWordCheckResult(String bannedWordCheckResult) { this.bannedWordCheckResult = bannedWordCheckResult; }
 }

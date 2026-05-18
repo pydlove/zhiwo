@@ -33,9 +33,10 @@ public interface TitleRecommendationMapper {
             "WHERE user_id = #{userId} AND track_id = #{trackId} AND recommend_date = #{date}")
     int countByUserTrackDate(@Param("userId") String userId, @Param("trackId") String trackId, @Param("date") LocalDate date);
 
-    @Select("SELECT COUNT(*) FROM tu_title_recommendation " +
-            "WHERE user_id = #{userId} AND recommend_date = #{date} " +
-            "AND subscription_post_id IS NOT NULL AND subscription_post_id != ''")
+    @Select("SELECT COUNT(*) FROM tu_title_recommendation r " +
+            "INNER JOIN tu_title_library t ON r.title_library_id = t.id " +
+            "WHERE r.user_id = #{userId} AND r.recommend_date = #{date} " +
+            "AND t.generated_file_url IS NOT NULL AND t.generated_file_url != ''")
     int countRecommendedByUserAndDate(@Param("userId") String userId, @Param("date") LocalDate date);
 
     @Select("<script>" +
@@ -57,28 +58,25 @@ public interface TitleRecommendationMapper {
     @Select("SELECT r.*, u.username as userName, u.template as userTemplate " +
             "FROM tu_title_recommendation r " +
             "LEFT JOIN tu_user u ON r.user_id = u.id AND u.is_deleted = 0 " +
-            "WHERE (r.subscription_post_id IS NULL OR r.subscription_post_id = '') " +
+            "LEFT JOIN tu_title_library t ON r.title_library_id = t.id AND t.is_deleted = 0 " +
+            "WHERE (t.generated_file_url IS NULL OR t.generated_file_url = '') " +
             "ORDER BY r.created_at DESC")
     List<TitleRecommendation> findTodayRecommendationsWithoutPost(@Param("date") LocalDate date);
-
-    @Update("UPDATE tu_title_recommendation SET subscription_post_id = #{subscriptionPostId} WHERE id = #{id}")
-    int updateSubscriptionPostId(@Param("id") String id, @Param("subscriptionPostId") String subscriptionPostId);
-
-    @Update("UPDATE tu_title_recommendation SET subscription_post_id = NULL WHERE subscription_post_id = #{subscriptionPostId}")
-    int clearSubscriptionPostId(@Param("subscriptionPostId") String subscriptionPostId);
 
     @Select("SELECT r.*, u.username as userName, u.template as userTemplate " +
             "FROM tu_title_recommendation r " +
             "LEFT JOIN tu_user u ON r.user_id = u.id AND u.is_deleted = 0 " +
+            "INNER JOIN tu_title_library t ON r.title_library_id = t.id AND t.is_deleted = 0 " +
             "WHERE r.user_id = #{userId} AND r.recommend_date = #{date} " +
-            "AND r.subscription_post_id IS NOT NULL AND r.subscription_post_id != '' " +
+            "AND t.generated_file_url IS NOT NULL AND t.generated_file_url != '' " +
             "ORDER BY r.created_at DESC " +
             "LIMIT 1")
     TitleRecommendation findLatestByUserAndDate(@Param("userId") String userId, @Param("date") LocalDate date);
 
-    @Select("SELECT DISTINCT track_id FROM tu_title_recommendation " +
-            "WHERE user_id = #{userId} AND recommend_date = #{date} " +
-            "AND subscription_post_id IS NOT NULL AND subscription_post_id != ''")
+    @Select("SELECT DISTINCT r.track_id FROM tu_title_recommendation r " +
+            "INNER JOIN tu_title_library t ON r.title_library_id = t.id " +
+            "WHERE r.user_id = #{userId} AND r.recommend_date = #{date} " +
+            "AND t.generated_file_url IS NOT NULL AND t.generated_file_url != ''")
     List<String> findRecommendedTrackIdsByUserAndDate(@Param("userId") String userId, @Param("date") LocalDate date);
 
     @Select("SELECT r.*, t.title as titleLibraryTitle " +

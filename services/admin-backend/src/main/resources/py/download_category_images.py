@@ -23,6 +23,7 @@ import time
 import requests
 import urllib3
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Tuple, Dict, Optional
 
 # 关闭 SSL 警告 (部分国内站点证书环境特殊)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -54,7 +55,7 @@ HEADERS = {
 
 # ========================= 下载核心 =========================
 
-def fetch_image(url: str, save_path: str, timeout: int = 40, verify: bool = True) -> tuple[bool, str]:
+def fetch_image(url: str, save_path: str, timeout: int = 40, verify: bool = True) -> Tuple[bool, str]:
     """下载单张图片，返回 (是否成功, 错误信息)"""
     try:
         resp = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True, verify=verify)
@@ -80,7 +81,7 @@ def get_unsplash_url(keywords: str) -> str:
     return f"https://source.unsplash.com/1920x1080/?{keywords}"
 
 
-def fetch_bing_pool(max_images: int = 200) -> list[str]:
+def fetch_bing_pool(max_images: int = 200) -> List[str]:
     """
     从必应国内 API 抓取每日壁纸 URL 列表。
     返回: [url1, url2, ...]
@@ -111,7 +112,7 @@ def fetch_bing_pool(max_images: int = 200) -> list[str]:
     return pool
 
 
-def fetch_baidu_images(keyword: str, need_count: int = 30) -> list[tuple[str, int, int]]:
+def fetch_baidu_images(keyword: str, need_count: int = 30) -> List[Tuple[str, int, int]]:
     """
     从百度图片搜索接口抓取图片。
     返回: [(url, width, height), ...]
@@ -185,12 +186,12 @@ def get_start_index(cat_dir: str, source: str) -> int:
 def download_one(
     category: str,
     idx: int,
-    keywords_list: list[str],
+    keywords_list: List[str],
     output_dir: str,
     source: str,
-    bing_url: str | None = None,
-    baidu_url: str | None = None,
-) -> tuple[str, int, bool, str]:
+    bing_url: Optional[str] = None,
+    baidu_url: Optional[str] = None,
+) -> Tuple[str, int, bool, str]:
     """
     下载单张图片。
     返回: (分类, 序号, 是否成功, 来源/错误)
@@ -316,7 +317,7 @@ def main():
         print("-" * 50)
 
     # 准备 baidu 图片池 (按分类抓取)
-    baidu_pool_map: dict[str, list[str]] = {}
+    baidu_pool_map: Dict[str, List[str]] = {}
     if args.source == "baidu":
         print("正在从百度图片接口按分类获取图片列表...")
         for category, keywords_list in categories_to_process.items():

@@ -63,6 +63,8 @@ public class DocxGenerator {
     public void generateDocx(String title, String content, String filePath, String themeColor, Integer titleFontSize, Integer contentFontSize) throws Exception {
         // 兜底：移除大模型思考过程标签及其内容
         content = stripThinkingTags(content);
+        // 清洗常见 HTML 标签（保留 h1, h3, s, img 供后续专项处理）
+        content = cleanHtmlTags(content);
 
         String color = (themeColor != null && !themeColor.isEmpty()) ? themeColor.replace("#", "") : HIGHLIGHT_COLOR;
         int h3Size = (titleFontSize != null && titleFontSize > 0) ? titleFontSize : DEFAULT_H3_FONT_SIZE;
@@ -71,11 +73,10 @@ public class DocxGenerator {
         // title 参数保留用于兼容调用方，但不再写入文档正文
         try (FileOutputStream out = new FileOutputStream(filePath);
              XWPFDocument document = new XWPFDocument()) {
-            // 预处理：标准化换行符，把单个 \n 变成 \n\n，确保块级标签独占段落；同时去除 <p> 和 </p> 标签
+            // 预处理：标准化换行符，把单个 \n 变成 \n\n，确保块级标签独占段落
             // 把连续三个及以上 \n 压缩为 \n\n，避免过多空段落
             String normalizedContent = content.replaceAll("(?<!\n)\n(?!\n)", "\n\n")
-                                               .replaceAll("\n{3,}", "\n\n")
-                                               .replaceAll("</?p>", "");
+                                               .replaceAll("\n{3,}", "\n\n");
             // 正文段落：按 \n\n 分割段落（不再单独写入标题，标题已体现在文件名中）
             String[] paragraphs = normalizedContent.split("\n\n+");
             for (int i = 0; i < paragraphs.length; i++) {
@@ -144,6 +145,30 @@ public class DocxGenerator {
                           .trim();
         }
         return cleaned;
+    }
+
+    /**
+     * 清洗常见 HTML 标签，保留 h1/h3/s/img 供后续专项处理。
+     * 将 <br> 转为换行，解析 HTML 实体，去除 div/span/strong/em/p 等标签。
+     */
+    private String cleanHtmlTags(String text) {
+        if (text == null || text.isEmpty()) return text;
+        // 1. <br> 标签转为换行
+        text = text.replaceAll("(?i)<br\\s*/?>", "\n");
+        // 2. 处理常见 HTML 实体
+        text = text.replaceAll("&nbsp;", " ")
+                   .replaceAll("&lt;", "<")
+                   .replaceAll("&gt;", ">")
+                   .replaceAll("&amp;", "&")
+                   .replaceAll("&quot;", "\"")
+                   .replaceAll("&#39;", "'")
+                   .replaceAll("&#34;", "\"")
+                   .replaceAll("&#x27;", "'");
+        // 3. 去除不需要的 HTML 标签（保留 h1, h3, s, img 供后续处理）
+        text = text.replaceAll("(?i)<(?!/?h1\\b|/?h3\\b|/?s\\b|/?img\\b)[^>]*?>", "");
+        // 4. 清理多余空行
+        text = text.replaceAll("\n{3,}", "\n\n");
+        return text.trim();
     }
 
     /**

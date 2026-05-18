@@ -4,15 +4,17 @@ import { useRouter, useRoute } from 'vue-router'
 import dayjs from 'dayjs'
 import { Card, Input, Select, Button, Table, Tag, Modal, Form, Popconfirm, message, Pagination, Descriptions, DatePicker, Tabs, Spin, InputNumber, Checkbox, CheckboxGroup, Dropdown, Menu, Tooltip, Row, Col, Space, Alert } from 'ant-design-vue'
 import { FileTextOutlined, BarChartOutlined, CheckOutlined, CheckCircleOutlined, ExclamationCircleOutlined, EllipsisOutlined, DownOutlined } from '@ant-design/icons-vue'
-import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, matchCheck, matchPreview, matchConfirm, matchOne, unbindRecommendation, batchUnbindRecommendations, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed, batchChangeTrack, clearRecommendationsByDate, getUserHistory, saveArticleFeedback, listArticleFeedback, deleteArticleFeedback, generatePostSingle, createGenerationTask, getPostContent, removeAiFlavor, batchAiPassed, batchCopied, autoInsertImages, sendArticleEmail, confirmTitle, batchConfirm, markAiFlavorHeavy } from '../api/titleLibrary.js'
+import { listTitles, saveTitle, deleteTitle, importTitles, matchTodayTitles, matchCheck, matchPreview, matchConfirm, matchOne, unbindRecommendation, batchUnbindRecommendations, generateTitles, getGenerateStatus, cancelGenerate, generatePostsForToday, getGeneratePostStatus, cancelGeneratePost, getDefaultPromptTemplate, savePromptTemplate, exportTitleLibrary, exportTitleLibraryBatch, exportTitleList, exportTitleListBatch, importArticles, sendTitleEmail, batchSendTitleEmail, listUnrecommendedUsers, markTitleUsed, batchChangeTrack, clearRecommendationsByDate, getUserHistory, getUserHomogeneity, saveArticleFeedback, listArticleFeedback, deleteArticleFeedback, generatePostSingle, createGenerationTask, getPostContent, removeAiFlavor, batchAiPassed, batchCopied, autoInsertImages, sendArticleEmail, confirmTitle, batchConfirm, markAiFlavorHeavy, generateImagePost, getImagePosts, batchGenerateImagePost } from '../api/titleLibrary.js'
 import { listAiFlavorRules } from '../api/aiFlavorRule.js'
 import { listTracks } from '../api/track.js'
 import { listUsers } from '../api/user.js'
 import request from '../api/request.js'
 import { renderAsync } from 'docx-preview'
+import { useDocxHighlight } from '../composables/useDocxHighlight.js'
 
 const router = useRouter()
 const route = useRoute()
+const { highlightStats, applyHighlight, clearHighlight } = useDocxHighlight()
 
 const activeTab = ref(localStorage.getItem('titleLibrary_activeTab') || 'all')
 
@@ -232,17 +234,17 @@ const columns = [
     customRender: ({ record }) => {
       const btnStyle = 'padding: 0; display: inline-block;'
       const nodes = []
-      const hasPost = record.subscriptionPostFileUrl || record.generatedFileUrl
+      const hasPost = !!record.generatedFileUrl
       if (hasPost) {
         nodes.push(
           h(Button, {
             type: 'link',
             size: 'small',
             style: btnStyle,
-            onClick: () => record.subscriptionPostFileUrl ? handlePreviewPost(record) : handlePreviewGeneratedArticle(record),
+            onClick: () => handlePreviewGeneratedArticle(record),
           }, () => record.title)
         )
-        if (record.subscriptionPostFileUrl) {
+        if (record.generatedFileUrl) {
           nodes.push(
             h(Button, {
               type: 'link',
@@ -345,7 +347,7 @@ const columns = [
     align: 'center',
     fixed: 'right',
     customRender: ({ record }) => {
-      const hasFile = !!(record.generatedFileUrl || record.subscriptionPostFileUrl)
+      const hasFile = !!(record.generatedFileUrl)
 
       // 生成按钮
       const genBtn = h(Tooltip, { title: '生成文章' }, {
@@ -412,13 +414,6 @@ const columns = [
         moreMenuItems.push(
           h(Menu.Item, { key: 'semail', onClick: () => sendArticleEmailToUser(record) }, () =>
             h('span', {}, sendArticleEmailLoadingId.value === record.id ? '发送中...' : '发送文章邮件')
-          )
-        )
-      }
-      if (record.subscriptionPostId && !hasFile) {
-        moreMenuItems.push(
-          h(Menu.Item, { key: 'email', onClick: () => handleSendEmail(record) }, () =>
-            h('span', {}, sendEmailLoadingId.value === record.id ? '发送中...' : '发邮件')
           )
         )
       }
@@ -689,7 +684,7 @@ async function handleGeneratePost(record) {
 }
 
 function downloadArticle(record) {
-  const url = record.generatedFileUrl || record.subscriptionPostFileUrl
+  const url = record.generatedFileUrl
   if (!url) return
   const link = document.createElement('a')
   link.href = url
@@ -702,14 +697,14 @@ function downloadArticle(record) {
 function handlePreviewGeneratedArticle(record) {
   const previewRecord = {
     ...record,
-    subscriptionPostTitle: record.title,
-    subscriptionPostFileUrl: record.generatedFileUrl || record.subscriptionPostFileUrl
+    title: record.title,
+    generatedFileUrl: record.generatedFileUrl
   }
   handlePreviewPost(previewRecord)
 }
 
 async function sendArticleEmailToUser(record) {
-  if (!record.generatedFileUrl && !record.subscriptionPostFileUrl) {
+  if (!record.generatedFileUrl) {
     message.warning('该标题尚未生成文章')
     return
   }
@@ -943,6 +938,12 @@ const matchOneLoadingId = ref(null)   // 正在重配的行
 const matchClearing = ref(false)
 const matchSelectedKeys = ref([])
 
+const matchRowSelection = {
+  onChange: (keys) => {
+    matchSelectedKeys.value = keys
+  },
+}
+
 // 用户历史弹窗
 const historyModalOpen = ref(false)
 const historyLoading = ref(false)
@@ -1050,18 +1051,28 @@ async function loadMatchSimilarities() {
     }
   }
 
-  // 并行查询所有用户的历史
-  const userHistories = await Promise.all(
-    Array.from(userMap.keys()).map(userId => getUserHistory(userId).catch(() => []))
-  )
+  const userIds = Array.from(userMap.keys())
+
+  // 并行查询所有用户的历史和同质化程度
+  const [userHistories, userHomogeneities] = await Promise.all([
+    Promise.all(userIds.map(userId => getUserHistory(userId).catch(() => []))),
+    Promise.all(userIds.map(userId => getUserHomogeneity(userId).catch(() => 0))),
+  ])
 
   // 建立 userId -> 历史列表的映射
   const historyMap = new Map()
-  Array.from(userMap.keys()).forEach((userId, idx) => {
+  userIds.forEach((userId, idx) => {
     historyMap.set(userId, userHistories[idx] || [])
   })
 
-  // 为每条记录计算最高相似度
+  // 建立 userId -> 同质化程度的映射
+  const homogeneityMap = new Map()
+  userIds.forEach((userId, idx) => {
+    const val = userHomogeneities[idx]
+    homogeneityMap.set(userId, typeof val === 'number' ? val : 0)
+  })
+
+  // 为每条记录计算最高相似度和同质化程度
   for (const item of matchPreviewData.value) {
     const history = historyMap.get(item.userId) || []
     const currentTitle = item.editedTitle || item.title || ''
@@ -1074,6 +1085,7 @@ async function loadMatchSimilarities() {
       }
     }
     item.maxSimilarity = maxSim
+    item.homogeneity = homogeneityMap.get(item.userId) || 0
   }
 }
 
@@ -1698,8 +1710,8 @@ const availableFields = [
   { key: 'recommendUserName', label: '关联用户' },
   { key: 'recommendUserTemplate', label: '用户模板' },
   { key: 'recommendDate', label: '推荐日期' },
-  { key: 'subscriptionPostTitle', label: '文章标题' },
-  { key: 'subscriptionPostFileUrl', label: '文章链接' },
+  { key: 'generatedFileName', label: '文章文件名' },
+  { key: 'generatedFileUrl', label: '文章链接' },
   { key: 'id', label: 'ID' },
 ]
 
@@ -2036,8 +2048,20 @@ const previewRecord = ref(null)
 const previewHtmlContent = ref('')
 const previewLoading = ref(false)
 const docxContainerRef = ref(null)
+
+// 贴图
+const imagePostLoading = ref(false)
+const imagePostUrls = ref([])
+const imagePostModalOpen = ref(false)
+const currentImagePostTitleId = ref('')
+const imagePreviewOpen = ref(false)
+const previewImageUrl = ref('')
+const batchImagePostLoading = ref(false)
+
+const previewTimestamp = ref(Date.now())
+
 const previewFileType = computed(() => {
-  const url = previewRecord.value?.subscriptionPostFileUrl || ''
+  const url = previewRecord.value?.generatedFileUrl || ''
   const name = url.split('/').pop() || ''
   if (name.endsWith('.pdf')) return 'pdf'
   if (name.endsWith('.txt') || name.endsWith('.md')) return 'text'
@@ -2054,10 +2078,12 @@ function getPostFileUrl(postId, download = false) {
 async function handlePreviewPost(record) {
   previewRecord.value = record
   previewHtmlContent.value = ''
+  previewTimestamp.value = Date.now()
   previewModalOpen.value = true
   previewLoading.value = true
+  clearHighlight(docxContainerRef.value)
 
-  const fileUrl = record.subscriptionPostFileUrl || record.generatedFileUrl
+  const fileUrl = record.generatedFileUrl
   if (!fileUrl) {
     previewLoading.value = false
     return
@@ -2101,6 +2127,17 @@ async function handlePreviewPost(record) {
             }
           `
           docxContainerRef.value.appendChild(styleEl)
+          // 违禁词/敏感词高亮
+          const checkResult = previewRecord.value?.bannedWordCheckResult
+          if (checkResult) {
+            let parsed = checkResult
+            if (typeof checkResult === 'string') {
+              try { parsed = JSON.parse(checkResult) } catch (e) { parsed = null }
+            }
+            if (parsed && parsed.matches) {
+              applyHighlight(docxContainerRef.value, parsed.matches, parsed.totalChars)
+            }
+          }
         } catch (renderErr) {
           console.error('docx render error:', renderErr)
           docxContainerRef.value.innerHTML = '<div style="color:#999;text-align:center;padding:40px;">文件解析失败，该文件可能不是有效的 docx 格式</div>'
@@ -2144,18 +2181,95 @@ async function copyArticleContent() {
 }
 
 function handleDownloadPost(record) {
-  const postId = record.subscriptionPostId
+  const postId = record.id
   if (!postId) return
   const url = getPostFileUrl(postId, true)
   // 从原始路径中提取文件扩展名
-  const urlPath = record.subscriptionPostFileUrl || ''
+  const urlPath = record.generatedFileUrl || ''
   const extMatch = urlPath.split('?')[0].match(/\.([a-zA-Z0-9]+)$/)
   const ext = extMatch ? '.' + extMatch[1] : ''
-  const fileName = (record.subscriptionPostTitle || record.title || 'download') + ext
+  const fileName = (record.title || 'download') + ext
   const a = document.createElement('a')
   a.href = url
   a.download = fileName
   a.click()
+}
+
+async function handleGenerateImagePost(record) {
+  if (!record || !record.id) return
+  Modal.confirm({
+    title: '生成贴图',
+    content: '确认生成该文章的贴图？生成后可在邮件推送时一并发送。',
+    async onOk() {
+      imagePostLoading.value = true
+      try {
+        const images = await generateImagePost(record.id)
+        message.success(`贴图生成成功，共 ${images.length} 张`)
+        imagePostUrls.value = images || []
+        currentImagePostTitleId.value = record.id
+        imagePostModalOpen.value = true
+      } catch (e) {
+        message.error('贴图生成失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
+      } finally {
+        imagePostLoading.value = false
+      }
+    },
+  })
+}
+
+async function openImagePostModal(record) {
+  if (!record || !record.id) return
+  currentImagePostTitleId.value = record.id
+  imagePostUrls.value = []
+  imagePostModalOpen.value = true
+  imagePostLoading.value = true
+  try {
+    const images = await getImagePosts(record.id)
+    imagePostUrls.value = images || []
+  } catch (e) {
+    message.error('加载贴图失败')
+  } finally {
+    imagePostLoading.value = false
+  }
+}
+
+function handleDownloadImage(url) {
+  if (!url) return
+  const link = document.createElement('a')
+  link.href = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now() + '&download=1'
+  link.download = url.split('/').pop() || 'image.png'
+  link.click()
+}
+
+function handlePreviewImage(url) {
+  if (!url) return
+  previewImageUrl.value = url
+  imagePreviewOpen.value = true
+}
+
+async function handleBatchGenerateImagePost() {
+  if (matchSelectedKeys.value.length === 0) {
+    message.warning('请先选择要生成贴图的标题')
+    return
+  }
+  Modal.confirm({
+    title: '批量生成贴图',
+    content: `确认对选中的 ${matchSelectedKeys.value.length} 条标题批量生成贴图？`,
+    async onOk() {
+      batchImagePostLoading.value = true
+      try {
+        const res = await batchGenerateImagePost(matchSelectedKeys.value)
+        message.success(`批量生成完成：成功 ${res.success} 条，失败 ${res.failed} 条`)
+        if (res.errors && res.errors.length > 0) {
+          console.warn('批量生成贴图失败明细:', res.errors)
+        }
+      } catch (e) {
+        message.error('批量生成贴图失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
+      } finally {
+        batchImagePostLoading.value = false
+      }
+    },
+  })
 }
 
 // User detail modal
@@ -2622,11 +2736,12 @@ onMounted(() => {
     title="匹配推荐"
     :confirm-loading="matching"
     @ok="handleMatchConfirm"
-    :width="700"
+    :width="1200"
   >
     <div style="margin-bottom: 12px; display: flex; gap: 12px; align-items: center;">
       <DatePicker v-model:value="matchForm.date" placeholder="推荐日期" @change="() => { localStorage.setItem('matchForm_date', matchForm.date.format('YYYY-MM-DD')); runMatchPreview(); }" />
       <Button @click="runMatchPreview" :loading="matchPreviewLoading">刷新预览</Button>
+      <Button type="primary" :loading="batchImagePostLoading" @click="handleBatchGenerateImagePost">批量生成贴图</Button>
       <Button danger :loading="matchClearing" @click="handleClearAndMatch" style="margin-left: auto;">清理后重新匹配</Button>
     </div>
     <div style="color: #999; font-size: 12px; margin-bottom: 12px;">
@@ -2646,9 +2761,10 @@ onMounted(() => {
         size="small"
         :scroll="{ x: 900 }"
         row-key="titleId"
+        :row-selection="matchRowSelection"
         style="border: 1px solid #f0f0f0; border-radius: 4px;"
       >
-        <Table.Column title="标题" key="title" :width="420">
+        <Table.Column title="标题" key="title" :width="280">
           <template #default="{ record }">
             <Input.TextArea
               :value="record.editedTitle || record.title"
@@ -2657,12 +2773,12 @@ onMounted(() => {
               :auto-size="{ minRows: 1, maxRows: 3 }"
               size="small"
               @change="(e) => handleTitleEdit(record, e.target.value)"
-              style="font-size: 13px; width: 400px;"
+              style="font-size: 13px; width: 260px;"
             />
             <div v-if="record.editedTitle && record.editedTitle !== record.title" style="font-size: 11px; color: #52c41a;">已修改</div>
           </template>
         </Table.Column>
-        <Table.Column title="最高相似度" key="maxSimilarity" :width="100" align="center">
+        <Table.Column title="最高相似度" key="maxSimilarity" :width="80" align="center">
           <template #default="{ record }">
             <Tag v-if="record.maxSimilarity != null" :color="record.maxSimilarity >= 50 ? 'red' : record.maxSimilarity >= 25 ? 'orange' : 'green'" style="font-size: 12px;">
               {{ record.maxSimilarity }}%
@@ -2670,15 +2786,23 @@ onMounted(() => {
             <span v-else style="color: #999;">-</span>
           </template>
         </Table.Column>
-        <Table.Column title="平台" dataIndex="platform" key="platform" :width="80" />
-        <Table.Column title="赛道" dataIndex="trackName" key="trackName" :width="100" />
-        <Table.Column title="匹配用户" key="user" :width="130">
+        <Table.Column title="同质化程度" key="homogeneity" :width="90" align="center">
+          <template #default="{ record }">
+            <Tag v-if="record.homogeneity != null" :color="record.homogeneity >= 50 ? 'red' : record.homogeneity >= 25 ? 'orange' : 'green'" style="font-size: 12px;">
+              {{ record.homogeneity }}%
+            </Tag>
+            <span v-else style="color: #999;">-</span>
+          </template>
+        </Table.Column>
+        <Table.Column title="平台" dataIndex="platform" key="platform" :width="70" />
+        <Table.Column title="赛道" dataIndex="trackName" key="trackName" :width="80" />
+        <Table.Column title="匹配用户" key="user" :width="90">
           <template #default="{ record }">
             <a style="color: #1890ff;" @click="openHistoryModal(record.userId, record.username, record.editedTitle || record.title)">{{ record.username }}</a>
             <div style="font-size: 11px; color: #999;">{{ record.userEmail }}</div>
           </template>
         </Table.Column>
-        <Table.Column title="操作" key="action" :width="200">
+        <Table.Column title="操作" key="action" :width="150">
           <template #default="{ record }">
             <template v-if="record.approved">
               <Tag color="green">已通过</Tag>
@@ -2690,6 +2814,7 @@ onMounted(() => {
                 :loading="matchOneLoadingId === record.titleId"
                 @click="handleRematchOne(record)"
               >重配</Button>
+              <Button type="link" size="small" @click="openImagePostModal({ id: record.titleId })">贴图</Button>
               <Popconfirm title="确定移除该项？" @confirm="handleRemoveMatch(record)">
                 <Button type="link" size="small" danger>移除</Button>
               </Popconfirm>
@@ -2744,11 +2869,12 @@ onMounted(() => {
     title="匹配推荐"
     :confirm-loading="matching"
     @ok="handleMatchConfirm"
-    :width="700"
+    :width="1200"
   >
     <div style="margin-bottom: 12px; display: flex; gap: 12px; align-items: center;">
       <DatePicker v-model:value="matchForm.date" placeholder="推荐日期" @change="() => { localStorage.setItem('matchForm_date', matchForm.date.format('YYYY-MM-DD')); runMatchPreview(); }" />
       <Button @click="runMatchPreview" :loading="matchPreviewLoading">刷新预览</Button>
+      <Button type="primary" :loading="batchImagePostLoading" @click="handleBatchGenerateImagePost">批量生成贴图</Button>
       <Button danger :loading="matchClearing" @click="handleClearAndMatch" style="margin-left: auto;">清理后重新匹配</Button>
     </div>
     <div style="color: #999; font-size: 12px; margin-bottom: 12px;">
@@ -2768,9 +2894,10 @@ onMounted(() => {
         size="small"
         :scroll="{ x: 900 }"
         row-key="titleId"
+        :row-selection="matchRowSelection"
         style="border: 1px solid #f0f0f0; border-radius: 4px;"
       >
-        <Table.Column title="标题" key="title" :width="420">
+        <Table.Column title="标题" key="title" :width="280">
           <template #default="{ record }">
             <Input.TextArea
               :value="record.editedTitle || record.title"
@@ -2779,12 +2906,12 @@ onMounted(() => {
               :auto-size="{ minRows: 1, maxRows: 3 }"
               size="small"
               @change="(e) => handleTitleEdit(record, e.target.value)"
-              style="font-size: 13px; width: 400px;"
+              style="font-size: 13px; width: 260px;"
             />
             <div v-if="record.editedTitle && record.editedTitle !== record.title" style="font-size: 11px; color: #52c41a;">已修改</div>
           </template>
         </Table.Column>
-        <Table.Column title="最高相似度" key="maxSimilarity" :width="100" align="center">
+        <Table.Column title="最高相似度" key="maxSimilarity" :width="80" align="center">
           <template #default="{ record }">
             <Tag v-if="record.maxSimilarity != null" :color="record.maxSimilarity >= 50 ? 'red' : record.maxSimilarity >= 25 ? 'orange' : 'green'" style="font-size: 12px;">
               {{ record.maxSimilarity }}%
@@ -2792,15 +2919,23 @@ onMounted(() => {
             <span v-else style="color: #999;">-</span>
           </template>
         </Table.Column>
-        <Table.Column title="平台" dataIndex="platform" key="platform" :width="80" />
-        <Table.Column title="赛道" dataIndex="trackName" key="trackName" :width="100" />
-        <Table.Column title="匹配用户" key="user" :width="130">
+        <Table.Column title="同质化程度" key="homogeneity" :width="90" align="center">
+          <template #default="{ record }">
+            <Tag v-if="record.homogeneity != null" :color="record.homogeneity >= 50 ? 'red' : record.homogeneity >= 25 ? 'orange' : 'green'" style="font-size: 12px;">
+              {{ record.homogeneity }}%
+            </Tag>
+            <span v-else style="color: #999;">-</span>
+          </template>
+        </Table.Column>
+        <Table.Column title="平台" dataIndex="platform" key="platform" :width="70" />
+        <Table.Column title="赛道" dataIndex="trackName" key="trackName" :width="80" />
+        <Table.Column title="匹配用户" key="user" :width="90">
           <template #default="{ record }">
             <a style="color: #1890ff;" @click="openHistoryModal(record.userId, record.username, record.editedTitle || record.title)">{{ record.username }}</a>
             <div style="font-size: 11px; color: #999;">{{ record.userEmail }}</div>
           </template>
         </Table.Column>
-        <Table.Column title="操作" key="action" :width="200">
+        <Table.Column title="操作" key="action" :width="150">
           <template #default="{ record }">
             <template v-if="record.approved">
               <Tag color="green">已通过</Tag>
@@ -2812,6 +2947,7 @@ onMounted(() => {
                 :loading="matchOneLoadingId === record.titleId"
                 @click="handleRematchOne(record)"
               >重配</Button>
+              <Button type="link" size="small" @click="openImagePostModal({ id: record.titleId })">贴图</Button>
               <Popconfirm title="确定移除该项？" @confirm="handleRemoveMatch(record)">
                 <Button type="link" size="small" danger>移除</Button>
               </Popconfirm>
@@ -2917,30 +3053,45 @@ onMounted(() => {
     </template>
   </Modal>
 
-  <Modal v-model:open="previewModalOpen" title="文章预览" :footer="null" :mask-closable="true" width="900">
+  <Modal v-model:open="previewModalOpen" title="文章预览" :footer="null" :mask-closable="true" width="700">
     <div v-if="previewRecord" style="margin-top: 12px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <div style="font-size: 16px; font-weight: 600;">{{ previewRecord.subscriptionPostTitle }}</div>
-        <Button size="small" @click="copyArticleContent">复制文章内容</Button>
+        <div style="font-size: 16px; font-weight: 600;">{{ previewRecord.title }}</div>
+        <div style="display: flex; gap: 8px;">
+          <Button size="small" @click="copyArticleContent">复制文章内容</Button>
+          <Button size="small" :loading="imagePostLoading" @click="handleGenerateImagePost(previewRecord)">生成贴图</Button>
+          <Button size="small" @click="openImagePostModal(previewRecord)">查看贴图</Button>
+        </div>
       </div>
       <div style="border: 1px solid #f0f0f0; border-radius: 6px; background: #fafafa; min-height: 360px; max-height: 500px; overflow: auto;">
         <div v-if="previewLoading" style="padding: 24px; text-align: center; color: #999;">正在加载预览...</div>
         <pre
           v-else-if="previewHtmlContent"
-          style="padding: 16px; margin: 0; font-family: monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; background: #fafafa; border: 0;"
+          style="padding: 16px; margin: 0 auto; max-width: 640px; font-family: monospace; font-size: 13px; line-height: 2.0; white-space: pre-wrap; word-break: break-word; background: #fafafa; border: 0;"
         >{{ previewHtmlContent }}</pre>
         <div
           v-else-if="previewFileType === 'docx'"
           ref="docxContainerRef"
-          style="padding: 24px; background: #fff; border: 0; line-height: 1.8; font-size: 14px;"
+          style="padding: 24px; margin: 0 auto; max-width: 640px; background: #fff; border: 0; line-height: 2.2; font-size: 14px;"
         />
         <div v-else-if="previewRecord.generatedFileUrl">
           <iframe
-            :src="previewRecord.generatedFileUrl"
+            :src="previewRecord.generatedFileUrl + (previewRecord.generatedFileUrl.includes('?') ? '&' : '?') + '_t=' + previewTimestamp"
             style="width: 100%; height: 500px; border: 0;"
           />
         </div>
         <div v-else style="padding: 24px; color: #999; text-align: center;">暂无文件</div>
+      </div>
+      <!-- 违禁词统计栏 -->
+      <div v-if="highlightStats.totalChars > 0" style="position: sticky; bottom: 0; background: #fff; border-top: 1px solid #f0f0f0; padding: 8px 16px; display: flex; gap: 16px; font-size: 13px; flex-wrap: wrap; margin-top: 8px;">
+        <span>全文:{{ highlightStats.totalChars }}字</span>
+        <span>极限词:{{ highlightStats.极限词 || 0 }}个</span>
+        <span>诱导词:{{ highlightStats.诱导词 || 0 }}个</span>
+        <span>敏感词:{{ highlightStats.敏感词 || 0 }}个</span>
+        <span>医疗词:{{ highlightStats.医疗词 || 0 }}个</span>
+        <span>金融词:{{ highlightStats.金融词 || 0 }}个</span>
+        <span>政治敏感:{{ highlightStats.政治敏感 || 0 }}个</span>
+        <span>其他:{{ highlightStats.其他 || 0 }}个</span>
       </div>
     </div>
   </Modal>
@@ -3352,6 +3503,33 @@ onMounted(() => {
       <div style="display: flex; gap: 8px; margin-top: 8px;">
         <Button @click="saveRowPromptTemplate">保存模板</Button>
       </div>
+    </div>
+  </Modal>
+
+  <!-- 贴图预览弹窗 -->
+  <Modal v-model:open="imagePostModalOpen" title="贴图预览" :footer="null" :mask-closable="true" width="900">
+    <div v-if="imagePostLoading" style="padding: 24px; text-align: center;">
+      <Spin />
+      <div style="margin-top: 8px; color: #999;">正在加载贴图...</div>
+    </div>
+    <div v-else-if="imagePostUrls.length === 0" style="padding: 24px; text-align: center; color: #999;">
+      暂无贴图，点击"生成贴图"按钮创建
+    </div>
+    <div v-else style="display: flex; flex-direction: row; gap: 16px; padding: 8px; overflow-x: auto;">
+      <div v-for="(url, idx) in imagePostUrls" :key="idx" style="border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; flex-shrink: 0; width: 240px;">
+        <img :src="url" style="width: 100%; height: 400px; object-fit: cover; display: block; cursor: zoom-in;" @click="handlePreviewImage(url)" />
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #fafafa;">
+          <span style="font-size: 12px; color: #999;">第 {{ idx + 1 }} 张</span>
+          <Button size="small" @click="handleDownloadImage(url)">下载</Button>
+        </div>
+      </div>
+    </div>
+  </Modal>
+
+  <!-- 大图缩放预览 -->
+  <Modal v-model:open="imagePreviewOpen" :footer="null" :mask-closable="true" width="auto" style="max-width: 90vw;">
+    <div style="display: flex; justify-content: center; align-items: center; padding: 8px;">
+      <img :src="previewImageUrl" style="max-width: 100%; max-height: 80vh; border-radius: 8px;" />
     </div>
   </Modal>
 </template>

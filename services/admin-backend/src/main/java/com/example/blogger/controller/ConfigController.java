@@ -60,10 +60,16 @@ public class ConfigController {
     @PostMapping
     public Result<Void> save(@RequestBody Map<String, String> req) {
         for (Map.Entry<String, String> entry : req.entrySet()) {
-            Config c = new Config();
-            c.setConfigKey(entry.getKey());
-            c.setConfigValue(entry.getValue());
-            configMapper.save(c);
+            Config existing = configMapper.findByKey(entry.getKey());
+            if (existing != null) {
+                existing.setConfigValue(entry.getValue());
+                configMapper.update(existing);
+            } else {
+                Config c = new Config();
+                c.setConfigKey(entry.getKey());
+                c.setConfigValue(entry.getValue());
+                configMapper.save(c);
+            }
         }
         return Result.ok(null);
     }

@@ -11,13 +11,13 @@ import java.util.Map;
 public interface TitleLibraryMapper {
 
     @Select("SELECT t.*, t.track_id as trackId, tr.name as trackName, " +
-            "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.push_date as pushDate, r.subscription_post_id as subscriptionPostId, " +
-            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl, " +
+            "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.push_date as pushDate, " +
+            "" +
             "t.generated_file_url as generatedFileUrl, t.generated_file_name as generatedFileName, t.generated_at as generatedAt, t.generate_status as generateStatus " +
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
             "LEFT JOIN (" +
-            "  SELECT r1.title_library_id, MAX(r1.user_id) as user_id, MAX(r1.recommend_date) as recommend_date, MAX(r1.recommend_date) as push_date, MAX(r1.subscription_post_id) as subscription_post_id " +
+            "  SELECT r1.title_library_id, MAX(r1.user_id) as user_id, MAX(r1.recommend_date) as recommend_date, MAX(r1.recommend_date) as push_date" +
             "  FROM tu_title_recommendation r1 " +
             "  INNER JOIN (" +
             "    SELECT title_library_id, MAX(created_at) as max_created_at " +
@@ -27,20 +27,20 @@ public interface TitleLibraryMapper {
             "  GROUP BY r1.title_library_id" +
             ") r ON t.id = r.title_library_id " +
             "LEFT JOIN tu_user u ON r.user_id = u.id AND u.is_deleted = 0 " +
-            "LEFT JOIN tu_subscription_post sp ON r.subscription_post_id = sp.id AND sp.is_deleted = 0 " +
+            "" +
             "WHERE t.is_deleted = 0 " +
             "AND (t.track_id IS NULL OR tr.id IS NOT NULL) " +
             "ORDER BY t.created_at DESC")
     List<TitleLibrary> findAll();
 
     @Select("SELECT t.*, t.track_id as trackId, tr.name as trackName, " +
-            "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.push_date as pushDate, r.subscription_post_id as subscriptionPostId, " +
-            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl, " +
+            "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.push_date as pushDate, " +
+            "" +
             "t.generated_file_url as generatedFileUrl, t.generated_file_name as generatedFileName, t.generated_at as generatedAt, t.generate_status as generateStatus " +
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
             "LEFT JOIN (" +
-            "  SELECT r1.title_library_id, MAX(r1.user_id) as user_id, MAX(r1.recommend_date) as recommend_date, MAX(r1.recommend_date) as push_date, MAX(r1.subscription_post_id) as subscription_post_id " +
+            "  SELECT r1.title_library_id, MAX(r1.user_id) as user_id, MAX(r1.recommend_date) as recommend_date, MAX(r1.recommend_date) as push_date" +
             "  FROM tu_title_recommendation r1 " +
             "  INNER JOIN (" +
             "    SELECT title_library_id, MAX(created_at) as max_created_at " +
@@ -50,7 +50,7 @@ public interface TitleLibraryMapper {
             "  GROUP BY r1.title_library_id" +
             ") r ON t.id = r.title_library_id " +
             "LEFT JOIN tu_user u ON r.user_id = u.id AND u.is_deleted = 0 " +
-            "LEFT JOIN tu_subscription_post sp ON r.subscription_post_id = sp.id AND sp.is_deleted = 0 " +
+            "" +
             "WHERE t.is_deleted = 0 " +
             "AND (t.track_id IS NULL OR tr.id IS NOT NULL) " +
             "ORDER BY t.created_at DESC " +
@@ -58,13 +58,13 @@ public interface TitleLibraryMapper {
     List<TitleLibrary> findAllPage(@Param("offset") int offset, @Param("limit") int limit);
 
     @Select("<script>SELECT t.*, t.track_id as trackId, tr.name as trackName, " +
-            "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.push_date as pushDate, r.subscription_post_id as subscriptionPostId, " +
-            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl, " +
+            "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.push_date as pushDate, " +
+            "" +
             "t.generated_file_url as generatedFileUrl, t.generated_file_name as generatedFileName, t.generated_at as generatedAt, t.generate_status as generateStatus " +
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
             "LEFT JOIN (" +
-            "  SELECT r1.title_library_id, MAX(r1.user_id) as user_id, MAX(r1.recommend_date) as recommend_date, MAX(r1.recommend_date) as push_date, MAX(r1.subscription_post_id) as subscription_post_id " +
+            "  SELECT r1.title_library_id, MAX(r1.user_id) as user_id, MAX(r1.recommend_date) as recommend_date, MAX(r1.recommend_date) as push_date" +
             "  FROM tu_title_recommendation r1 " +
             "  INNER JOIN (" +
             "    SELECT title_library_id, MAX(created_at) as max_created_at " +
@@ -74,7 +74,7 @@ public interface TitleLibraryMapper {
             "  GROUP BY r1.title_library_id" +
             ") r ON t.id = r.title_library_id " +
             "LEFT JOIN tu_user u ON r.user_id = u.id AND u.is_deleted = 0 " +
-            "LEFT JOIN tu_subscription_post sp ON r.subscription_post_id = sp.id AND sp.is_deleted = 0 " +
+            "" +
             "WHERE t.is_deleted = 0 " +
             "AND (t.track_id IS NULL OR tr.id IS NOT NULL) " +
             "AND (#{platform} IS NULL OR #{platform} = '' OR t.platform LIKE CONCAT('%', #{platform}, '%')) " +
@@ -122,13 +122,13 @@ public interface TitleLibraryMapper {
     List<TitleLibrary> search(@Param("platform") String platform, @Param("trackId") String trackId, @Param("keyword") String keyword, @Param("recommendUserName") String recommendUserName, @Param("matched") String matched, @Param("pushDate") String pushDate, @Param("isUsed") String isUsed, @Param("isConfirmed") String isConfirmed, @Param("aiFlavor") String aiFlavor, @Param("userType") String userType, @Param("matchable") String matchable, @Param("sortField") String sortField, @Param("sortOrder") String sortOrder);
 
     @Select("<script>SELECT t.*, t.track_id as trackId, tr.name as trackName, " +
-            "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.push_date as pushDate, r.subscription_post_id as subscriptionPostId, " +
-            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl, " +
+            "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.push_date as pushDate, " +
+            "" +
             "t.generated_file_url as generatedFileUrl, t.generated_file_name as generatedFileName, t.generated_at as generatedAt, t.generate_status as generateStatus " +
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
             "LEFT JOIN (" +
-            "  SELECT r1.title_library_id, MAX(r1.user_id) as user_id, MAX(r1.recommend_date) as recommend_date, MAX(r1.recommend_date) as push_date, MAX(r1.subscription_post_id) as subscription_post_id " +
+            "  SELECT r1.title_library_id, MAX(r1.user_id) as user_id, MAX(r1.recommend_date) as recommend_date, MAX(r1.recommend_date) as push_date" +
             "  FROM tu_title_recommendation r1 " +
             "  INNER JOIN (" +
             "    SELECT title_library_id, MAX(created_at) as max_created_at " +
@@ -138,7 +138,7 @@ public interface TitleLibraryMapper {
             "  GROUP BY r1.title_library_id" +
             ") r ON t.id = r.title_library_id " +
             "LEFT JOIN tu_user u ON r.user_id = u.id AND u.is_deleted = 0 " +
-            "LEFT JOIN tu_subscription_post sp ON r.subscription_post_id = sp.id AND sp.is_deleted = 0 " +
+            "" +
             "WHERE t.is_deleted = 0 " +
             "AND (t.track_id IS NULL OR tr.id IS NOT NULL) " +
             "AND (#{platform} IS NULL OR #{platform} = '' OR t.platform LIKE CONCAT('%', #{platform}, '%')) " +
@@ -190,7 +190,7 @@ public interface TitleLibraryMapper {
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
             "LEFT JOIN (" +
-            "  SELECT r1.title_library_id, MAX(r1.user_id) as user_id, MAX(r1.recommend_date) as recommend_date, MAX(r1.subscription_post_id) as subscription_post_id " +
+            "  SELECT r1.title_library_id, MAX(r1.user_id) as user_id, MAX(r1.recommend_date) as recommend_date " +
             "  FROM tu_title_recommendation r1 " +
             "  INNER JOIN (" +
             "    SELECT title_library_id, MAX(created_at) as max_created_at " +
@@ -232,13 +232,13 @@ public interface TitleLibraryMapper {
     int countSearch(@Param("platform") String platform, @Param("trackId") String trackId, @Param("keyword") String keyword, @Param("recommendUserName") String recommendUserName, @Param("matched") String matched, @Param("pushDate") String pushDate, @Param("isUsed") String isUsed, @Param("isConfirmed") String isConfirmed, @Param("aiFlavor") String aiFlavor, @Param("userType") String userType, @Param("matchable") String matchable);
 
     @Select("SELECT t.*, t.track_id as trackId, tr.name as trackName, " +
-            "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.push_date as pushDate, r.subscription_post_id as subscriptionPostId, " +
-            "sp.title as subscriptionPostTitle, sp.file_url as subscriptionPostFileUrl, " +
+            "r.user_id as recommendUserId, u.username as recommendUserName, u.template as recommendUserTemplate, r.recommend_date as recommendDate, r.push_date as pushDate, " +
+            "" +
             "t.generated_file_url as generatedFileUrl, t.generated_file_name as generatedFileName, t.generated_at as generatedAt, t.generate_status as generateStatus " +
             "FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
             "LEFT JOIN (" +
-            "  SELECT r1.title_library_id, MAX(r1.user_id) as user_id, MAX(r1.recommend_date) as recommend_date, MAX(r1.recommend_date) as push_date, MAX(r1.subscription_post_id) as subscription_post_id " +
+            "  SELECT r1.title_library_id, MAX(r1.user_id) as user_id, MAX(r1.recommend_date) as recommend_date, MAX(r1.recommend_date) as push_date" +
             "  FROM tu_title_recommendation r1 " +
             "  INNER JOIN (" +
             "    SELECT title_library_id, MAX(created_at) as max_created_at " +
@@ -248,12 +248,12 @@ public interface TitleLibraryMapper {
             "  GROUP BY r1.title_library_id" +
             ") r ON t.id = r.title_library_id " +
             "LEFT JOIN tu_user u ON r.user_id = u.id AND u.is_deleted = 0 " +
-            "LEFT JOIN tu_subscription_post sp ON r.subscription_post_id = sp.id AND sp.is_deleted = 0 " +
+            "" +
             "WHERE t.id = #{id} AND t.is_deleted = 0 ")
     TitleLibrary findById(String id);
 
-    @Insert("INSERT INTO tu_title_library(id, title, description, platform, track_id, use_count, is_used, is_deleted, created_at, task_id) " +
-            "VALUES(#{id}, #{title}, #{description}, #{platform}, #{trackId}, #{useCount}, #{isUsed}, 0, NOW(), #{taskId})")
+    @Insert("INSERT INTO tu_title_library(id, title, description, platform, track_id, use_count, is_used, is_deleted, created_at, task_id, title_keyword) " +
+            "VALUES(#{id}, #{title}, #{description}, #{platform}, #{trackId}, #{useCount}, #{isUsed}, 0, NOW(), #{taskId}, #{titleKeyword})")
     int insert(TitleLibrary titleLibrary);
 
     @Update("<script>UPDATE tu_title_library <set>" +
@@ -289,6 +289,12 @@ public interface TitleLibraryMapper {
 
     @Update("UPDATE tu_title_library SET confirm_status = #{confirmStatus} WHERE id = #{id}")
     int updateConfirmStatus(@Param("id") String id, @Param("confirmStatus") Integer confirmStatus);
+
+    @Update("UPDATE tu_title_library SET banned_word_check_result = #{result} WHERE id = #{id}")
+    int updateBannedWordCheckResult(@Param("id") String id, @Param("result") String result);
+
+    @Update("UPDATE tu_title_library SET image_post_urls = #{imagePostUrls} WHERE id = #{id}")
+    int updateImagePostUrls(@Param("id") String id, @Param("imagePostUrls") String imagePostUrls);
 
     /**
      * 查询待审核列表：已生成文章、未确认、指定推荐日期
@@ -351,12 +357,12 @@ public interface TitleLibraryMapper {
 
     /**
      * 统计指定推送日期下，各平台+赛道组合中已经有关联文章的标题数量
-     * （通过 title_recommendation.recommend_date = pushDate 且 subscription_post_id IS NOT NULL 判断）
+     * （通过 title_recommendation.recommend_date = pushDate 且 title_library.generated_file_url IS NOT NULL 判断）
      */
     @Select("SELECT t.platform, t.track_id as trackId, COUNT(DISTINCT r.title_library_id) as cnt " +
             "FROM tu_title_recommendation r " +
             "INNER JOIN tu_title_library t ON r.title_library_id = t.id AND t.is_deleted = 0 " +
-            "WHERE r.recommend_date = #{pushDate} AND r.subscription_post_id IS NOT NULL " +
+            "WHERE r.recommend_date = #{pushDate} AND t.generated_file_url IS NOT NULL AND t.generated_file_url != '' " +
             "GROUP BY t.platform, t.track_id")
     List<Map<String, Object>> countCompletedByCombo(@Param("pushDate") String pushDate);
 
@@ -365,6 +371,21 @@ public interface TitleLibraryMapper {
 
     @Select("SELECT t.*, t.track_id as trackId FROM tu_title_library t WHERE t.is_deleted = 0 AND t.title = #{title} AND (t.platform = #{platform} OR (#{platform} IS NULL AND t.platform IS NULL)) LIMIT 1")
     TitleLibrary findByTitlePlatformTrack(@Param("title") String title, @Param("platform") String platform, @Param("trackId") String trackId);
+
+    /**
+     * 查询与给定关键词有交集的现有标题（用于相似度检测）
+     */
+    @Select("<script>" +
+            "SELECT t.*, t.track_id as trackId FROM tu_title_library t WHERE t.is_deleted = 0 AND t.title_keyword IS NOT NULL AND t.title_keyword != '' " +
+            "<if test='keywords != null and keywords.size > 0'>" +
+            " AND (" +
+            "<foreach collection='keywords' item='kw' separator=' OR '>" +
+            " t.title_keyword LIKE CONCAT('%', #{kw}, '%') " +
+            "</foreach>" +
+            " )" +
+            "</if>" +
+            "</script>")
+    List<TitleLibrary> findSimilarTitles(@Param("keywords") List<String> keywords);
 
     @Select("SELECT t.*, t.track_id as trackId, tr.name as trackName FROM tu_title_library t " +
             "LEFT JOIN tu_track tr ON t.track_id = tr.id AND tr.is_deleted = 0 " +
@@ -376,15 +397,15 @@ public interface TitleLibraryMapper {
             "u.id as userId, u.username, u.wx_name as wxName, u.email, " +
             "u.user_type as userType, " +
             "t.id as trackId, t.name as trackName, " +
-            "r.id as recommendationId, r.subscription_post_id as subscriptionPostId, r.title_library_id as titleLibraryId, " +
-            "sp.title as postTitle, tl.title as titleName, tl.generated_file_url as generatedFileUrl " +
+            "r.id as recommendationId, r.title_library_id as titleLibraryId, " +
+            "tl.title as titleName, tl.generated_file_url as generatedFileUrl " +
             "FROM tu_user u " +
             "INNER JOIN tu_user_track ut ON u.id = ut.user_id " +
             "INNER JOIN tu_track t ON ut.track_id = t.id AND t.is_deleted = 0 " +
             "LEFT JOIN tu_title_recommendation r ON u.id = r.user_id " +
             "    AND r.recommend_date = #{date} " +
             "    AND (r.track_id = ut.track_id OR r.track_id IS NULL OR r.track_id = '') " +
-            "LEFT JOIN tu_subscription_post sp ON r.subscription_post_id = sp.id AND sp.is_deleted = 0 " +
+            "" +
             "LEFT JOIN tu_title_library tl ON r.title_library_id = tl.id AND tl.is_deleted = 0 " +
             "WHERE u.status = 1 AND u.is_deleted = 0 " +
             "    AND u.user_type IN (1, 2, 3) " +

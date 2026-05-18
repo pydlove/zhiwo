@@ -39,10 +39,31 @@ function log_error() {
   echo -e "${RED}[ERROR]${NC} $1"
 }
 
+function retry_scp() {
+    local src=$1; local dst=$2
+    local max_attempts=3; local delay=10
+    local scp_opts=""
+    [ -d "$src" ] && scp_opts="-r"
+    for attempt in $(seq 1 $max_attempts); do
+        if eval "$SCP_CMD $scp_opts $src $dst"; then
+            return 0
+        fi
+        log_warn "SCP attempt $attempt/$max_attempts failed, retrying in ${delay}s..."
+        sleep $delay
+        delay=$((delay * 2))
+    done
+    log_error "SCP failed after $max_attempts attempts"
+    return 1
+}
+
+# SSH 连接复用（避免短时间内大量连接被服务器 reset）
+SSH_MUX_PATH="/tmp/ssh_mux_${SERVER_IP}_${SERVER_USER}"
+SSH_MUX_OPTS="-o ControlMaster=auto -o ControlPath=$SSH_MUX_PATH -o ControlPersist=600"
+
 # SSH 连接参数
 if [ -n "$SSH_KEY_PATH" ] && [ -f "$SSH_KEY_PATH" ]; then
-  SSH_CMD="ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no"
-  SCP_CMD="scp -i $SSH_KEY_PATH -o StrictHostKeyChecking=no"
+  SSH_CMD="ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no $SSH_MUX_OPTS"
+  SCP_CMD="scp -i $SSH_KEY_PATH -o StrictHostKeyChecking=no $SSH_MUX_OPTS"
 else
   # 检查 sshpass
   if ! command -v sshpass &> /dev/null; then
@@ -50,8 +71,8 @@ else
     log_error "或者配置 SSH_KEY_PATH 使用密钥登录"
     exit 1
   fi
-  SSH_CMD="sshpass -p '$SERVER_PASSWORD' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=30"
-  SCP_CMD="sshpass -p '$SERVER_PASSWORD' scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 -C -v"
+  SSH_CMD="sshpass -p '$SERVER_PASSWORD' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 $SSH_MUX_OPTS"
+  SCP_CMD="sshpass -p '$SERVER_PASSWORD' scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 $SSH_MUX_OPTS"
 fi
 
 REMOTE_HOST="$SERVER_USER@$SERVER_IP"
@@ -98,14 +119,22 @@ log_info "本地构建完成"
 
 # ============ 步骤2: 在服务器创建目录结构 ============
 log_info "准备服务器目录..."
-eval "$SSH_CMD $REMOTE_HOST 'mkdir -p /root/app/web/gzh /root/app/web/gzh-admin /root/app/gzh/user-service /root/app/gzh/admin-service /root/app/gzh/scripts /root/app/gzh/db/migrations'"
+for attempt in $(seq 1 5); do
+  if eval "$SSH_CMD $REMOTE_HOST 'mkdir -p /root/app/web/gzh /root/app/web/gzh-admin /root/app/gzh/user-service /root/app/gzh/admin-service /root/app/gzh/scripts /root/app/gzh/db /root/app/gzh/db/migrations'" 2>/dev/null; then
+    break
+  fi
+  log_warn "SSH mkdir attempt $attempt failed, retrying in 5s..."
+  sleep 5
+done
 
 # ============ 步骤3: 上传前端静态文件 ============
 log_info "上传用户端前端到 /root/app/web/gzh/ ..."
-eval "$SCP_CMD -r $PROJECT_DIR/services/user-frontend/dist/* $REMOTE_HOST:/root/app/web/gzh/"
+eval "$SSH_CMD $REMOTE_HOST 'rm -rf /root/app/web/gzh/*'"
+retry_scp "$PROJECT_DIR/services/user-frontend/dist/." "$REMOTE_HOST:/root/app/web/gzh/"
 
 log_info "上传管理端前端到 /root/app/web/gzh-admin/ ..."
-eval "$SCP_CMD -r $PROJECT_DIR/services/admin-frontend/dist/* $REMOTE_HOST:/root/app/web/gzh-admin/"
+eval "$SSH_CMD $REMOTE_HOST 'rm -rf /root/app/web/gzh-admin/*'"
+retry_scp "$PROJECT_DIR/services/admin-frontend/dist/." "$REMOTE_HOST:/root/app/web/gzh-admin/"
 
 # ============ 步骤4: 上传后端 JAR 包和生产配置 ============
 # 先压缩 JAR（25MB -> ~8MB，上传快 3 倍）
@@ -116,24 +145,29 @@ cd "$PROJECT_DIR/services/admin-backend/target"
 zip -q blogger-backend-1.0.0.jar.zip blogger-backend-1.0.0.jar
 
 log_info "上传用户端后端 JAR (压缩)..."
-eval "$SCP_CMD $PROJECT_DIR/services/user-backend/target/user-backend-1.0.0.jar.zip $REMOTE_HOST:/root/app/gzh/user-service/"
+retry_scp "$PROJECT_DIR/services/user-backend/target/user-backend-1.0.0.jar.zip" "$REMOTE_HOST:/root/app/gzh/user-service/"
 log_info "解压用户端 JAR..."
 eval "$SSH_CMD $REMOTE_HOST 'cd /root/app/gzh/user-service/ && unzip -oq user-backend-1.0.0.jar.zip && rm -f user-backend-1.0.0.jar.zip'"
 
 log_info "上传用户端生产配置..."
-eval "$SCP_CMD $PROJECT_DIR/services/user-backend/src/main/resources/application-prod.yml $REMOTE_HOST:/root/app/gzh/user-service/"
+retry_scp "$PROJECT_DIR/services/user-backend/src/main/resources/application-prod.yml" "$REMOTE_HOST:/root/app/gzh/user-service/"
 
 log_info "上传管理端后端 JAR (压缩)..."
-eval "$SCP_CMD $PROJECT_DIR/services/admin-backend/target/blogger-backend-1.0.0.jar.zip $REMOTE_HOST:/root/app/gzh/admin-service/"
+retry_scp "$PROJECT_DIR/services/admin-backend/target/blogger-backend-1.0.0.jar.zip" "$REMOTE_HOST:/root/app/gzh/admin-service/"
 log_info "解压管理端 JAR..."
 eval "$SSH_CMD $REMOTE_HOST 'cd /root/app/gzh/admin-service/ && unzip -oq blogger-backend-1.0.0.jar.zip && rm -f blogger-backend-1.0.0.jar.zip'"
 
 log_info "上传管理端生产配置..."
-eval "$SCP_CMD $PROJECT_DIR/services/admin-backend/src/main/resources/application-prod.yml $REMOTE_HOST:/root/app/gzh/admin-service/"
+retry_scp "$PROJECT_DIR/services/admin-backend/src/main/resources/application-prod.yml" "$REMOTE_HOST:/root/app/gzh/admin-service/"
 
 log_info "上传 Python 脚本..."
 eval "$SSH_CMD $REMOTE_HOST 'mkdir -p /root/app/gzh/scripts/py'"
-eval "$SCP_CMD -r $PROJECT_DIR/services/admin-backend/src/main/resources/py/* $REMOTE_HOST:/root/app/gzh/scripts/py/"
+retry_scp "$PROJECT_DIR/services/admin-backend/src/main/resources/py/." "$REMOTE_HOST:/root/app/gzh/scripts/py/"
+
+# 上传字体目录（供 Python 贴图脚本使用，与脚本内部 _CUSTOM_FONT_DIR 相对路径对齐）
+log_info "上传字体文件..."
+eval "$SSH_CMD $REMOTE_HOST 'mkdir -p /root/app/gzh/admin-frontend/src/assets/font'"
+retry_scp "$PROJECT_DIR/services/admin-backend/src/main/resources/assets/font/." "$REMOTE_HOST:/root/app/gzh/admin-frontend/src/assets/font/"
 
 # 验证 Python 脚本是否成功上传（md5 校验）
 LOCAL_SCRIPT_MD5=$(md5 -q "$PROJECT_DIR/services/admin-backend/src/main/resources/py/replace_periods.py" 2>/dev/null || md5sum "$PROJECT_DIR/services/admin-backend/src/main/resources/py/replace_periods.py" | awk '{print $1}')
@@ -156,20 +190,20 @@ rm -f "$PROJECT_DIR/services/admin-backend/target/blogger-backend-1.0.0.jar.zip"
 
 # ============ 步骤5: 上传启停脚本与环境变量 ============
 log_info "上传环境变量文件..."
-eval "$SCP_CMD $DEPLOY_DIR/.env $REMOTE_HOST:/root/app/gzh/.env"
+retry_scp "$DEPLOY_DIR/.env" "$REMOTE_HOST:/root/app/gzh/.env"
 eval "$SSH_CMD $REMOTE_HOST 'chmod 600 /root/app/gzh/.env'"
 
 log_info "上传启停脚本..."
-eval "$SCP_CMD $DEPLOY_DIR/scripts/user-service-start.sh $REMOTE_HOST:/root/app/gzh/scripts/"
-eval "$SCP_CMD $DEPLOY_DIR/scripts/user-service-stop.sh $REMOTE_HOST:/root/app/gzh/scripts/"
-eval "$SCP_CMD $DEPLOY_DIR/scripts/user-service-restart.sh $REMOTE_HOST:/root/app/gzh/scripts/"
-eval "$SCP_CMD $DEPLOY_DIR/scripts/admin-service-start.sh $REMOTE_HOST:/root/app/gzh/scripts/"
-eval "$SCP_CMD $DEPLOY_DIR/scripts/admin-service-stop.sh $REMOTE_HOST:/root/app/gzh/scripts/"
-eval "$SCP_CMD $DEPLOY_DIR/scripts/admin-service-restart.sh $REMOTE_HOST:/root/app/gzh/scripts/"
-eval "$SCP_CMD $DEPLOY_DIR/scripts/start-all.sh $REMOTE_HOST:/root/app/gzh/scripts/"
-eval "$SCP_CMD $DEPLOY_DIR/scripts/stop-all.sh $REMOTE_HOST:/root/app/gzh/scripts/"
-eval "$SCP_CMD $DEPLOY_DIR/scripts/restart-all.sh $REMOTE_HOST:/root/app/gzh/scripts/"
-eval "$SCP_CMD $DEPLOY_DIR/scripts/status.sh $REMOTE_HOST:/root/app/gzh/scripts/"
+retry_scp "$DEPLOY_DIR/scripts/user-service-start.sh" "$REMOTE_HOST:/root/app/gzh/scripts/"
+retry_scp "$DEPLOY_DIR/scripts/user-service-stop.sh" "$REMOTE_HOST:/root/app/gzh/scripts/"
+retry_scp "$DEPLOY_DIR/scripts/user-service-restart.sh" "$REMOTE_HOST:/root/app/gzh/scripts/"
+retry_scp "$DEPLOY_DIR/scripts/admin-service-start.sh" "$REMOTE_HOST:/root/app/gzh/scripts/"
+retry_scp "$DEPLOY_DIR/scripts/admin-service-stop.sh" "$REMOTE_HOST:/root/app/gzh/scripts/"
+retry_scp "$DEPLOY_DIR/scripts/admin-service-restart.sh" "$REMOTE_HOST:/root/app/gzh/scripts/"
+retry_scp "$DEPLOY_DIR/scripts/start-all.sh" "$REMOTE_HOST:/root/app/gzh/scripts/"
+retry_scp "$DEPLOY_DIR/scripts/stop-all.sh" "$REMOTE_HOST:/root/app/gzh/scripts/"
+retry_scp "$DEPLOY_DIR/scripts/restart-all.sh" "$REMOTE_HOST:/root/app/gzh/scripts/"
+retry_scp "$DEPLOY_DIR/scripts/status.sh" "$REMOTE_HOST:/root/app/gzh/scripts/"
 
 # 远程设置脚本权限并复制到服务目录
 log_info "设置脚本权限..."
@@ -177,8 +211,8 @@ eval "$SSH_CMD $REMOTE_HOST 'chmod +x /root/app/gzh/scripts/*.sh && cp /root/app
 
 # ============ 步骤6: 数据库迁移 ============
 log_info "上传数据库迁移脚本..."
-eval "$SCP_CMD $PROJECT_DIR/db/migrate.sh $REMOTE_HOST:/root/app/gzh/db/"
-eval "$SCP_CMD -r $PROJECT_DIR/db/migrations/* $REMOTE_HOST:/root/app/gzh/db/migrations/"
+retry_scp "$PROJECT_DIR/db/migrate.sh" "$REMOTE_HOST:/root/app/gzh/db/"
+retry_scp "$PROJECT_DIR/db/migrations/." "$REMOTE_HOST:/root/app/gzh/db/migrations/"
 
 log_info "执行数据库迁移..."
 eval "$SSH_CMD $REMOTE_HOST 'chmod +x /root/app/gzh/db/migrate.sh && cd /root/app/gzh/db && bash migrate.sh prod'"
@@ -215,7 +249,7 @@ sed -e "s/server_name gzh.yourdomain.com/server_name $SERVER_DOMAIN/g" \
     -e "s|ssl_certificate_key /root/ssl/domain.key|ssl_certificate_key $NGINX_SSL_KEY|g" \
     "$DEPLOY_DIR/nginx.conf" > "$TMP_NGINX"
 
-eval "$SCP_CMD $TMP_NGINX $REMOTE_HOST:/tmp/nginx_gzh_deploy.conf"
+retry_scp "$TMP_NGINX" "$REMOTE_HOST:/tmp/nginx_gzh_deploy.conf"
 
 # 远程替换 nginx 配置并检查语法
 log_info "更新 Nginx 配置..."
@@ -226,6 +260,11 @@ eval "$SSH_CMD $REMOTE_HOST 'nginx -s reload'"
 
 # 清理临时文件
 rm -f "$TMP_NGINX"
+
+# 关闭 SSH 连接复用的 master 连接
+log_info "清理 SSH 连接复用..."
+eval "$SSH_CMD -O exit $REMOTE_HOST" 2>/dev/null || true
+rm -f "$SSH_MUX_PATH"
 
 # ============ 部署完成 ============
 log_info "========================================"

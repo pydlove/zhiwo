@@ -6,10 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>博主整理系统 - 管理后台</title>
     <style>
-      .ant-modal-wrap {
-        left: 208px !important;
-        right: 0 !important;
-        width: auto !important;
+      /* 桌面端：配合侧边栏偏移 Modal 位置 */
+      @media (min-width: 769px) {
+        .ant-modal-wrap {
+          left: 208px !important;
+          right: 0 !important;
+          width: auto !important;
+        }
       }
     </style>
   </head>

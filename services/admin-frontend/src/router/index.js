@@ -19,7 +19,6 @@ const routes = [
       { path: 'styles', name: 'StyleManage', component: () => import('../views/StyleManage.vue'), meta: { title: '样式管理', perm: 'style' } },
       { path: 'model-config', name: 'ModelConfigManage', component: () => import('../views/ModelConfigManage.vue'), meta: { title: '模型配置', perm: 'config' } },
       { path: 'config', name: 'ConfigManage', component: () => import('../views/ConfigManage.vue'), meta: { title: '系统配置', perm: 'config' } },
-      { path: 'subscription-posts', name: 'SubscriptionPostManage', component: () => import('../views/SubscriptionPostManage.vue'), meta: { title: '订阅文章', perm: 'subscription-post' } },
       { path: 'membership-plans', name: 'MembershipPlanManage', component: () => import('../views/MembershipPlanManage.vue'), meta: { title: '会员权益', perm: 'membership-plan' } },
       { path: 'title-library', name: 'TitleLibrarySimple', component: () => import('../views/TitleLibrarySimple.vue'), meta: { title: '标题库', perm: 'title-library' } },
       { path: 'title-library-track-stats', name: 'TitleLibraryTrackStats', component: () => import('../views/TitleLibraryTrackStats.vue'), meta: { title: '赛道统计视图', perm: 'title-library' } },
@@ -37,6 +36,7 @@ const routes = [
       { path: 'image-library', name: 'ImageLibraryManage', component: () => import('../views/ImageLibraryManage.vue'), meta: { title: '图片库', perm: 'title-library' } },
       { path: 'customer-dialogues', name: 'CustomerDialogueManage', component: () => import('../views/CustomerDialogueManage.vue'), meta: { title: '客服对话', perm: 'config' } },
       { path: 'ai-flavor-rules', name: 'AiFlavorRuleManage', component: () => import('../views/AiFlavorRuleManage.vue'), meta: { title: 'AI去除规则', perm: 'config' } },
+      { path: 'user-homogeneity', name: 'UserHomogeneityView', component: () => import('../views/UserHomogeneityView.vue'), meta: { title: '用户同质化', perm: 'title-library' } },
       // FIXME: AI 检测功能暂时禁用
 //       { path: 'article-ai-detect', name: 'ArticleAiDetect', component: () => import('../views/ArticleAiDetect.vue'), meta: { title: 'AI检测', perm: 'title-library' } },
     ],

@@ -1,17 +1,16 @@
 package com.example.blogger.scheduler;
 
 import com.example.blogger.entity.Config;
-import com.example.blogger.entity.SubscriptionPost;
 import com.example.blogger.entity.TitleGenerationTask;
 import com.example.blogger.entity.TitleLibrary;
 import com.example.blogger.entity.TitleRecommendation;
 import com.example.blogger.entity.Track;
 import com.example.blogger.entity.User;
 import com.example.blogger.mapper.ConfigMapper;
-import com.example.blogger.mapper.SubscriptionPostMapper;
 import com.example.blogger.mapper.TitleGenerationTaskMapper;
 import com.example.blogger.mapper.TitleRecommendationMapper;
 import com.example.blogger.mapper.TrackMapper;
+import com.example.blogger.service.ContentCheckService;
 import com.example.blogger.service.LLMService;
 import com.example.blogger.service.TaskInterruptManager;
 import com.example.blogger.service.TitleGenerationTaskService;
@@ -76,10 +75,10 @@ public class GenerationTaskScheduler {
     private final TaskInterruptManager interruptManager;
     private final AiFlavorRemover aiFlavorRemover;
     private final ConfigMapper configMapper;
-    private final SubscriptionPostMapper subscriptionPostMapper;
     private final TitleRecommendationMapper titleRecommendationMapper;
     private final com.example.blogger.mapper.ImageLibraryMapper imageLibraryMapper;
     private final TrackMapper trackMapper;
+    private final ContentCheckService contentCheckService;
 
     private final ExecutorService executorService;
     private final Set<String> runningTasks = ConcurrentHashMap.newKeySet();
@@ -93,10 +92,10 @@ public class GenerationTaskScheduler {
                                    TaskInterruptManager interruptManager,
                                    AiFlavorRemover aiFlavorRemover,
                                    ConfigMapper configMapper,
-                                   SubscriptionPostMapper subscriptionPostMapper,
                                    TitleRecommendationMapper titleRecommendationMapper,
                                    com.example.blogger.mapper.ImageLibraryMapper imageLibraryMapper,
-                                   TrackMapper trackMapper) {
+                                   TrackMapper trackMapper,
+                                   ContentCheckService contentCheckService) {
         this.taskMapper = taskMapper;
         this.taskService = taskService;
         this.llmService = llmService;
@@ -106,10 +105,10 @@ public class GenerationTaskScheduler {
         this.interruptManager = interruptManager;
         this.aiFlavorRemover = aiFlavorRemover;
         this.configMapper = configMapper;
-        this.subscriptionPostMapper = subscriptionPostMapper;
         this.titleRecommendationMapper = titleRecommendationMapper;
         this.imageLibraryMapper = imageLibraryMapper;
         this.trackMapper = trackMapper;
+        this.contentCheckService = contentCheckService;
         this.executorService = Executors.newFixedThreadPool(MAX_CONCURRENCY);
     }
 
@@ -169,19 +168,28 @@ public class GenerationTaskScheduler {
     }
 
     private void executeTask(TitleGenerationTask task) {
+        log.info("[GenerationTaskScheduler] ========== 任务开始: id={}, titleLibraryId={}, title={} ==========", task.getId(), task.getTitleLibraryId(), task.getTitle());
+        long taskStartTime = System.currentTimeMillis();
         try {
             // Step 1: Build prompt
+            log.info("[GenerationTaskScheduler] [任务{}] Step 1/6: 构建提示词", task.getId());
             checkStopped(task.getId());
             taskService.updateProgress(task.getId(), 1, "构建提示词完成，准备生成...");
+            log.info("[GenerationTaskScheduler] [任务{}] Step 1/6: 提示词构建完成, prompt长度={}", task.getId(), task.getPrompt() != null ? task.getPrompt().length() : 0);
 
             // Step 2: Call LLM
+            log.info("[GenerationTaskScheduler] [任务{}] Step 2/6: 调用大模型生成正文", task.getId());
             checkStopped(task.getId());
             String articlePrompt = task.getPrompt();
             // 追加系统指令：禁止模型输出思考过程，避免内容被 <think> 标签包裹导致误删
             if (!articlePrompt.contains("<think>") && !articlePrompt.contains("thinking")) {
-                articlePrompt += "\n\n【系统指令】请直接输出文章正文内容，不要输出任何思考过程，不要使用 <think>、<thinking>、<thought>、<reasoning> 等标签包裹内容。";
+                articlePrompt += "\n\n【系统指令】"
+                    + "请直接输出文章正文内容，不要输出任何思考过程，不要复述用户要求，不要加任何前言或总结。"
+                    + "禁止使用 <think>、<thinking>、<thought>、<reasoning> 等标签包裹内容。"
+                    + "不要用英文分析任务，直接开始写中文文章。";
             }
-            log.info("[GenerationTaskScheduler] 调用 LLM 生成内容, prompt length: {}", articlePrompt.length());
+            log.info("[GenerationTaskScheduler] [任务{}] Step 2/6: 调用LLM, prompt长度={}", task.getId(), articlePrompt.length());
+            long llmStart = System.currentTimeMillis();
             taskService.updateProgress(task.getId(), 2, "大模型生成中...");
             interruptManager.register(task.getId(), Thread.currentThread());
             String content;
@@ -195,48 +203,66 @@ public class GenerationTaskScheduler {
             if (interrupted) {
                 throw new InterruptedException("任务被停止");
             }
-            log.info("[GenerationTaskScheduler] LLM 返回内容长度: {}", content.length());
+            log.info("[GenerationTaskScheduler] [任务{}] Step 2/6: LLM返回完成, 耗时{}ms, 内容长度={}", task.getId(), System.currentTimeMillis() - llmStart, content.length());
 
             // 先过滤 think 标签，避免二次请求大模型时 prompt 携带思考过程
             content = aiFlavorRemover.removeThinkingTags(content);
-            log.info("[GenerationTaskScheduler] 过滤 think 标签后内容长度: {}", content.length());
+            log.info("[GenerationTaskScheduler] [任务{}] Step 2/6: 过滤think标签后长度={}", task.getId(), content.length());
 
             taskService.updateGeneratedContent(task.getId(), content);
             taskService.updateProgress(task.getId(), 2, "正文生成完成");
+            log.info("[GenerationTaskScheduler] [任务{}] Step 2/6: 正文生成完成", task.getId());
 
             // Step 2.5: Generate chapter titles based on content
-            checkStopped(task.getId());
-            taskService.updateProgress(task.getId(), 2, "生成章节标题中...");
-            String titlePrompt = buildTitlePrompt(content);
-            String titleResponse;
-            interruptManager.register(task.getId(), Thread.currentThread());
-            boolean titleInterrupted = false;
-            try {
-                titleResponse = llmService.generateContent(titlePrompt);
-            } finally {
-                interruptManager.unregister(task.getId());
-                titleInterrupted = Thread.interrupted();
+            String mergedContent;
+            String keyword;
+            String[] paragraphs = content.split("\n\n+");
+            log.info("[GenerationTaskScheduler] [任务{}] Step 2.5/6: 段落数={}, 判断是否需要生成章节标题", task.getId(), paragraphs.length);
+            if (paragraphs.length <= 1) {
+                log.info("[GenerationTaskScheduler] [任务{}] Step 2.5/6: 单段落文章, 跳过章节标题生成", task.getId());
+                mergedContent = content;
+                keyword = null;
+                taskService.updateProgress(task.getId(), 2, "单段落文章，跳过标题生成");
+            } else {
+                checkStopped(task.getId());
+                log.info("[GenerationTaskScheduler] [任务{}] Step 2.5/6: 开始生成章节标题", task.getId());
+                taskService.updateProgress(task.getId(), 2, "生成章节标题中...");
+                String titlePrompt = buildTitlePrompt(content);
+                long titleLlmStart = System.currentTimeMillis();
+                String titleResponse;
+                interruptManager.register(task.getId(), Thread.currentThread());
+                boolean titleInterrupted = false;
+                try {
+                    titleResponse = llmService.generateContent(titlePrompt);
+                } finally {
+                    interruptManager.unregister(task.getId());
+                    titleInterrupted = Thread.interrupted();
+                }
+                if (titleInterrupted) {
+                    throw new InterruptedException("任务被停止");
+                }
+                log.info("[GenerationTaskScheduler] [任务{}] Step 2.5/6: 标题LLM返回完成, 耗时{}ms, 长度={}", task.getId(), System.currentTimeMillis() - titleLlmStart, titleResponse.length());
+                titleResponse = aiFlavorRemover.removeThinkingTags(titleResponse);
+                log.info("[GenerationTaskScheduler] [任务{}] Step 2.5/6: 过滤think后标题长度={}", task.getId(), titleResponse.length());
+                TitleMergeResult mergeResult = mergeTitlesIntoContent(content, titleResponse);
+                mergedContent = mergeResult.content;
+                keyword = mergeResult.keyword;
+                log.info("[GenerationTaskScheduler] [任务{}] Step 2.5/6: 标题合并完成, keyword={}, 合并后长度={}", task.getId(), keyword, mergedContent.length());
+                taskService.updateProgress(task.getId(), 2, "章节标题生成完成");
             }
-            if (titleInterrupted) {
-                throw new InterruptedException("任务被停止");
-            }
-            log.info("[GenerationTaskScheduler] 标题生成返回长度: {}, 标题: {}", titleResponse.length(), titleResponse);
-            titleResponse = aiFlavorRemover.removeThinkingTags(titleResponse);
-            log.info("[GenerationTaskScheduler] 过滤标题 think 标签: {}", titleResponse);
-            TitleMergeResult mergeResult = mergeTitlesIntoContent(content, titleResponse);
-            String mergedContent = mergeResult.content;
-            String keyword = mergeResult.keyword;
             taskService.updateGeneratedContent(task.getId(), mergedContent);
-            taskService.updateProgress(task.getId(), 2, "章节标题生成完成");
-            log.info("[GenerationTaskScheduler] 文章生成完成，内容长度: {}, keyword: {}", mergedContent.length(), keyword);
 
             // Step 3: Remove AI flavor
+            log.info("[GenerationTaskScheduler] [任务{}] Step 3/6: 开始去除AI味", task.getId());
             checkStopped(task.getId());
             taskService.updateProgress(task.getId(), 3, "去除AI味中...");
+            long aiFlavorStart = System.currentTimeMillis();
             String cleanedContent = aiFlavorRemover.removeAiFlavor(mergedContent);
+            log.info("[GenerationTaskScheduler] [任务{}] Step 3/6: 去除AI味完成, 耗时{}ms, 处理后长度={}", task.getId(), System.currentTimeMillis() - aiFlavorStart, cleanedContent.length());
             taskService.updateProgress(task.getId(), 3, "去除AI味完成");
 
             // Step 3.5: Insert image (keyword download first, fallback to image library)
+            log.info("[GenerationTaskScheduler] [任务{}] Step 3.5/6: 开始插入图片, keyword={}", task.getId(), keyword);
             try {
                 TitleLibrary titleLib = titleLibraryService.getById(task.getTitleLibraryId());
                 if (titleLib != null && titleLib.getTrackId() != null && !titleLib.getTrackId().isEmpty()) {
@@ -246,35 +272,41 @@ public class GenerationTaskScheduler {
                     if (keyword != null && !keyword.isEmpty()) {
                         Track track = trackMapper.findById(titleLib.getTrackId());
                         if (track != null) {
+                            log.info("[GenerationTaskScheduler] [任务{}] Step 3.5/6: 尝试关键字下载图片, keyword={}, track={}", task.getId(), keyword, track.getName());
                             image = downloadImageByKeyword(keyword, titleLib.getTrackId(), track.getName());
                             if (image != null) {
-                                log.info("[GenerationTaskScheduler] 已根据关键字下载并插入图片: keyword={}, url={}", keyword, image.getUrl());
+                                log.info("[GenerationTaskScheduler] [任务{}] Step 3.5/6: 关键字下载图片成功, url={}", task.getId(), image.getUrl());
                             } else {
-                                log.info("[GenerationTaskScheduler] 关键字下载图片失败，将回退到图片库: keyword={}", keyword);
+                                log.info("[GenerationTaskScheduler] [任务{}] Step 3.5/6: 关键字下载图片失败, 将回退到图片库", task.getId());
                             }
                         }
                     }
 
                     // 2. 如果下载失败，从图片库随机获取
                     if (image == null) {
+                        log.info("[GenerationTaskScheduler] [任务{}] Step 3.5/6: 从图片库随机获取", task.getId());
                         image = imageLibraryMapper.findRandomByTrackId(titleLib.getTrackId());
                         if (image != null) {
-                            log.info("[GenerationTaskScheduler] 已从图片库随机获取图片: {}, trackId={}", image.getUrl(), titleLib.getTrackId());
+                            log.info("[GenerationTaskScheduler] [任务{}] Step 3.5/6: 图片库获取成功, url={}", task.getId(), image.getUrl());
                         } else {
-                            log.info("[GenerationTaskScheduler] 未找到匹配图片, trackId={}", titleLib.getTrackId());
+                            log.info("[GenerationTaskScheduler] [任务{}] Step 3.5/6: 图片库也未找到匹配图片", task.getId());
                         }
                     }
 
                     if (image != null) {
                         cleanedContent = insertImageIntoContent(cleanedContent, image);
+                        log.info("[GenerationTaskScheduler] [任务{}] Step 3.5/6: 图片已插入到正文", task.getId());
                     }
+                } else {
+                    log.info("[GenerationTaskScheduler] [任务{}] Step 3.5/6: 标题库无赛道信息, 跳过图片插入", task.getId());
                 }
             } catch (Exception e) {
-                log.warn("[GenerationTaskScheduler] 插入图片失败，跳过: {}", e.getMessage());
+                log.warn("[GenerationTaskScheduler] [任务{}] Step 3.5/6: 插入图片失败, 跳过: {}", task.getId(), e.getMessage());
             }
             taskService.updateGeneratedContent(task.getId(), cleanedContent);
 
             // Step 4: Generate DOCX file
+            log.info("[GenerationTaskScheduler] [任务{}] Step 4/6: 开始生成DOCX文件", task.getId());
             checkStopped(task.getId());
             String safeTitle = task.getTitle() != null ? task.getTitle() : "untitled";
             safeTitle = safeTitle.replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9\\s]", "").trim();
@@ -290,7 +322,6 @@ public class GenerationTaskScheduler {
             }
             String filePath = articlesDir + File.separator + fileName;
 
-            log.info("[GenerationTaskScheduler] 生成 DOCX: {}", filePath);
             taskService.updateProgress(task.getId(), 4, "写入文件中...");
 
             // 获取用户主题色和字号配置
@@ -307,63 +338,73 @@ public class GenerationTaskScheduler {
                         }
                         titleFontSize = user.getTitleFontSize();
                         contentFontSize = user.getContentFontSize();
+                        log.info("[GenerationTaskScheduler] [任务{}] Step 4/6: 用户样式配置: themeColor={}, titleFontSize={}, contentFontSize={}", task.getId(), themeColor, titleFontSize, contentFontSize);
                     }
                 }
             } catch (Exception e) {
-                log.warn("[GenerationTaskScheduler] 获取用户样式配置失败，使用默认配置: {}", e.getMessage());
+                log.warn("[GenerationTaskScheduler] [任务{}] Step 4/6: 获取用户样式配置失败, 使用默认: {}", task.getId(), e.getMessage());
             }
 
+            long docxStart = System.currentTimeMillis();
             docxGenerator.generateDocx(task.getTitle(), cleanedContent, filePath, themeColor, titleFontSize, contentFontSize);
-            log.info("[GenerationTaskScheduler] DOCX 生成成功");
+            log.info("[GenerationTaskScheduler] [任务{}] Step 4/6: DOCX生成完成, 耗时{}ms, path={}", task.getId(), System.currentTimeMillis() - docxStart, filePath);
             taskService.updateProgress(task.getId(), 4, "文件写入完成");
 
             String fileUrl = "/uploads/articles/" + fileName;
 
-            // Step 4.5: 创建 SubscriptionPost 并回写 subscription_post_id
+            // Step 4.6: 违禁词/敏感词检测
+            log.info("[GenerationTaskScheduler] [任务{}] Step 4.6/6: 开始违禁词检测", task.getId());
+            try {
+                long checkStart = System.currentTimeMillis();
+                ContentCheckService.CheckResult checkResult = contentCheckService.checkContent(cleanedContent);
+                ObjectMapper mapper = new ObjectMapper();
+                String checkResultJson = mapper.writeValueAsString(checkResult);
+                titleLibraryService.updateBannedWordCheckResult(task.getTitleLibraryId(), checkResultJson);
+                log.info("[GenerationTaskScheduler] [任务{}] Step 4.6/6: 违禁词检测完成, 耗时{}ms, totalChars={}, matches={}",
+                        task.getId(), System.currentTimeMillis() - checkStart, checkResult.getTotalChars(), checkResult.getMatches().size());
+            } catch (Exception e) {
+                log.warn("[GenerationTaskScheduler] [任务{}] Step 4.6/6: 违禁词检测失败, 不影响任务完成: {}", task.getId(), e.getMessage());
+            }
+
+            // Step 4.5: 更新 TitleLibrary.generated_file_url（废弃 SubscriptionPost，统一用 title_library 字段）
+            log.info("[GenerationTaskScheduler] [任务{}] Step 4.5/6: 更新TitleLibrary文件关联", task.getId());
             try {
                 TitleLibrary titleLib = titleLibraryService.getById(task.getTitleLibraryId());
                 if (titleLib != null) {
-                    SubscriptionPost post = new SubscriptionPost();
-                    post.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
-                    post.setTitleLibraryId(titleLib.getId());
-                    post.setTitle(titleLib.getTitle());
-                    post.setFileUrl(fileUrl);
-                    post.setFileName(fileName);
-                    post.setStatus("已上架");
-                    post.setUsed(0);
-                    if (titleLib.getTrackId() != null && !titleLib.getTrackId().isEmpty()) {
-                        post.setTrackId(titleLib.getTrackId());
-                    }
-                    if (titleLib.getRecommendUserId() != null && !titleLib.getRecommendUserId().isEmpty()) {
-                        post.setUserId(titleLib.getRecommendUserId());
-                    }
-                    subscriptionPostMapper.insert(post);
-
-                    // 回写 TitleRecommendation.subscription_post_id
-                    TitleRecommendation rec = titleRecommendationMapper.findLatestByTitleId(titleLib.getId());
-                    if (rec != null && (rec.getSubscriptionPostId() == null || rec.getSubscriptionPostId().isEmpty())) {
-                        titleRecommendationMapper.updateSubscriptionPostId(rec.getId(), post.getId());
-                        log.info("[GenerationTaskScheduler] 回写推荐记录 subscription_post_id: recId={}, postId={}", rec.getId(), post.getId());
-                    }
+                    titleLibraryService.updateGeneratedFile(titleLib.getId(), fileUrl, fileName);
+                    log.info("[GenerationTaskScheduler] [任务{}] Step 4.5/6: TitleLibrary文件关联更新成功", task.getId());
                 }
             } catch (Exception e) {
-                log.warn("[GenerationTaskScheduler] 创建 SubscriptionPost 或回写失败，不影响任务完成: {}", e.getMessage());
+                log.warn("[GenerationTaskScheduler] [任务{}] Step 4.5/6: 更新TitleLibrary文件关联失败, 不影响任务完成: {}", task.getId(), e.getMessage());
             }
 
             // Step 5: Update task status
+            log.info("[GenerationTaskScheduler] [任务{}] Step 5/6: 更新任务状态为completed", task.getId());
             taskMapper.updateCompleted(task.getId(), "completed", fileUrl, fileName, LocalDateTime.now(), LocalDateTime.now());
             taskService.updateProgress(task.getId(), 5, "已完成");
 
             // Step 6: Update TitleLibrary association
+            log.info("[GenerationTaskScheduler] [任务{}] Step 6/6: 更新TitleLibrary关联文件", task.getId());
             titleLibraryService.updateGeneratedFile(task.getTitleLibraryId(), fileUrl, fileName);
-            log.info("[GenerationTaskScheduler] 任务完成: id={}, fileUrl={}", task.getId(), fileUrl);
+
+            // Step 7: 自动生成贴图（异步，失败不影响任务完成）
+            log.info("[GenerationTaskScheduler] [任务{}] Step 7/6: 自动生成文章贴图", task.getId());
+            try {
+                java.util.List<String> images = titleLibraryService.generateImagePosts(task.getTitleLibraryId(), null, null, null);
+                log.info("[GenerationTaskScheduler] [任务{}] 贴图生成成功, 共{}张", task.getId(), images.size());
+            } catch (Exception e) {
+                log.warn("[GenerationTaskScheduler] [任务{}] 贴图生成失败, 不影响任务完成: {}", task.getId(), e.getMessage());
+            }
+
+            long totalTime = System.currentTimeMillis() - taskStartTime;
+            log.info("[GenerationTaskScheduler] ========== 任务完成: id={}, fileUrl={}, 总耗时{}ms ==========", task.getId(), fileUrl, totalTime);
 
         } catch (InterruptedException ie) {
-            log.warn("[GenerationTaskScheduler] 任务被停止: id={}", task.getId());
+            log.warn("[GenerationTaskScheduler] [任务{}] 任务被停止", task.getId());
             taskService.updateProgress(task.getId(), task.getProgressStep(), "已停止");
             titleLibraryService.updateGenerateStatus(task.getTitleLibraryId(), 0);
         } catch (Exception e) {
-            log.error("[GenerationTaskScheduler] 任务处理失败: id={}, error={}", task.getId(), e.getMessage(), e);
+            log.error("[GenerationTaskScheduler] [任务{}] 任务处理失败: error={}", task.getId(), e.getMessage(), e);
             taskService.updateFailed(task.getId(), e.getMessage());
             titleLibraryService.updateGenerateStatus(task.getTitleLibraryId(), 0);
         }
@@ -437,12 +478,28 @@ public class GenerationTaskScheduler {
                 return new TitleMergeResult(content, keyword);
             }
 
-            // 2. 按 position 排序
+            // 2. 按 position 排序并去重（同一位置只保留第一个）
             titles.sort(Comparator.comparingInt(t -> {
                 Object pos = t.get("position");
                 if (pos instanceof Number) return ((Number) pos).intValue();
                 try { return Integer.parseInt(pos.toString()); } catch (Exception e) { return Integer.MAX_VALUE; }
             }));
+            List<Map<String, Object>> deduped = new ArrayList<>();
+            int lastPos = -1;
+            for (Map<String, Object> t : titles) {
+                Object pos = t.get("position");
+                int p;
+                try {
+                    p = pos instanceof Number ? ((Number) pos).intValue() : Integer.parseInt(pos.toString());
+                } catch (Exception e) {
+                    p = Integer.MAX_VALUE;
+                }
+                if (p != lastPos) {
+                    deduped.add(t);
+                    lastPos = p;
+                }
+            }
+            titles = deduped;
 
             // 3. 将正文按段落分割
             String[] paragraphs = content.split("\n\n+");
@@ -477,14 +534,10 @@ public class GenerationTaskScheduler {
                 }
             }
 
-            // 5. 剩余标题放最后
-            while (titleIndex < titles.size()) {
-                Map<String, Object> t = titles.get(titleIndex);
-                String titleText = t.get("title") != null ? t.get("title").toString() : "";
-                if (!titleText.isEmpty()) {
-                    sb.append("\n\n<h3>").append(titleText).append("</h3>");
-                }
-                titleIndex++;
+            // 5. 剩余标题（position 超出正文段落总数的）直接丢弃，不追加到末尾
+            if (titleIndex < titles.size()) {
+                int skipped = titles.size() - titleIndex;
+                log.info("[GenerationTaskScheduler] 标题插入: 丢弃 {} 个超出段落范围的标题", skipped);
             }
 
             return new TitleMergeResult(sb.toString(), keyword);

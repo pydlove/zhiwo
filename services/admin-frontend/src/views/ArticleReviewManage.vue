@@ -7,10 +7,12 @@ import {
 } from 'ant-design-vue'
 import { DownloadOutlined, CopyOutlined } from '@ant-design/icons-vue'
 import { renderAsync } from 'docx-preview'
-import { listPendingReview, listReviewHistory, reviewTitle, batchReview } from '../api/titleLibrary.js'
+import { useDocxHighlight } from '../composables/useDocxHighlight.js'
+import { listPendingReview, listReviewHistory, reviewTitle, batchReview, generateImagePost, getImagePosts } from '../api/titleLibrary.js'
 
 const STORAGE_KEY = 'article-review-date'
 const router = useRouter()
+const { highlightStats, applyHighlight, clearHighlight } = useDocxHighlight()
 
 const activeTab = ref('pending')
 const selectedDate = ref(dayjs())
@@ -22,6 +24,13 @@ const previewModalOpen = ref(false)
 const previewLoading = ref(false)
 const previewRecord = ref(null)
 const docxContainerRef = ref(null)
+
+const imagePostLoading = ref(false)
+const imagePostUrls = ref([])
+const imagePostModalOpen = ref(false)
+const currentImagePostTitleId = ref('')
+const imagePreviewOpen = ref(false)
+const previewImageUrl = ref('')
 
 const selectedRowKeys = ref([])
 const selectedRows = ref([])
@@ -152,7 +161,17 @@ async function handlePreview(record) {
   previewRecord.value = record
   previewModalOpen.value = true
   previewLoading.value = true
-  const fileUrl = record.generatedFileUrl || record.subscriptionPostFileUrl
+  // 清除之前的高亮统计
+  clearHighlight(docxContainerRef.value)
+  // 预加载贴图（如果有）
+  imagePostUrls.value = []
+  if (record.imagePostUrls) {
+    try {
+      const images = await getImagePosts(record.id)
+      imagePostUrls.value = images || []
+    } catch (e) { /* ignore preload failure */ }
+  }
+  const fileUrl = record.generatedFileUrl
   if (!fileUrl) {
     previewLoading.value = false
     return
@@ -179,6 +198,7 @@ async function handlePreview(record) {
           .docx-preview {
             font-family: 'Microsoft YaHei', '微软雅黑', sans-serif !important;
             zoom: 0.85;
+            line-height: 2.0 !important;
           }
           .docx-preview del, .docx-preview s, .docx-preview strike {
             display: none !important;
@@ -191,6 +211,17 @@ async function handlePreview(record) {
           }
         `
         docxContainerRef.value.appendChild(styleEl)
+        // 违禁词/敏感词高亮
+        const checkResult = previewRecord.value?.bannedWordCheckResult
+        if (checkResult) {
+          let parsed = checkResult
+          if (typeof checkResult === 'string') {
+            try { parsed = JSON.parse(checkResult) } catch (e) { parsed = null }
+          }
+          if (parsed && parsed.matches) {
+            applyHighlight(docxContainerRef.value, parsed.matches, parsed.totalChars)
+          }
+        }
       } catch (renderErr) {
         console.error('docx render error:', renderErr)
         docxContainerRef.value.innerHTML = '<div style="color:#999;text-align:center;padding:40px;">文件解析失败</div>'
@@ -203,14 +234,14 @@ async function handlePreview(record) {
 }
 
 function handleDownload(record) {
-  const fileUrl = record.generatedFileUrl || record.subscriptionPostFileUrl
+  const fileUrl = record.generatedFileUrl
   if (!fileUrl) {
     message.warning('暂无文件可下载')
     return
   }
   const link = document.createElement('a')
   link.href = fileUrl + (fileUrl.includes('?') ? '&' : '?') + '_t=' + Date.now() + '&download=1'
-  link.download = record.generatedFileName || record.subscriptionPostTitle || (record.title + '.docx')
+  link.download = record.generatedFileName || (record.title + '.docx')
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
@@ -265,6 +296,60 @@ function handleGoToMatchByDate() {
   router.push({ path: '/title-match', query: { recommendDate: selectedDate.value.format('YYYY-MM-DD') } })
 }
 
+async function handleGenerateImagePost(record) {
+  if (!record || !record.id) return
+  Modal.confirm({
+    title: '生成贴图',
+    content: '确认生成该文章的贴图？生成后可在邮件推送时一并发送。',
+    async onOk() {
+      imagePostLoading.value = true
+      try {
+        const images = await generateImagePost(record.id)
+        message.success(`贴图生成成功，共 ${images.length} 张`)
+        imagePostUrls.value = images || []
+        currentImagePostTitleId.value = record.id
+        imagePostModalOpen.value = true
+      } catch (e) {
+        message.error('贴图生成失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
+      } finally {
+        imagePostLoading.value = false
+      }
+    },
+  })
+}
+
+async function openImagePostModal(record) {
+  if (!record || !record.id) return
+  currentImagePostTitleId.value = record.id
+  imagePostUrls.value = []
+  imagePostModalOpen.value = true
+  imagePostLoading.value = true
+  try {
+    const images = await getImagePosts(record.id)
+    imagePostUrls.value = images || []
+  } catch (e) {
+    message.error('加载贴图失败')
+  } finally {
+    imagePostLoading.value = false
+  }
+}
+
+function handleDownloadImage(url) {
+  if (!url) return
+  const link = document.createElement('a')
+  link.href = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now() + '&download=1'
+  link.download = url.substring(url.lastIndexOf('/') + 1)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+function handlePreviewImage(url) {
+  if (!url) return
+  previewImageUrl.value = url
+  imagePreviewOpen.value = true
+}
+
 function getAiFlavorTag(record) {
   if (record.aiFlavorStatus === 2) {
     return h(Tag, { color: 'error' }, () => 'AI味重')
@@ -289,10 +374,13 @@ function getConfirmStatusTag(record) {
 const pendingColumns = [
   { title: '标题', dataIndex: 'title', key: 'title', ellipsis: true, width: 280,
     customRender: ({ record }) => {
-      return h('a', {
-        style: 'color: #1890ff; cursor: pointer;',
-        onClick: () => handlePreview(record),
-      }, record.title || '-')
+      return h('div', { style: 'display: flex; align-items: center; gap: 6px;' }, [
+        h('a', {
+          style: 'color: #1890ff; cursor: pointer;',
+          onClick: () => handlePreview(record),
+        }, record.title || '-'),
+        record.imagePostUrls ? h(Tag, { color: 'purple', style: 'font-size: 10px; line-height: 14px; padding: 0 4px;' }, () => '贴图') : null,
+      ])
     },
   },
   { title: '关联用户', key: 'user', width: 140,
@@ -300,12 +388,13 @@ const pendingColumns = [
   { title: '推荐时间', dataIndex: 'recommendDate', key: 'recommendDate', width: 120 },
   { title: 'AI味', key: 'aiFlavor', width: 100, align: 'center',
     customRender: ({ record }) => getAiFlavorTag(record) },
-  { title: '操作', key: 'action', width: 200, align: 'center',
+  { title: '操作', key: 'action', width: 260, align: 'center',
     customRender: ({ record }) => {
       return h('div', { style: 'display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;' }, [
         h(Button, { type: 'primary', size: 'small', onClick: () => handleReview(record, 'confirm') }, () => '确认'),
         h(Button, { danger: true, size: 'small', onClick: () => handleReview(record, 'reject') }, () => '打回'),
         h(Button, { type: 'link', size: 'small', onClick: () => handleGoToMatch(record) }, () => '去匹配'),
+        h(Button, { type: 'link', size: 'small', onClick: () => openImagePostModal(record) }, () => '贴图'),
       ])
     },
   },
@@ -314,10 +403,13 @@ const pendingColumns = [
 const historyColumns = [
   { title: '标题', dataIndex: 'title', key: 'title', ellipsis: true, width: 280,
     customRender: ({ record }) => {
-      return h('a', {
-        style: 'color: #1890ff; cursor: pointer;',
-        onClick: () => handlePreview(record),
-      }, record.title || '-')
+      return h('div', { style: 'display: flex; align-items: center; gap: 6px;' }, [
+        h('a', {
+          style: 'color: #1890ff; cursor: pointer;',
+          onClick: () => handlePreview(record),
+        }, record.title || '-'),
+        record.imagePostUrls ? h(Tag, { color: 'purple', style: 'font-size: 10px; line-height: 14px; padding: 0 4px;' }, () => '贴图') : null,
+      ])
     },
   },
   { title: '关联用户', key: 'user', width: 140,
@@ -327,10 +419,11 @@ const historyColumns = [
     customRender: ({ record }) => getAiFlavorTag(record) },
   { title: '确认状态', key: 'confirmStatus', width: 100, align: 'center',
     customRender: ({ record }) => getConfirmStatusTag(record) },
-  { title: '操作', key: 'action', width: 140, align: 'center',
+  { title: '操作', key: 'action', width: 180, align: 'center',
     customRender: ({ record }) => {
       return h('div', { style: 'display: flex; gap: 6px; justify-content: center;' }, [
         h(Button, { type: 'link', size: 'small', onClick: () => handleGoToMatch(record) }, () => '去匹配'),
+        h(Button, { type: 'link', size: 'small', onClick: () => openImagePostModal(record) }, () => '贴图'),
       ])
     },
   },
@@ -411,6 +504,8 @@ onMounted(() => {
           <CopyOutlined />
           复制全文
         </Button>
+        <Button size="small" :loading="imagePostLoading" @click="handleGenerateImagePost(previewRecord)">生成贴图</Button>
+        <Button size="small" @click="openImagePostModal(previewRecord)">查看贴图</Button>
         <div v-if="activeTab === 'pending'" style="display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap;">
           <Button type="primary" size="small" @click="() => handlePreviewAction('confirm')">确认</Button>
           <Button danger size="small" @click="() => handlePreviewAction('reject')">打回</Button>
@@ -419,7 +514,60 @@ onMounted(() => {
         </div>
       </div>
       <div v-if="previewLoading" style="padding: 24px; text-align: center; color: #999;">正在加载预览...</div>
-      <div ref="docxContainerRef" style="padding: 16px;"></div>
+      <div ref="docxContainerRef" style="padding: 16px; margin: 0 auto; max-width: 640px;"></div>
+
+      <!-- 贴图预览区 -->
+      <div v-if="imagePostUrls.length > 0" style="border-top: 1px solid #f0f0f0; padding: 16px;">
+        <div style="font-size: 14px; font-weight: 500; color: #262626; margin-bottom: 12px;">文章贴图</div>
+        <div style="display: flex; flex-direction: row; gap: 12px; overflow-x: auto;">
+          <div v-for="(url, idx) in imagePostUrls" :key="idx" style="border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; flex-shrink: 0; width: 180px;">
+            <img :src="url" style="width: 100%; height: 300px; object-fit: cover; display: block; cursor: zoom-in;" @click="handlePreviewImage(url)" />
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #fafafa;">
+              <span style="font-size: 11px; color: #999;">第 {{ idx + 1 }} 张</span>
+              <Button size="small" style="font-size: 11px; padding: 0 6px;" @click="handleDownloadImage(url)">下载</Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 违禁词统计栏 -->
+      <div v-if="highlightStats.totalChars > 0" style="position: sticky; bottom: 0; background: #fff; border-top: 1px solid #f0f0f0; padding: 8px 16px; display: flex; gap: 16px; font-size: 13px; flex-wrap: wrap;">
+        <span>全文:{{ highlightStats.totalChars }}字</span>
+        <span>极限词:{{ highlightStats.极限词 || 0 }}个</span>
+        <span>诱导词:{{ highlightStats.诱导词 || 0 }}个</span>
+        <span>敏感词:{{ highlightStats.敏感词 || 0 }}个</span>
+        <span>医疗词:{{ highlightStats.医疗词 || 0 }}个</span>
+        <span>金融词:{{ highlightStats.金融词 || 0 }}个</span>
+        <span>政治敏感:{{ highlightStats.政治敏感 || 0 }}个</span>
+        <span>其他:{{ highlightStats.其他 || 0 }}个</span>
+      </div>
+    </div>
+  </Modal>
+
+  <!-- 贴图预览弹窗 -->
+  <Modal v-model:open="imagePostModalOpen" title="贴图预览" :footer="null" :mask-closable="true" width="900">
+    <div v-if="imagePostLoading" style="padding: 24px; text-align: center;">
+      <Spin />
+      <div style="margin-top: 8px; color: #999;">正在加载贴图...</div>
+    </div>
+    <div v-else-if="imagePostUrls.length === 0" style="padding: 24px; text-align: center; color: #999;">
+      暂无贴图，点击"生成贴图"按钮创建
+    </div>
+    <div v-else style="display: flex; flex-direction: row; gap: 16px; padding: 8px; overflow-x: auto;">
+      <div v-for="(url, idx) in imagePostUrls" :key="idx" style="border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; flex-shrink: 0; width: 240px;">
+        <img :src="url" style="width: 100%; height: 400px; object-fit: cover; display: block; cursor: zoom-in;" @click="handlePreviewImage(url)" />
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #fafafa;">
+          <span style="font-size: 12px; color: #999;">第 {{ idx + 1 }} 张</span>
+          <Button size="small" @click="handleDownloadImage(url)">下载</Button>
+        </div>
+      </div>
+    </div>
+  </Modal>
+
+  <!-- 大图缩放预览 -->
+  <Modal v-model:open="imagePreviewOpen" :footer="null" :mask-closable="true" width="auto" style="max-width: 90vw;">
+    <div style="display: flex; justify-content: center; align-items: center; padding: 8px;">
+      <img :src="previewImageUrl" style="max-width: 100%; max-height: 80vh; border-radius: 8px;" />
     </div>
   </Modal>
 </template>

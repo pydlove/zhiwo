@@ -135,7 +135,7 @@ public class AiFlavorRemover {
                              .replaceAll("(?is)<reasoning\\b[^>]*>.*?</reasoning>", "")
                              .trim();
 
-        // 兜底：如果过滤后内容为空（说明整篇文章被 <think> 包裹），则只去掉标签本身
+        // 兜底1：如果过滤后内容为空（说明整篇文章被 <think> 包裹），则只去掉标签本身
         if (cleaned.isEmpty()) {
             log.warn("[AiFlavorRemover] 过滤 <think> 标签后内容为空，回退为只移除标签保留内容");
             cleaned = text.replaceAll("(?is)</?thinking\\b[^>]*>", "")
@@ -144,6 +144,26 @@ public class AiFlavorRemover {
                           .replaceAll("(?is)</?reasoning\\b[^>]*>", "")
                           .trim();
         }
+
+        // 兜底2：处理未闭合的 <think> 标签（有开头无结尾，删除从 <think> 开始到文本结束）
+        String lower = cleaned.toLowerCase();
+        int thinkIdx = lower.indexOf("<think");
+        if (thinkIdx >= 0) {
+            int closeIdx = lower.indexOf("</think>", thinkIdx);
+            if (closeIdx < 0) {
+                log.warn("[AiFlavorRemover] 发现未闭合的 <think> 标签，截断处理");
+                cleaned = cleaned.substring(0, thinkIdx).trim();
+            }
+        }
+        int thinkingIdx = lower.indexOf("<thinking");
+        if (thinkingIdx >= 0) {
+            int closeIdx = lower.indexOf("</thinking>", thinkingIdx);
+            if (closeIdx < 0) {
+                log.warn("[AiFlavorRemover] 发现未闭合的 <thinking> 标签，截断处理");
+                cleaned = cleaned.substring(0, thinkingIdx).trim();
+            }
+        }
+
         return cleaned;
     }
 

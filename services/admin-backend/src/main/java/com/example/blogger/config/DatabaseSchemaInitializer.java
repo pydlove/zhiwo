@@ -160,10 +160,111 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
             ensureColumn(conn, "tu_title_library", "title_keyword",
                 "ALTER TABLE tu_title_library ADD COLUMN title_keyword VARCHAR(255) DEFAULT NULL COMMENT '标题分词关键词，用于相似度检测'");
 
+            // 兼容：title_keyword 可能长度不够，升级为 TEXT
+            try (Statement stmt = conn.createStatement()) {
+                stmt.executeUpdate("ALTER TABLE tu_title_library MODIFY COLUMN title_keyword TEXT COMMENT '标题分词关键词，用于相似度检测'");
+                log.info("[DatabaseSchemaInitializer] 已调整 title_keyword 字段类型为 TEXT");
+            } catch (Exception e) {
+                log.debug("[DatabaseSchemaInitializer] 调整 title_keyword 字段类型跳过: {}", e.getMessage());
+            }
+
+            ensureColumn(conn, "tu_title_generate_task", "style_template_id",
+                "ALTER TABLE tu_title_generate_task ADD COLUMN style_template_id VARCHAR(32) DEFAULT NULL COMMENT '选中的标题风格模板ID'");
+
             // 用户同质化程度表
             ensureUserHomogeneityTable(conn);
+
+            // Agent 配置表和执行记录表
+            ensureAgentTables(conn);
+
+            // 写作风格库表
+            ensureTable(conn, "tu_writing_style",
+                "CREATE TABLE IF NOT EXISTS tu_writing_style (" +
+                "  id VARCHAR(32) PRIMARY KEY COMMENT '记录ID'," +
+                "  original_word VARCHAR(100) NOT NULL COMMENT '原词'," +
+                "  style_word VARCHAR(100) NOT NULL COMMENT '风格替换词'," +
+                "  category VARCHAR(50) DEFAULT '通用' COMMENT '分类'," +
+                "  is_active TINYINT DEFAULT 1 COMMENT '是否启用: 0=禁用 1=启用'," +
+                "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'" +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='写作风格词库'");
+
+            // 标题禁用词库表
+            ensureTable(conn, "tu_title_banned_word",
+                "CREATE TABLE IF NOT EXISTS tu_title_banned_word (" +
+                "  id VARCHAR(32) PRIMARY KEY COMMENT '记录ID'," +
+                "  word VARCHAR(100) NOT NULL COMMENT '禁用词'," +
+                "  category VARCHAR(50) DEFAULT '通用' COMMENT '分类'," +
+                "  is_active TINYINT DEFAULT 1 COMMENT '是否启用: 0=禁用 1=启用'," +
+                "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'" +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='标题禁用词库'");
+
+            // 初始化标题风格提示词模板
+            initTitleStyleTemplates(conn);
         } catch (Exception e) {
             log.error("[DatabaseSchemaInitializer] 数据库连接失败: {}", e.getMessage(), e);
+        }
+    }
+
+    private void ensureAgentTables(Connection conn) {
+        try {
+            DatabaseMetaData metaData = conn.getMetaData();
+            String catalog = conn.getCatalog();
+
+            // tu_agent_config
+            boolean configExists = false;
+            try (ResultSet rs = metaData.getTables(catalog, null, "tu_agent_config", null)) {
+                configExists = rs.next();
+            }
+            if (!configExists) {
+                String createConfigSql = "CREATE TABLE IF NOT EXISTS tu_agent_config (" +
+                    "  id BIGINT PRIMARY KEY COMMENT '配置ID，固定为1'," +
+                    "  enabled TINYINT DEFAULT 0 COMMENT '是否启用: 0=禁用 1=启用'," +
+                    "  cron_expr VARCHAR(50) DEFAULT '0 0 6 * * ?' COMMENT '定时表达式'," +
+                    "  similarity_threshold DECIMAL(3,2) DEFAULT 0.15 COMMENT '相似度阈值'," +
+                    "  homogeneity_threshold DECIMAL(3,2) DEFAULT 0.15 COMMENT '同质化阈值'," +
+                    "  min_titles_per_track INT DEFAULT 5 COMMENT '每赛道最少推荐数'," +
+                    "  history_days INT DEFAULT 30 COMMENT '历史标题天数'," +
+                    "  candidate_limit INT DEFAULT 50 COMMENT '候选标题上限'," +
+                    "  max_generation_concurrency INT DEFAULT 3 COMMENT '文章生成并发数'," +
+                    "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'," +
+                    "  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'" +
+                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI Agent 配置表'";
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.executeUpdate(createConfigSql);
+                    log.info("[DatabaseSchemaInitializer] 已自动创建表: tu_agent_config");
+                }
+            }
+
+            // tu_agent_execution
+            boolean executionExists = false;
+            try (ResultSet rs = metaData.getTables(catalog, null, "tu_agent_execution", null)) {
+                executionExists = rs.next();
+            }
+            if (!executionExists) {
+                String createExecutionSql = "CREATE TABLE IF NOT EXISTS tu_agent_execution (" +
+                    "  id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '执行记录ID'," +
+                    "  execution_date DATE NOT NULL COMMENT '执行日期'," +
+                    "  status VARCHAR(20) DEFAULT 'running' COMMENT '状态: running/completed/failed/partial'," +
+                    "  total_users INT DEFAULT 0 COMMENT '总处理用户数'," +
+                    "  total_tracks INT DEFAULT 0 COMMENT '总处理赛道数'," +
+                    "  matched_titles INT DEFAULT 0 COMMENT '匹配标题数'," +
+                    "  generated_titles INT DEFAULT 0 COMMENT '生成标题数'," +
+                    "  article_tasks INT DEFAULT 0 COMMENT '文章任务数'," +
+                    "  failed_count INT DEFAULT 0 COMMENT '失败数'," +
+                    "  detail_json LONGTEXT COMMENT '执行详情JSON'," +
+                    "  started_at DATETIME DEFAULT NULL COMMENT '开始时间'," +
+                    "  completed_at DATETIME DEFAULT NULL COMMENT '完成时间'," +
+                    "  error_message TEXT COMMENT '错误信息'," +
+                    "  KEY idx_execution_date (execution_date)," +
+                    "  KEY idx_status (status)" +
+                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI Agent 执行记录表'";
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.executeUpdate(createExecutionSql);
+                    log.info("[DatabaseSchemaInitializer] 已自动创建表: tu_agent_execution");
+                }
+            }
+        } catch (Exception e) {
+            log.error("[DatabaseSchemaInitializer] 创建 Agent 表失败: {}", e.getMessage());
         }
     }
 
@@ -247,6 +348,44 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
             log.info("[DatabaseSchemaInitializer] 已迁移 AI味状态数据到 ai_flavor_status");
         } catch (Exception e) {
             log.error("[DatabaseSchemaInitializer] 迁移 ai_flavor_status 失败: {}", e.getMessage());
+        }
+    }
+
+    private void initTitleStyleTemplates(Connection conn) {
+        try {
+            // 检查是否已有 title_style 类型的模板
+            boolean exists = false;
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM tu_prompt_template WHERE type = 'title_style' AND is_deleted = 0")) {
+                if (rs.next() && rs.getInt(1) > 0) {
+                    exists = true;
+                }
+            }
+            if (exists) {
+                log.debug("[DatabaseSchemaInitializer] title_style 模板已存在，跳过初始化");
+                return;
+            }
+
+            String[][] templates = {
+                {"叙事型", "标题采用真实场景叙事风格，像朋友间分享故事一样自然。要求：使用具体的时间/地点/动作细节；带有轻微的情感转折；不刻意制造悬念，让读者从标题就能感受到真实感。严禁使用数字列表、感叹号、震惊体词汇。"},
+                {"数据型", "标题以具体数据或调研结果为核心支撑。要求：使用精确的数字（避免整数，可带小数点或范围）；数据来源感强；突出「发现」或「真相」的揭示感。严禁使用「震惊」「绝了」等夸张情绪词。"},
+                {"反转型", "标题先建立读者的常规认知，再给出打破认知的结论。要求：前半句是大众普遍认同的观点，后半句是反常识的转折；使用「其实」「才发现」「错了」等转折词；制造温和的认知冲突。"},
+                {"身份型", "标题精准锁定特定读者群体的身份标签。要求：直接使用「如果你是...」「那些...的人」等身份定位句式；点出读者的痛点或隐秘需求；让读者产生「说的就是我」的代入感。"},
+                {"场景型", "标题描绘一个具体画面或场景，让读者瞬间代入。要求：使用视觉化、感官化的描写；带有时间或环境细节（如「凌晨2点」「医院走廊」）；画面本身蕴含情感张力，不靠解释。"},
+                {"对话型", "标题模拟日常对话，语气轻松自然。要求：使用第一人称或第二人称；像微信聊天一样口语化；可带轻微的吐槽或自嘲语气。"},
+            };
+
+            for (String[] tpl : templates) {
+                String id = java.util.UUID.randomUUID().toString().replace("-", "");
+                String sql = "INSERT INTO tu_prompt_template(id, name, content, type, is_default, is_deleted, created_at) " +
+                    "VALUES('" + id + "', '" + tpl[0] + "', '" + tpl[1] + "', 'title_style', 0, 0, NOW())";
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.executeUpdate(sql);
+                }
+            }
+            log.info("[DatabaseSchemaInitializer] 已初始化 {} 种标题风格模板", templates.length);
+        } catch (Exception e) {
+            log.error("[DatabaseSchemaInitializer] 初始化标题风格模板失败: {}", e.getMessage());
         }
     }
 

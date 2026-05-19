@@ -10,9 +10,11 @@ import java.util.List;
 public interface TitleGenerateTaskMapper {
 
     @Select("SELECT * FROM tu_title_generate_task WHERE id = #{id}")
+    @ResultMap("taskResult")
     TitleGenerateTask findById(@Param("id") String id);
 
     @Select("SELECT * FROM tu_title_generate_task WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1")
+    @ResultMap("taskResult")
     TitleGenerateTask findOnePending();
 
     @Select("<script>" +
@@ -46,12 +48,13 @@ public interface TitleGenerateTaskMapper {
             @Result(property = "updatedAt", column = "updated_at"),
             @Result(property = "processedAt", column = "processed_at"),
             @Result(property = "duplicateCount", column = "duplicate_count"),
-            @Result(property = "insertedCount", column = "inserted_count")
+            @Result(property = "insertedCount", column = "inserted_count"),
+            @Result(property = "styleTemplateId", column = "style_template_id")
     })
     List<TitleGenerateTask> findAllWithSearch(@Param("status") String status);
 
-    @Insert("INSERT INTO tu_title_generate_task(id, status, platforms, track_ids, count_per_combo, instruction, result_file_url, result_file_name, error_message, progress_step, progress_message, duplicate_count, inserted_count, created_at, updated_at) " +
-            "VALUES(#{id}, #{status}, #{platforms}, #{trackIds}, #{countPerCombo}, #{instruction}, #{resultFileUrl}, #{resultFileName}, #{errorMessage}, #{progressStep}, #{progressMessage}, #{duplicateCount}, #{insertedCount}, #{createdAt}, #{updatedAt})")
+    @Insert("INSERT INTO tu_title_generate_task(id, status, platforms, track_ids, count_per_combo, instruction, result_file_url, result_file_name, error_message, progress_step, progress_message, duplicate_count, inserted_count, style_template_id, created_at, updated_at) " +
+            "VALUES(#{id}, #{status}, #{platforms}, #{trackIds}, #{countPerCombo}, #{instruction}, #{resultFileUrl}, #{resultFileName}, #{errorMessage}, #{progressStep}, #{progressMessage}, #{duplicateCount}, #{insertedCount}, #{styleTemplateId}, #{createdAt}, #{updatedAt})")
     int insert(TitleGenerateTask task);
 
     @Update("UPDATE tu_title_generate_task SET status = #{status}, updated_at = #{updatedAt} WHERE id = #{id}")

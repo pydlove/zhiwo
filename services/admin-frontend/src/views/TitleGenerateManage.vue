@@ -26,6 +26,8 @@ const generating = ref(false)
 const instructionMode = ref('manual')
 const promptTemplates = ref([])
 const selectedPromptId = ref('')
+const styleTemplates = ref([])
+const selectedStyleId = ref(savedGenerateConfig?.styleId || '')
 
 const platformOptions = [
   { label: '公众号', value: '公众号' },
@@ -53,6 +55,7 @@ function saveGenerateConfig() {
     platforms: generatePlatforms.value,
     trackIds: generateTrackIds.value,
     instruction: generateInstruction.value,
+    styleId: selectedStyleId.value,
   }))
 }
 
@@ -65,6 +68,12 @@ async function openGenerateModal() {
     promptTemplates.value = (res || []).filter(p => p.type === 'generate_title')
   } catch (e) {
     promptTemplates.value = []
+  }
+  try {
+    const res2 = await listPromptTemplates({ type: 'title_style' })
+    styleTemplates.value = (res2 || []).filter(p => p.type === 'title_style')
+  } catch (e) {
+    styleTemplates.value = []
   }
 }
 
@@ -102,6 +111,7 @@ async function handleGenerate() {
       platforms: generatePlatforms.value,
       trackIds: generateTrackIds.value,
       instruction: generateInstruction.value.trim(),
+      styleTemplateId: selectedStyleId.value || undefined,
     })
     generateModalOpen.value = false
     saveGenerateConfig()
@@ -369,7 +379,7 @@ onMounted(() => {
             1. 选择平台和赛道，不选则生成全部<br>
             2. 数量指每个平台下每个赛道生成的标题数<br>
             3. 系统会按平台分批调用大模型（kimi/minimax）生成<br>
-            4. 生成结果包含标题、平台、赛道名称和 SEO 描述
+            4. 生成结果包含标题、平台、赛道名称和文章写作思路（用于后续文章撰写）
           </div>
         </div>
         <Form.Item label="选择平台">
@@ -397,6 +407,17 @@ onMounted(() => {
         </Form.Item>
         <Form.Item label="每个组合生成数量" required>
           <Input v-model:value="generateCount" type="number" min="1" max="20" placeholder="例如：3" />
+        </Form.Item>
+        <Form.Item label="标题风格（可选）">
+          <Select
+            v-model:value="selectedStyleId"
+            placeholder="不选则使用默认风格"
+            style="width: 100%;"
+            allowClear
+          >
+            <Select.Option v-for="s in styleTemplates" :key="s.id" :value="s.id">{{ s.name }}</Select.Option>
+          </Select>
+          <div style="font-size: 12px; color: #999; margin-top: 4px;">选择后，AI 将严格按照该风格生成标题</div>
         </Form.Item>
         <Form.Item label="生成方向（可选）">
           <div style="display: flex; gap: 12px; margin-bottom: 8px;">
@@ -450,7 +471,7 @@ onMounted(() => {
           <Table.Column title="标题" dataIndex="title" key="title" ellipsis />
           <Table.Column title="平台" dataIndex="platform" key="platform" width="100" />
           <Table.Column title="赛道" dataIndex="trackName" key="trackName" width="140" />
-          <Table.Column title="描述" dataIndex="description" key="description" ellipsis />
+          <Table.Column title="写作思路" dataIndex="description" key="description" ellipsis />
           <Table.Column title="创建时间" dataIndex="createdAt" key="createdAt" width="160" />
         </Table>
         <div v-if="!detailLoading && detailTitles.length === 0" style="text-align: center; padding: 24px; color: #999;">

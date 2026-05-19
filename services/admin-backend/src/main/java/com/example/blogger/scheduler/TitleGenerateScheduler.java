@@ -1,9 +1,14 @@
 package com.example.blogger.scheduler;
 
+import com.example.blogger.entity.PromptTemplate;
+import com.example.blogger.entity.TitleBannedWord;
 import com.example.blogger.entity.TitleGenerateTask;
 import com.example.blogger.entity.TitleLibrary;
 import com.example.blogger.entity.Track;
+import com.example.blogger.mapper.PromptTemplateMapper;
+import com.example.blogger.mapper.TitleBannedWordMapper;
 import com.example.blogger.mapper.TitleGenerateTaskMapper;
+import com.example.blogger.mapper.TitleLibraryMapper;
 import com.example.blogger.mapper.TrackMapper;
 import com.example.blogger.service.ContentCheckService;
 import com.example.blogger.service.LLMService;
@@ -43,6 +48,9 @@ public class TitleGenerateScheduler {
     private final TitleReviewService titleReviewService;
     private final TrackMapper trackMapper;
     private final ContentCheckService contentCheckService;
+    private final PromptTemplateMapper promptTemplateMapper;
+    private final TitleBannedWordMapper titleBannedWordMapper;
+    private final TitleLibraryMapper titleLibraryMapper;
     private final ObjectMapper objectMapper;
 
     private volatile boolean isProcessing = false;
@@ -62,7 +70,10 @@ public class TitleGenerateScheduler {
                                   TitleLibraryService titleLibraryService,
                                   TitleReviewService titleReviewService,
                                   TrackMapper trackMapper,
-                                  ContentCheckService contentCheckService) {
+                                  ContentCheckService contentCheckService,
+                                  PromptTemplateMapper promptTemplateMapper,
+                                  TitleBannedWordMapper titleBannedWordMapper,
+                                  TitleLibraryMapper titleLibraryMapper) {
         this.taskMapper = taskMapper;
         this.taskService = taskService;
         this.llmService = llmService;
@@ -70,6 +81,9 @@ public class TitleGenerateScheduler {
         this.titleReviewService = titleReviewService;
         this.trackMapper = trackMapper;
         this.contentCheckService = contentCheckService;
+        this.promptTemplateMapper = promptTemplateMapper;
+        this.titleBannedWordMapper = titleBannedWordMapper;
+        this.titleLibraryMapper = titleLibraryMapper;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -152,7 +166,7 @@ public class TitleGenerateScheduler {
                     taskService.updateProgress(task.getId(), 2,
                             "大模型生成中：" + platform + "（批次 " + (batchStart / batchSize + 1) + "/" + (int) Math.ceil(platformTracks.size() / 5.0) + "）");
 
-                    String prompt = buildPrompt(platform, batchTracks, countPerCombo, instruction);
+                    String prompt = buildPrompt(platform, batchTracks, countPerCombo, instruction, task);
                     log.info("[TitleGenerateScheduler] 调用LLM生成标题, prompt长度={}", prompt.length());
                     String llmResponse = llmService.generateContent(prompt);
                     log.info("[TitleGenerateScheduler] LLM返回长度={}", llmResponse.length());
@@ -220,12 +234,13 @@ public class TitleGenerateScheduler {
         }
     }
 
-    private String buildPrompt(String platform, List<Track> batchTracks, int countPerCombo, String instruction) {
+    private String buildPrompt(String platform, List<Track> batchTracks, int countPerCombo, String instruction, TitleGenerateTask task) {
         StringBuilder prompt = new StringBuilder();
         prompt.append("你是一个专业的新媒体爆款标题创作者，请严格按照要求生成高质量标题。\n\n");
         prompt.append("目标平台：").append(platform).append("\n");
         prompt.append("需要生成标题的赛道：\n");
         boolean hasSocialTrack = false;
+        List<String> batchTrackIds = new ArrayList<>();
         for (int i = 0; i < batchTracks.size(); i++) {
             Track t = batchTracks.get(i);
             prompt.append(i + 1).append(". ").append(t.getName());
@@ -236,19 +251,82 @@ public class TitleGenerateScheduler {
             if (isSocialTrack(t.getName())) {
                 hasSocialTrack = true;
             }
+            if (t.getId() != null) {
+                batchTrackIds.add(t.getId());
+            }
         }
+
+        // 注入标题风格模板
+        String styleTemplateId = task != null ? task.getStyleTemplateId() : null;
+        if (styleTemplateId != null && !styleTemplateId.isEmpty()) {
+            try {
+                PromptTemplate styleTemplate = promptTemplateMapper.findById(styleTemplateId);
+                if (styleTemplate != null && styleTemplate.getContent() != null && !styleTemplate.getContent().isEmpty()) {
+                    prompt.append("\n【标题风格要求（必须严格遵循）】\n");
+                    prompt.append("风格名称：").append(styleTemplate.getName()).append("\n");
+                    prompt.append(styleTemplate.getContent()).append("\n");
+                }
+            } catch (Exception e) {
+                log.warn("[TitleGenerateScheduler] 查询风格模板失败: {}", styleTemplateId);
+            }
+        }
+
+        // 注入禁用词
+        try {
+            List<TitleBannedWord> bannedWords = titleBannedWordMapper.findAllActive();
+            if (bannedWords != null && !bannedWords.isEmpty()) {
+                prompt.append("\n【绝对禁止使用的词汇和表述（标题和描述中均不得出现）】\n");
+                for (TitleBannedWord bw : bannedWords) {
+                    prompt.append("- ").append(bw.getWord());
+                    if (bw.getCategory() != null && !bw.getCategory().isEmpty()) {
+                        prompt.append("（").append(bw.getCategory()).append("）");
+                    }
+                    prompt.append("\n");
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[TitleGenerateScheduler] 查询禁用词失败: {}", e.getMessage());
+        }
+
+        // 注入近期历史标题（作为去重约束）
+        if (!batchTrackIds.isEmpty()) {
+            try {
+                List<TitleLibrary> recentTitles = titleLibraryMapper.findRecentByTrackIds(batchTrackIds, 15);
+                if (recentTitles != null && !recentTitles.isEmpty()) {
+                    prompt.append("\n【近期已生成标题（严禁与以下标题在结构、用词、角度上雷同）】\n");
+                    Set<String> shownTracks = new HashSet<>();
+                    int showCount = 0;
+                    for (TitleLibrary rt : recentTitles) {
+                        if (showCount >= 15) break;
+                        String trackName = rt.getTrackName() != null ? rt.getTrackName() : "未知赛道";
+                        if (!shownTracks.contains(trackName)) {
+                            prompt.append("\n").append(trackName).append("：\n");
+                            shownTracks.add(trackName);
+                        }
+                        prompt.append("  - ").append(rt.getTitle()).append("\n");
+                        showCount++;
+                    }
+                    prompt.append("\n要求：新标题必须与以上所有标题有明显差异，禁止换词重组、禁止同义改写、禁止仅调整语序。必须从全新的角度和切入点创作。\n");
+                }
+            } catch (Exception e) {
+                log.warn("[TitleGenerateScheduler] 查询历史标题失败: {}", e.getMessage());
+            }
+        }
+
         prompt.append("\n每个赛道生成").append(countPerCombo).append("个标题。要求：\n");
         prompt.append("1. 标题是爆款风格，吸引眼球，适合").append(platform).append("传播，但不刻意标题党\n");
         prompt.append("2. 每个标题的 track 字段必须是上面给定的赛道名称（纯名称，不要包含括号内的说明），严禁自创赛道名称\n");
-        prompt.append("3. 每个标题必须配一段SEO描述（30-50字），要求：\n");
-        prompt.append("   - 包含赛道核心关键词，便于搜索引擎收录\n");
-        prompt.append("   - 突出文章价值点和读者收益\n");
-        prompt.append("   - 语言自然流畅，符合").append(platform).append("的搜索推荐算法偏好\n");
+        prompt.append("3. 每个标题必须配一段文章写作思路（80-150字），要求：\n");
+        prompt.append("   - 明确文章的核心观点和切入角度\n");
+        prompt.append("   - 列出2-3个关键论据或故事线索，说明如何展开内容\n");
+        prompt.append("   - 指明目标读者群体和阅读收益\n");
+        prompt.append("   - 这段写作思路将直接用于后续文章的构思和撰写，必须具体、可执行，不能是空泛的概括\n");
         prompt.append("4. 所有生成的标题必须全局唯一，同一批次内不同赛道之间不得出现相同或高度相似的标题\n");
         prompt.append("5. 标题和描述中禁止出现英文双引号 \"，如有引用需求请使用中文引号「」或『』代替\n");
         prompt.append("6. 只输出纯JSON，不要markdown代码块，不要任何额外文字，不要在输出中包含任何思考过程\n");
         prompt.append("7. 禁止在输出中出现任何 <thinking>、<think>、<answer>、<think>> 等标签，不要包裹任何思考内容\n");
-        prompt.append("8. 同一赛道内的多个标题之间必须有明显差异，从不同角度切入，角度包括但不限于：叙事视角、情感基调、读者角色、问题切入点、解决方案类型，避免标题结构和用词高度雷同\n\n");
+        prompt.append("8. 同一赛道内的多个标题之间必须有明显差异，从不同角度切入，角度包括但不限于：叙事视角、情感基调、读者角色、问题切入点、解决方案类型，避免标题结构和用词高度雷同\n");
+        prompt.append("9. 新标题必须与「近期已生成标题」列表中的标题在语义结构、核心词汇、情感基调上保持显著差异，禁止仅替换个别词语或调整语序\n\n");
         prompt.append("格式：{\"titles\":[{\"track\":\"赛道名称\",\"title\":\"标题文字\",\"description\":\"SEO描述\"},...]}");
         if (instruction != null && !instruction.trim().isEmpty()) {
             prompt.append("\n\n【标题生成方向（必须严格遵循，多样化表达）】\n").append(instruction.trim());
@@ -260,18 +338,35 @@ public class TitleGenerateScheduler {
      * 从 LLM 返回中提取 JSON 数组，支持多候选解析和强化的标签清理
      */
     private JsonNode extractJsonArray(String llmResponse) {
-        String text = llmResponse;
-        // 1. 强制清除所有已知思维链/安全检测标签及内容（包括不成对的标签）
-        // 先处理完整标签对
-        text = text.replaceAll("(?is)<(thinking|think|thought|reasoning|answer)\\b[^>]*>.*?</\\1>", " ");
-        text = text.replaceAll("(?is)<(output|response|text)\\b[^>]*>.*?</\\1>", " ");
-        // 清除中文思考标签（分两阶段：先完整匹配，再兜底移除到文字结束）
-        text = text.replaceAll("(?si)<think>(.*?)</think>", " ");
-        text = text.replaceAll("(?si)<think>.*", " ");
-        // 再清除所有残留的单标签（不管是否配对）
-        text = text.replaceAll("(?is)<(thinking|think|thought|reasoning|answer|output|response|text)\\b[^>]*/?>", " ");
-        // 清除安全检测类标签
-        text = text.replaceAll("(?is)<(safe|unsafe|sensitive)\\b[^>]*/?>", " ");
+        // 策略1：标准清理（删除 think 标签及内容）
+        JsonNode result = tryExtractJsonArrayInternal(llmResponse, true);
+        if (result != null) return result;
+
+        // 策略2：仅删除标签标记，保留标签内部内容（有些模型把 JSON 放在 think 标签内）
+        log.info("[TitleGenerateScheduler] 标准清理未找到JSON，尝试保留think标签内容提取");
+        result = tryExtractJsonArrayInternal(llmResponse, false);
+        if (result != null) return result;
+
+        log.warn("[TitleGenerateScheduler] 无法解析LLM返回, 文本前500字: {}",
+                llmResponse.length() > 500 ? llmResponse.substring(0, 500) + "..." : llmResponse);
+        return null;
+    }
+
+    private JsonNode tryExtractJsonArrayInternal(String rawText, boolean stripTagContent) {
+        String text = rawText;
+        // 1. 清理思维链标签
+        if (stripTagContent) {
+            // 删除标签及内部内容
+            text = text.replaceAll("(?is)<(thinking|think|thought|reasoning|answer)\\b[^>]*>.*?</\\1>", " ");
+            text = text.replaceAll("(?is)<(output|response|text)\\b[^>]*>.*?</\\1>", " ");
+            text = text.replaceAll("(?si)<think>(.*?)</think>", " ");
+            text = text.replaceAll("(?si)<think>.*", " ");
+        } else {
+            // 仅删除标签标记本身，保留内容（处理模型把JSON放在think内的情况）
+            text = text.replaceAll("(?is)</?(thinking|think|thought|reasoning|answer|output|response|text)\\b[^>]*>", " ");
+        }
+        // 清除残留的单标签和安全检测标签
+        text = text.replaceAll("(?is)<(thinking|think|thought|reasoning|answer|output|response|text|safe|unsafe|sensitive)\\b[^>]*/?>", " ");
         // 2. 去除 markdown 代码块
         text = text.replaceAll("```json\\s*", "");
         text = text.replaceAll("```\\s*", "");
@@ -344,8 +439,6 @@ public class TitleGenerateScheduler {
             log.info("[TitleGenerateScheduler] 正则回退提取到 {} 条标题", fallback.size());
             return fallback;
         }
-        log.warn("[TitleGenerateScheduler] 无法解析LLM返回, 共扫描 {} 个JSON候选, 文本前500字: {}",
-                candidates.size(), text.length() > 500 ? text.substring(0, 500) + "..." : text);
         return null;
     }
 
@@ -532,7 +625,7 @@ public class TitleGenerateScheduler {
             header.createCell(0).setCellValue("标题");
             header.createCell(1).setCellValue("平台");
             header.createCell(2).setCellValue("赛道名称");
-            header.createCell(3).setCellValue("描述");
+            header.createCell(3).setCellValue("写作思路");
 
             for (int i = 0; i < allRows.size(); i++) {
                 Map<String, String> row = allRows.get(i);

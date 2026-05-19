@@ -20,6 +20,7 @@ public class TitleGenerateTask {
     private String progressMessage;  // 当前进度描述
     private Integer duplicateCount;   // 重复标题数量
     private Integer insertedCount;    // 成功插入标题数量
+    private String styleTemplateId;   // 选中的标题风格模板ID
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime processedAt;
@@ -71,4 +72,7 @@ public class TitleGenerateTask {
 
     public Integer getInsertedCount() { return insertedCount; }
     public void setInsertedCount(Integer insertedCount) { this.insertedCount = insertedCount; }
+
+    public String getStyleTemplateId() { return styleTemplateId; }
+    public void setStyleTemplateId(String styleTemplateId) { this.styleTemplateId = styleTemplateId; }
 }

@@ -151,6 +151,7 @@ const columns = [
   {
     title: '标题内容',
     key: 'title',
+    width: 280,
     customRender: ({ record }) => {
       const isUsed = record.isUsed === 1
       return h('div', {
@@ -180,6 +181,11 @@ const columns = [
         }, record.title)
       ])
     },
+  },
+  {
+    title: '描述',
+    dataIndex: 'description',
+    width: 360,
   },
   {
     title: '是否使用',

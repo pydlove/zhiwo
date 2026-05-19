@@ -3451,6 +3451,10 @@ public class TitleLibraryController {
             String trackName = userTrack != null ? userTrack.getName() : "";
 
             List<File> imageFiles = resolveImagePostFiles(titleLib.getImagePostUrls());
+            String cleanFileName = titleLib.getTitle().replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9\\s]", "").trim() + ".docx";
+            if (cleanFileName.length() <= 5) {
+                cleanFileName = "文章推荐.docx";
+            }
             emailService.sendDailyRecommendEmailWithImages(
                     user.getEmail(),
                     user.getUsername(),
@@ -3458,7 +3462,7 @@ public class TitleLibraryController {
                     titleLib.getTitle(),
                     titleLib.getPlatform(),
                     articleFile,
-                    titleLib.getGeneratedFileName(),
+                    cleanFileName,
                     imageFiles
             );
 
@@ -3535,6 +3539,10 @@ public class TitleLibraryController {
 
             // 发送邮件（与推送概览使用相同的模板和主题）
             List<File> imageFiles = resolveImagePostFiles(titleLib.getImagePostUrls());
+            String cleanFileName2 = titleLib.getTitle().replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9\\s]", "").trim() + ".docx";
+            if (cleanFileName2.length() <= 5) {
+                cleanFileName2 = "文章推荐.docx";
+            }
             emailService.sendDailyRecommendEmailWithImages(
                     toEmail,
                     userName,
@@ -3542,7 +3550,7 @@ public class TitleLibraryController {
                     titleLib.getTitle(),
                     titleLib.getPlatform(),
                     file,
-                    titleLib.getGeneratedFileName(),
+                    cleanFileName2,
                     imageFiles
             );
 
@@ -3635,6 +3643,10 @@ public class TitleLibraryController {
                     String trackName = userTrack != null ? userTrack.getName() : "";
 
                     List<File> imageFiles = resolveImagePostFiles(titleLib.getImagePostUrls());
+                    String cleanFileName3 = titleLib.getTitle().replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9\\s]", "").trim() + ".docx";
+                    if (cleanFileName3.length() <= 5) {
+                        cleanFileName3 = "文章推荐.docx";
+                    }
                     emailService.sendDailyRecommendEmailWithImages(
                             user.getEmail(),
                             user.getUsername(),
@@ -3642,7 +3654,7 @@ public class TitleLibraryController {
                             titleLib.getTitle(),
                             titleLib.getPlatform(),
                             articleFile,
-                            titleLib.getGeneratedFileName(),
+                            cleanFileName3,
                             imageFiles
                     );
 
@@ -3820,7 +3832,10 @@ public class TitleLibraryController {
                                 articleFile = new File(articlesDir + File.separator + titleLib.getGeneratedFileName());
                             }
                             if (!articleFile.exists()) continue;
-                            fileName = titleLib.getGeneratedFileName();
+                            fileName = titleLib.getTitle().replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9\\s]", "").trim() + ".docx";
+                            if (fileName.length() <= 5) {
+                                fileName = "文章推荐.docx";
+                            }
                             articleTitle = titleLib.getTitle();
                             platform = titleLib.getPlatform();
                         } else {

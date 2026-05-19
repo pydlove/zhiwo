@@ -225,10 +225,11 @@ def _download_fallback_font():
         return None
 
 
-# 用户指定的封面字体路径（相对项目根目录，支持 .woff2 / .woff / .ttf / .otf / .ttc）
+# 用户指定的封面字体路径
+# 默认：脚本位于 <project>/scripts/py/，字体在 <project>/admin-frontend/src/assets/font
 _CUSTOM_FONT_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "..", "..", "..", "..", "..",
+    "..", "..", "..",
     "admin-frontend", "src", "assets", "font"
 )
 
@@ -660,26 +661,27 @@ class ImagePostGenerator:
         self.split_mode = split_mode
         self.theme = theme
 
-        # 边距
-        self.margin_x = 72
-        self.margin_y = 96
+        # 边距：减小边距让内容区域更大，小图缩放后文字更清晰
+        self.margin_x = 48
+        self.margin_y = 64
         self.content_width = self.width - self.margin_x * 2
 
         # 字体：封面用艺术/粗体，正文用清晰黑体（仿小红书排版）
-        self.font_title = find_cover_font(64)
-        self.font_subtitle = find_body_font(32)
-        self.font_body = find_body_font(38)
-        self.font_page = find_body_font(24)
-        self.font_cover_sub = find_body_font(28)
-        self.font_cover_title = find_cover_font(88)
-        self.font_cover_quote = find_cover_font(140)
-        self.font_badge = find_cover_font(24)
+        # 整体字号放大，确保缩略图也能看清
+        self.font_title = find_cover_font(72)
+        self.font_subtitle = find_body_font(36)
+        self.font_body = find_body_font(44)
+        self.font_page = find_body_font(28)
+        self.font_cover_sub = find_body_font(32)
+        self.font_cover_title = find_cover_font(120)
+        self.font_cover_quote = find_cover_font(160)
+        self.font_badge = find_cover_font(28)
 
-        # 行高：小红书风格，正文大行距、段间距明显
-        self.line_height_title = 90
-        self.line_height_cover_title = 108
-        self.line_height_body = 68
-        self.paragraph_gap = 56
+        # 行高：同步放大，保持舒适的阅读比例
+        self.line_height_title = 100
+        self.line_height_cover_title = 145
+        self.line_height_body = 78
+        self.paragraph_gap = 64
 
     def create_cover(self, title, subtitle=""):
         """根据当前主题生成封面"""
@@ -705,9 +707,9 @@ class ImagePostGenerator:
         fs_factor = theme_cfg.get("font_size_factor", 1.0)
         lh_factor = theme_cfg.get("line_height_factor", 1.15)
 
-        # 根据主题调整字体大小
-        cover_font_size = int(88 * fs_factor)
-        cover_line_height = int(108 * lh_factor)
+        # 根据主题调整字体大小：整体放大确保小图/缩略图也能看清
+        cover_font_size = int(120 * fs_factor)
+        cover_line_height = int(145 * lh_factor)
         font_cover = find_cover_font(cover_font_size)
 
         # 先绘制装饰（在文字下方）
@@ -742,8 +744,8 @@ class ImagePostGenerator:
         # 标题自动换行
         title_lines = wrap_text(title, font_cover, self.content_width, draw)
 
-        # 最多显示行数
-        max_lines = 6 if layout != "center_upper" else 4
+        # 最多显示行数：减少行数，让每行字数更少、字体在缩略图中更显眼
+        max_lines = 4 if layout != "center_upper" else 3
         title_lines = title_lines[:max_lines]
 
         # 计算标题总高度
@@ -761,7 +763,7 @@ class ImagePostGenerator:
 
         # 绘制大引号装饰（在文字前面）
         if "big_quote" in decorations or "quote_marks" in decorations:
-            quote_font = find_cover_font(120 if self.theme == "klein-blue" else 160)
+            quote_font = find_cover_font(160 if self.theme == "klein-blue" else 200)
             draw_big_quote(draw, self.width, self.height, self.margin_x, accent_color, quote_font)
 
         # 绘制标题文字
@@ -856,8 +858,10 @@ class ImagePostGenerator:
 
         total = len(pages)
         image_paths = []
+        # 使用时间戳避免浏览器/服务器缓存旧贴图
+        timestamp = str(int(time.time()))
         for idx, page_img in enumerate(pages):
-            filename = f"{idx + 1}-{title_id}.png"
+            filename = f"{idx + 1}-{title_id}-{timestamp}.png"
             path = os.path.join(output_dir, filename)
             page_img.save(path, "PNG")
             rel_path = "/uploads/image-posts/" + os.path.basename(output_dir) + "/" + filename

@@ -29,7 +29,7 @@ public class TitleGenerateTaskService {
         return taskMapper.findAllWithSearch(status);
     }
 
-    public TitleGenerateTask createTask(String platforms, String trackIds, Integer countPerCombo, String instruction) {
+    public TitleGenerateTask createTask(String platforms, String trackIds, Integer countPerCombo, String instruction, String styleTemplateId) {
         TitleGenerateTask task = new TitleGenerateTask();
         task.setId(UUID.randomUUID().toString().replace("-", ""));
         task.setStatus("pending");
@@ -37,6 +37,7 @@ public class TitleGenerateTaskService {
         task.setTrackIds(trackIds);
         task.setCountPerCombo(countPerCombo != null ? countPerCombo : 3);
         task.setInstruction(instruction);
+        task.setStyleTemplateId(styleTemplateId);
         task.setProgressStep(0);
         task.setProgressMessage("排队中");
         task.setDuplicateCount(0);

@@ -602,7 +602,11 @@ return result;
                     String platform = titleLib.getPlatform() != null ? titleLib.getPlatform() : "";
                     List<File> imageFiles = resolveImagePostFiles(titleLib.getImagePostUrls());
                     log.info("[batchPushEmailForScheduled] 开始发送邮件, user={}, email={}, title={}", user.getUsername(), user.getEmail(), articleTitle);
-                    emailService.sendDailyRecommendEmailWithImages(user.getEmail(), user.getUsername(), trackName, articleTitle, platform, articleFile, titleLib.getGeneratedFileName(), imageFiles);
+                    String cleanFileName = articleTitle.replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9\\s]", "").trim() + ".docx";
+                    if (cleanFileName.length() <= 5) {
+                        cleanFileName = "文章推荐.docx";
+                    }
+                    emailService.sendDailyRecommendEmailWithImages(user.getEmail(), user.getUsername(), trackName, articleTitle, platform, articleFile, cleanFileName, imageFiles);
                     EmailPushLog pushLog = new EmailPushLog();
                     pushLog.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
                     pushLog.setUserId(userId);
@@ -662,6 +666,7 @@ return result;
         if (!new File(docxPath).exists()) {
             throw new RuntimeException("文章文件不存在: " + docxPath);
         }
+        log.info("[generateImagePosts] titleId={}, docxPath={}, generatedFileUrl={}", titleLibraryId, docxPath, titleLib.getGeneratedFileUrl());
 
         // 读取全局贴图配置
         String splitMode = "height";
@@ -839,65 +844,33 @@ return result;
 
     /**
      * 获取字体目录的绝对路径。
-     * 优先从 classpath 提取字体到缓存目录（适合 JAR 部署），回退到本地相对路径（适合开发环境）。
+     * 策略：
+     * 1. 优先使用服务器上的字体目录（部署环境，由 deploy.sh 同步）
+     * 2. 回退到本地相对路径（开发环境）
+     * 不再从 classpath/JAR 内提取字体，避免字体文件过大导致 JAR 膨胀，
+     * 且避免 woff/woff2 等 Web 格式在 PIL 中渲染质量差的问题。
      */
     private String extractFontDir() {
-        try {
-            Path cacheDir = Files.createTempDirectory("image_post_fonts");
-            String[] fontFiles = {"NotoSansSC-Bold.ttf", "NotoSansSC-Regular.ttf", "hpFPoQF4VmJz.woff", "hpFPoQF4VmJz.woff2"};
-            String[] subDirFonts = {
-                "阿里妈妈方圆体/AlimamaFangYuanTiVF-Thin.ttf",
-                "阿里妈妈刀隶体/hpFPoQF4VmJz.woff2"
-            };
-            for (String fontFile : fontFiles) {
-                try (InputStream is = getClass().getClassLoader().getResourceAsStream("assets/font/" + fontFile)) {
-                    if (is != null) {
-                        Path target = cacheDir.resolve(fontFile);
-                        Files.copy(is, target, StandardCopyOption.REPLACE_EXISTING);
-                    }
-                }
-            }
-            // 提取子目录中的阿里妈妈方圆体
-            for (String subFont : subDirFonts) {
-                String resourceName = "assets/font/" + subFont;
-                try (InputStream is = getClass().getClassLoader().getResourceAsStream(resourceName)) {
-                    if (is != null) {
-                        Path targetDir = cacheDir.resolve("阿里妈妈方圆体");
-                        Files.createDirectories(targetDir);
-                        Path target = targetDir.resolve(subFont.substring(subFont.lastIndexOf('/') + 1));
-                        Files.copy(is, target, StandardCopyOption.REPLACE_EXISTING);
-                    }
-                }
-            }
-            // 检查是否有任何字体被提取
-            boolean hasFonts = false;
-            for (String fontFile : fontFiles) {
-                if (Files.exists(cacheDir.resolve(fontFile))) {
-                    hasFonts = true;
-                    break;
-                }
-            }
-            if (hasFonts) {
-                log.info("[extractFontDir] 从 classpath 提取字体到缓存目录: {}", cacheDir);
-                return cacheDir.toAbsolutePath().toString();
-            }
-        } catch (Exception e) {
-            log.warn("[extractFontDir] 从 classpath 提取字体失败: {}", e.getMessage());
-        }
-        // 回退：使用服务器上的字体目录
+        // 策略1：服务器部署路径（deploy.sh 会把 admin-frontend/src/assets/font 同步到这里）
         String serverFontPath = "/root/app/gzh/admin-frontend/src/assets/font";
         if (java.nio.file.Files.exists(java.nio.file.Paths.get(serverFontPath))) {
-            log.info("[extractFontDir] 回退到服务器字体路径: {}", serverFontPath);
+            log.info("[extractFontDir] 使用服务器字体路径: {}", serverFontPath);
             return serverFontPath;
         }
-        // 最后的回退：本地相对路径（开发环境）
+
+        // 策略2：本地开发路径
         String localPath = java.nio.file.Paths.get(System.getProperty("user.dir"))
                 .getParent()
                 .resolve("admin-frontend/src/assets/font")
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        log.info("[extractFontDir] 回退到本地字体路径: {}", localPath);
+        if (java.nio.file.Files.exists(java.nio.file.Paths.get(localPath))) {
+            log.info("[extractFontDir] 使用本地字体路径: {}", localPath);
+            return localPath;
+        }
+
+        log.warn("[extractFontDir] 未找到字体目录，回退到临时目录: {}", localPath);
         return localPath;
     }
 }

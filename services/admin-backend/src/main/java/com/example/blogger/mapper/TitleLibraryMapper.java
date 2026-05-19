@@ -366,6 +366,9 @@ public interface TitleLibraryMapper {
             "GROUP BY t.platform, t.track_id")
     List<Map<String, Object>> countCompletedByCombo(@Param("pushDate") String pushDate);
 
+    @Select("SELECT t.*, t.track_id as trackId, t.title as title, t.description as description, t.platform as platform, t.created_at as createdAt, t.generate_status as generateStatus FROM tu_title_library t WHERE t.is_deleted = 0 AND t.generate_status = 1 ORDER BY t.created_at DESC")
+    List<TitleLibrary> findAllGenerated();
+
     @Select("SELECT t.*, t.track_id as trackId FROM tu_title_library t WHERE t.is_deleted = 0 AND t.title = #{title} LIMIT 1")
     TitleLibrary findByTitle(@Param("title") String title);
 
@@ -392,6 +395,11 @@ public interface TitleLibraryMapper {
             "WHERE t.is_deleted = 0 AND t.task_id = #{taskId} " +
             "ORDER BY t.created_at DESC")
     List<TitleLibrary> findByTaskId(@Param("taskId") String taskId);
+
+    @Select("<script>SELECT t.*, t.track_id as trackId FROM tu_title_library t WHERE t.is_deleted = 0 AND t.track_id IN " +
+            "<foreach collection='trackIds' item='id' open='(' separator=',' close=')'>#{id}</foreach> " +
+            "ORDER BY t.created_at DESC LIMIT #{limit}</script>")
+    List<TitleLibrary> findRecentByTrackIds(@Param("trackIds") List<String> trackIds, @Param("limit") int limit);
 
     @Select("SELECT " +
             "u.id as userId, u.username, u.wx_name as wxName, u.email, " +
@@ -453,4 +461,25 @@ public interface TitleLibraryMapper {
             "HAVING COUNT(*) > 0 " +
             "ORDER BY total DESC")
     List<Map<String, Object>> countByTrack();
+
+    /** Agent: 查询用户某赛道近N天已推荐的标题 */
+    @Select("SELECT t.id, t.title, t.track_id as trackId " +
+            "FROM tu_title_library t " +
+            "INNER JOIN tu_title_recommendation r ON t.id = r.title_library_id " +
+            "WHERE r.user_id = #{userId} AND t.track_id = #{trackId} " +
+            "AND r.recommend_date >= DATE_SUB(CURDATE(), INTERVAL #{days} DAY) " +
+            "AND t.is_deleted = 0 " +
+            "ORDER BY r.recommend_date DESC, r.created_at DESC " +
+            "LIMIT #{limit}")
+    List<TitleLibrary> findRecentByUserAndTrack(@Param("userId") String userId, @Param("trackId") String trackId, @Param("days") int days, @Param("limit") int limit);
+
+    /** Agent: 查询某赛道可用标题（未推荐、未使用、同赛道） */
+    @Select("SELECT t.id, t.title, t.description, t.platform, t.track_id as trackId " +
+            "FROM tu_title_library t " +
+            "WHERE t.is_deleted = 0 AND t.track_id = #{trackId} " +
+            "AND (t.is_used IS NULL OR t.is_used != 1) " +
+            "AND NOT EXISTS (SELECT 1 FROM tu_title_recommendation r WHERE r.title_library_id = t.id) " +
+            "ORDER BY t.created_at DESC " +
+            "LIMIT #{limit}")
+    List<TitleLibrary> findAvailableByTrack(@Param("trackId") String trackId, @Param("limit") int limit);
 }

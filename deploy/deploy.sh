@@ -13,8 +13,8 @@ SERVER_USER="root"                 # SSH 用户名
 SERVER_PASSWORD="Pydlove520smy@1"   # SSH 密码（或使用 SSH_KEY_PATH）
 SSH_KEY_PATH="~/.ssh/id_rsa"                    # 如使用密钥登录，填密钥路径，例如: ~/.ssh/id_rsa
 SERVER_DOMAIN="www.mmshuo.tech" # 你的域名（用于 nginx server_name）
-NGINX_SSL_CERT="/root/ssl/fullchain.pem"      # SSL 证书路径
-NGINX_SSL_KEY="/root/ssl/domain.key"          # SSL 私钥路径
+NGINX_SSL_CERT="/root/ssl/www.mmshuo.tech.pem"      # SSL 证书路径
+NGINX_SSL_KEY="/root/ssl/www.mmshuo.tech.key"          # SSL 私钥路径
 # ===================================================
 
 # 项目根目录（脚本位于 deploy/ 下）
@@ -164,10 +164,10 @@ log_info "上传 Python 脚本..."
 eval "$SSH_CMD $REMOTE_HOST 'mkdir -p /root/app/gzh/scripts/py'"
 retry_scp "$PROJECT_DIR/services/admin-backend/src/main/resources/py/." "$REMOTE_HOST:/root/app/gzh/scripts/py/"
 
-# 上传字体目录（供 Python 贴图脚本使用，与脚本内部 _CUSTOM_FONT_DIR 相对路径对齐）
+# 上传字体目录（供 Python 贴图脚本使用，服务器路径与脚本内部 _CUSTOM_FONT_DIR 对齐）
 log_info "上传字体文件..."
 eval "$SSH_CMD $REMOTE_HOST 'mkdir -p /root/app/gzh/admin-frontend/src/assets/font'"
-retry_scp "$PROJECT_DIR/services/admin-backend/src/main/resources/assets/font/." "$REMOTE_HOST:/root/app/gzh/admin-frontend/src/assets/font/"
+retry_scp "$PROJECT_DIR/services/admin-frontend/src/assets/font/." "$REMOTE_HOST:/root/app/gzh/admin-frontend/src/assets/font/"
 
 # 验证 Python 脚本是否成功上传（md5 校验）
 LOCAL_SCRIPT_MD5=$(md5 -q "$PROJECT_DIR/services/admin-backend/src/main/resources/py/replace_periods.py" 2>/dev/null || md5sum "$PROJECT_DIR/services/admin-backend/src/main/resources/py/replace_periods.py" | awk '{print $1}')
@@ -209,13 +209,13 @@ retry_scp "$DEPLOY_DIR/scripts/status.sh" "$REMOTE_HOST:/root/app/gzh/scripts/"
 log_info "设置脚本权限..."
 eval "$SSH_CMD $REMOTE_HOST 'chmod +x /root/app/gzh/scripts/*.sh && cp /root/app/gzh/scripts/user-service-*.sh /root/app/gzh/user-service/ && cp /root/app/gzh/scripts/admin-service-*.sh /root/app/gzh/admin-service/ && cp /root/app/gzh/scripts/start-all.sh /root/app/gzh/start-all.sh && cp /root/app/gzh/scripts/stop-all.sh /root/app/gzh/stop-all.sh && cp /root/app/gzh/scripts/restart-all.sh /root/app/gzh/restart-all.sh && cp /root/app/gzh/scripts/status.sh /root/app/gzh/status.sh && chmod +x /root/app/gzh/start-all.sh /root/app/gzh/stop-all.sh /root/app/gzh/restart-all.sh /root/app/gzh/status.sh'"
 
-# ============ 步骤6: 数据库迁移 ============
-log_info "上传数据库迁移脚本..."
-retry_scp "$PROJECT_DIR/db/migrate.sh" "$REMOTE_HOST:/root/app/gzh/db/"
-retry_scp "$PROJECT_DIR/db/migrations/." "$REMOTE_HOST:/root/app/gzh/db/migrations/"
-
-log_info "执行数据库迁移..."
-eval "$SSH_CMD $REMOTE_HOST 'chmod +x /root/app/gzh/db/migrate.sh && cd /root/app/gzh/db && bash migrate.sh prod'"
+# ============ 步骤6: 数据库迁移（临时跳过，手动修复迁移问题后再执行） ============
+# log_info "上传数据库迁移脚本..."
+# retry_scp "$PROJECT_DIR/db/migrate.sh" "$REMOTE_HOST:/root/app/gzh/db/"
+# retry_scp "$PROJECT_DIR/db/migrations/." "$REMOTE_HOST:/root/app/gzh/db/migrations/"
+#
+# log_info "执行数据库迁移..."
+# eval "$SSH_CMD $REMOTE_HOST 'chmod +x /root/app/gzh/db/migrate.sh && cd /root/app/gzh/db && bash migrate.sh prod'"
 
 # ============ 步骤7: 停止旧服务 ============
 log_info "停止旧服务..."
@@ -239,7 +239,12 @@ eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/user-service/user-service-s
 log_info "启动管理端后端..."
 eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/admin-service/admin-service-start.sh'"
 
-# ============ 步骤8: 上传并更新 Nginx 配置 ============
+# ============ 步骤8: 上传 SSL 证书并更新 Nginx 配置 ============
+log_info "上传 SSL 证书..."
+eval "$SSH_CMD $REMOTE_HOST 'mkdir -p /root/ssl'"
+retry_scp "$DEPLOY_DIR/www.mmshuo.tech_nginx/www.mmshuo.tech.pem" "$REMOTE_HOST:/root/ssl/"
+retry_scp "$DEPLOY_DIR/www.mmshuo.tech_nginx/www.mmshuo.tech.key" "$REMOTE_HOST:/root/ssl/"
+
 log_info "上传 Nginx 配置..."
 
 # 替换 nginx 中的域名和证书路径为实际配置

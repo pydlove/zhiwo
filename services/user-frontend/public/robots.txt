@@ -1,0 +1,13 @@
+User-agent: Baiduspider
+Disallow: /app/
+Disallow: /login
+Disallow: /register
+Allow: /
+
+User-agent: *
+Disallow: /app/
+Disallow: /login
+Disallow: /register
+Allow: /
+
+Sitemap: https://www.mmshuo.tech/sitemap.xml

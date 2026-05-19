@@ -38,11 +38,12 @@ public class TitleGenerateController {
         List<String> trackIds = (List<String>) body.get("trackIds");
         Integer countPerCombo = body.get("countPerCombo") != null ? (Integer) body.get("countPerCombo") : 3;
         String instruction = body.get("instruction") != null ? (String) body.get("instruction") : "";
+        String styleTemplateId = body.get("styleTemplateId") != null ? (String) body.get("styleTemplateId") : null;
 
         try {
             String platformsJson = platforms != null ? objectMapper.writeValueAsString(platforms) : null;
             String trackIdsJson = trackIds != null ? objectMapper.writeValueAsString(trackIds) : null;
-            TitleGenerateTask task = taskService.createTask(platformsJson, trackIdsJson, countPerCombo, instruction);
+            TitleGenerateTask task = taskService.createTask(platformsJson, trackIdsJson, countPerCombo, instruction, styleTemplateId);
             Map<String, Object> result = new HashMap<>();
             result.put("taskId", task.getId());
             result.put("status", "pending");

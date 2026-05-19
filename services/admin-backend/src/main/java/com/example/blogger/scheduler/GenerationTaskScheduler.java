@@ -16,6 +16,7 @@ import com.example.blogger.service.TaskInterruptManager;
 import com.example.blogger.service.TitleGenerationTaskService;
 import com.example.blogger.service.TitleLibraryService;
 import com.example.blogger.service.UserService;
+import com.example.blogger.service.WritingStyleService;
 import com.example.blogger.util.AiFlavorRemover;
 import com.example.blogger.util.DocxGenerator;
 import org.slf4j.Logger;
@@ -79,6 +80,7 @@ public class GenerationTaskScheduler {
     private final com.example.blogger.mapper.ImageLibraryMapper imageLibraryMapper;
     private final TrackMapper trackMapper;
     private final ContentCheckService contentCheckService;
+    private final WritingStyleService writingStyleService;
 
     private final ExecutorService executorService;
     private final Set<String> runningTasks = ConcurrentHashMap.newKeySet();
@@ -95,7 +97,8 @@ public class GenerationTaskScheduler {
                                    TitleRecommendationMapper titleRecommendationMapper,
                                    com.example.blogger.mapper.ImageLibraryMapper imageLibraryMapper,
                                    TrackMapper trackMapper,
-                                   ContentCheckService contentCheckService) {
+                                   ContentCheckService contentCheckService,
+                                   WritingStyleService writingStyleService) {
         this.taskMapper = taskMapper;
         this.taskService = taskService;
         this.llmService = llmService;
@@ -109,6 +112,7 @@ public class GenerationTaskScheduler {
         this.imageLibraryMapper = imageLibraryMapper;
         this.trackMapper = trackMapper;
         this.contentCheckService = contentCheckService;
+        this.writingStyleService = writingStyleService;
         this.executorService = Executors.newFixedThreadPool(MAX_CONCURRENCY);
     }
 
@@ -260,6 +264,19 @@ public class GenerationTaskScheduler {
             String cleanedContent = aiFlavorRemover.removeAiFlavor(mergedContent);
             log.info("[GenerationTaskScheduler] [任务{}] Step 3/6: 去除AI味完成, 耗时{}ms, 处理后长度={}", task.getId(), System.currentTimeMillis() - aiFlavorStart, cleanedContent.length());
             taskService.updateProgress(task.getId(), 3, "去除AI味完成");
+
+            // Step 3.6: 写作风格词替换
+            log.info("[GenerationTaskScheduler] [任务{}] Step 3.6/6: 开始写作风格词替换", task.getId());
+            try {
+                long styleStart = System.currentTimeMillis();
+                String styledContent = writingStyleService.applyStyle(cleanedContent);
+                log.info("[GenerationTaskScheduler] [任务{}] Step 3.6/6: 风格词替换完成, 耗时{}ms, 原长度={}, 替换后长度={}",
+                        task.getId(), System.currentTimeMillis() - styleStart, cleanedContent.length(), styledContent.length());
+                cleanedContent = styledContent;
+            } catch (Exception e) {
+                log.warn("[GenerationTaskScheduler] [任务{}] Step 3.6/6: 风格词替换失败, 跳过: {}", task.getId(), e.getMessage());
+            }
+            taskService.updateGeneratedContent(task.getId(), cleanedContent);
 
             // Step 3.5: Insert image (keyword download first, fallback to image library)
             log.info("[GenerationTaskScheduler] [任务{}] Step 3.5/6: 开始插入图片, keyword={}", task.getId(), keyword);

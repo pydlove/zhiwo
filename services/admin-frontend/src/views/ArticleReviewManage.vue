@@ -520,8 +520,8 @@ onMounted(() => {
       <div v-if="imagePostUrls.length > 0" style="border-top: 1px solid #f0f0f0; padding: 16px;">
         <div style="font-size: 14px; font-weight: 500; color: #262626; margin-bottom: 12px;">文章贴图</div>
         <div style="display: flex; flex-direction: row; gap: 12px; overflow-x: auto;">
-          <div v-for="(url, idx) in imagePostUrls" :key="idx" style="border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; flex-shrink: 0; width: 180px;">
-            <img :src="url" style="width: 100%; height: 300px; object-fit: cover; display: block; cursor: zoom-in;" @click="handlePreviewImage(url)" />
+          <div v-for="(url, idx) in imagePostUrls" :key="idx" style="border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; flex-shrink: 0; width: 240px;">
+            <img :src="url" style="width: 100%; height: 400px; object-fit: cover; display: block; cursor: zoom-in;" @click="handlePreviewImage(url)" />
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #fafafa;">
               <span style="font-size: 11px; color: #999;">第 {{ idx + 1 }} 张</span>
               <Button size="small" style="font-size: 11px; padding: 0 6px;" @click="handleDownloadImage(url)">下载</Button>
@@ -554,8 +554,8 @@ onMounted(() => {
       暂无贴图，点击"生成贴图"按钮创建
     </div>
     <div v-else style="display: flex; flex-direction: row; gap: 16px; padding: 8px; overflow-x: auto;">
-      <div v-for="(url, idx) in imagePostUrls" :key="idx" style="border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; flex-shrink: 0; width: 240px;">
-        <img :src="url" style="width: 100%; height: 400px; object-fit: cover; display: block; cursor: zoom-in;" @click="handlePreviewImage(url)" />
+      <div v-for="(url, idx) in imagePostUrls" :key="idx" style="border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; flex-shrink: 0; width: 300px;">
+        <img :src="url" style="width: 100%; height: 500px; object-fit: cover; display: block; cursor: zoom-in;" @click="handlePreviewImage(url)" />
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #fafafa;">
           <span style="font-size: 12px; color: #999;">第 {{ idx + 1 }} 张</span>
           <Button size="small" @click="handleDownloadImage(url)">下载</Button>

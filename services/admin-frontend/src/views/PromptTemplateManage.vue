@@ -11,6 +11,7 @@ const typeFilter = ref('')
 const typeOptions = [
   { label: '全部类别', value: '' },
   { label: '生成标题', value: 'generate_title' },
+  { label: '标题风格', value: 'title_style' },
 ]
 
 const modalOpen = ref(false)
@@ -121,7 +122,7 @@ async function handleDelete(record) {
 }
 
 function getTypeLabel(type) {
-  const map = { generate_title: '生成标题', generate_post: '生成文章' }
+  const map = { generate_title: '生成标题', generate_post: '生成文章', title_style: '标题风格' }
   return map[type] || type
 }
 

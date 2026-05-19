@@ -136,13 +136,31 @@ public class DocxGenerator {
                              .replaceAll("(?is)<thought\\b[^>]*>.*?</thought>", "")
                              .replaceAll("(?is)<reasoning\\b[^>]*>.*?</reasoning>", "")
                              .trim();
-        // 兜底：如果过滤后内容为空，回退为只移除标签保留内容
+        // 兜底1：如果过滤后内容为空，回退为只移除标签保留内容
         if (cleaned.isEmpty()) {
             cleaned = text.replaceAll("(?is)</?thinking\\b[^>]*>", "")
                           .replaceAll("(?is)</?think\\b[^>]*>", "")
                           .replaceAll("(?is)</?thought\\b[^>]*>", "")
                           .replaceAll("(?is)</?reasoning\\b[^>]*>", "")
                           .trim();
+        }
+        // 兜底2：处理未闭合的 <think> 标签（有开头无结尾，删除从 <think> 开始到文本结束）
+        String lower = cleaned.toLowerCase();
+        int thinkIdx = lower.indexOf("<think");
+        if (thinkIdx >= 0) {
+            int closeIdx = lower.indexOf("</think>", thinkIdx);
+            if (closeIdx < 0) {
+                log.warn("[DocxGenerator] 发现未闭合的 <think> 标签，截断处理");
+                cleaned = cleaned.substring(0, thinkIdx).trim();
+            }
+        }
+        int thinkingIdx = lower.indexOf("<thinking");
+        if (thinkingIdx >= 0) {
+            int closeIdx = lower.indexOf("</thinking>", thinkingIdx);
+            if (closeIdx < 0) {
+                log.warn("[DocxGenerator] 发现未闭合的 <thinking> 标签，截断处理");
+                cleaned = cleaned.substring(0, thinkingIdx).trim();
+            }
         }
         return cleaned;
     }

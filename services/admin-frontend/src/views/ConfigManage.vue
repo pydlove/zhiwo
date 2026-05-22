@@ -81,6 +81,7 @@ const imagePostBodyFont = ref('')
 
 const imagePostThemeOptions = [
   { label: '经典小红书', value: 'classic-xhs' },
+  { label: '小红书清新', value: 'xhs-fresh' },
   { label: '莫兰迪奶油', value: 'morandi-cream' },
   { label: '薄荷清新', value: 'mint-fresh' },
   { label: '落日橘粉', value: 'sunset-blush' },

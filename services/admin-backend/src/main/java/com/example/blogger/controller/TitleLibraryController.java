@@ -952,7 +952,7 @@ public class TitleLibraryController {
                 "3、输出规则：输出的文件都是docx格式，并且根据每行数据的日期，在创作目录下创建一个输出目录，输出目录就是\"创作日期\"，文件输出到输出目录下，例如：/Users/panyong/aio_project/公众号/自媒体/职场/{date}；\n" +
                 "4、输出文件样式：根据\"样式风格\"列的内容，去/Users/panyong/aio_project/小程序/services/admin-backend/styles目录下查找对应的样式文件，参考对应的样式输出文章；\n" +
                 "5、文件内容图片生成规则：内容中要插入图片，你可以自行下载相关图片（下载一些和标题呼应的图片，可以多找一些资源，不要总是那么几张，下载的图片必须是16:9的）；\n" +
-                "6、爆款标题生成原则：爆款标题要求通过标题就能吸引读者，也就是网上俗称的\"标题党\"，字数严禁超过30个字符；\n" +
+                "6、有思想、有创造性标题的生成原则：标题要有思想深度和创造性，能引发读者思考和共鸣，严禁做\"标题党\"，字数严禁超过30个字符；\n" +
                 "7、对于\"是否创作完成\"填写\"是\"的数据，就不要再重复创作了，要创作\"是否创作完成\"为空或者\"否\"的数据；";
 
             com.example.blogger.entity.PromptTemplate ruleTemplate = promptTemplateMapper.findDefaultByType("export_rule");
@@ -2602,10 +2602,6 @@ public class TitleLibraryController {
         if (titleIds == null || titleIds.isEmpty()) {
             return Result.error("请选择要生成贴图的标题");
         }
-        if (titleIds.size() > 10) {
-            return Result.error("每次最多批量生成 10 条");
-        }
-
         int success = 0;
         int failed = 0;
         java.util.List<String> errors = new ArrayList<>();
@@ -4475,7 +4471,7 @@ public class TitleLibraryController {
                     log.info("[生成标题] 平台={} 批次={}/{} 赛道数={}", platform, (batchStart / batchSize + 1), (int) Math.ceil(platformTracks.size() / 5.0), batchTracks.size());
 
                     StringBuilder prompt = new StringBuilder();
-                    prompt.append("请为\"").append(platform).append("\"平台生成爆款标题。\n\n");
+                    prompt.append("请为\"").append(platform).append("\"平台生成有思想、有创造性的标题。\n\n");
                     prompt.append("需要生成标题的赛道：\n");
                     boolean hasSocialTrack = false;
                     for (int i = 0; i < batchTracks.size(); i++) {

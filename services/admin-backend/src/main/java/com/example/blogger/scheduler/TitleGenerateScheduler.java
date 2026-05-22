@@ -236,7 +236,7 @@ public class TitleGenerateScheduler {
 
     private String buildPrompt(String platform, List<Track> batchTracks, int countPerCombo, String instruction, TitleGenerateTask task) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("你是一个专业的新媒体爆款标题创作者，请严格按照要求生成高质量标题。\n\n");
+        prompt.append("你是一个专业的新媒体标题创作者，擅长创作有思想、有创造性的标题，请严格按照要求生成高质量标题。\n\n");
         prompt.append("目标平台：").append(platform).append("\n");
         prompt.append("需要生成标题的赛道：\n");
         boolean hasSocialTrack = false;

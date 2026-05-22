@@ -188,12 +188,17 @@ eval "$SSH_CMD $REMOTE_HOST 'pip3 install python-docx >/dev/null 2>&1 || pip ins
 rm -f "$PROJECT_DIR/services/user-backend/target/user-backend-1.0.0.jar.zip"
 rm -f "$PROJECT_DIR/services/admin-backend/target/blogger-backend-1.0.0.jar.zip"
 
-# ============ 步骤5: 上传启停脚本与环境变量 ============
+# ============ 步骤5: 上传环境变量、systemd service 与启停脚本 ============
 log_info "上传环境变量文件..."
 retry_scp "$DEPLOY_DIR/.env" "$REMOTE_HOST:/root/app/gzh/.env"
 eval "$SSH_CMD $REMOTE_HOST 'chmod 600 /root/app/gzh/.env'"
 
-log_info "上传启停脚本..."
+log_info "上传 systemd service 文件..."
+retry_scp "$DEPLOY_DIR/systemd/gzh-user.service" "$REMOTE_HOST:/etc/systemd/system/"
+retry_scp "$DEPLOY_DIR/systemd/gzh-admin.service" "$REMOTE_HOST:/etc/systemd/system/"
+eval "$SSH_CMD $REMOTE_HOST 'systemctl daemon-reload && systemctl enable gzh-user gzh-admin'"
+
+log_info "上传启停脚本（备用）..."
 retry_scp "$DEPLOY_DIR/scripts/user-service-start.sh" "$REMOTE_HOST:/root/app/gzh/scripts/"
 retry_scp "$DEPLOY_DIR/scripts/user-service-stop.sh" "$REMOTE_HOST:/root/app/gzh/scripts/"
 retry_scp "$DEPLOY_DIR/scripts/user-service-restart.sh" "$REMOTE_HOST:/root/app/gzh/scripts/"
@@ -249,10 +254,11 @@ log_info "上传 Nginx 配置..."
 
 # 替换 nginx 中的域名和证书路径为实际配置
 TMP_NGINX="/tmp/nginx_gzh_deploy.conf"
+NGINX_CONF="$(dirname "$PROJECT_DIR")/nginx/nginx.conf"
 sed -e "s/server_name gzh.yourdomain.com/server_name $SERVER_DOMAIN/g" \
     -e "s|ssl_certificate /root/ssl/fullchain.pem|ssl_certificate $NGINX_SSL_CERT|g" \
     -e "s|ssl_certificate_key /root/ssl/domain.key|ssl_certificate_key $NGINX_SSL_KEY|g" \
-    "$DEPLOY_DIR/nginx.conf" > "$TMP_NGINX"
+    "$NGINX_CONF" > "$TMP_NGINX"
 
 retry_scp "$TMP_NGINX" "$REMOTE_HOST:/tmp/nginx_gzh_deploy.conf"
 

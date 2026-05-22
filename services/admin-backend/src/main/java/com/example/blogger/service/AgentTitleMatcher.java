@@ -205,7 +205,7 @@ public class AgentTitleMatcher {
         LLMSelection result = new LLMSelection();
 
         StringBuilder prompt = new StringBuilder();
-        prompt.append("你是一个资深新媒体内容运营专家，擅长从标题库中挑选适合推送的爆款标题。\n\n");
+        prompt.append("你是一个资深新媒体内容运营专家，擅长从标题库中挑选适合推送的有思想、有创造性的标题。\n\n");
         prompt.append("赛道：").append(trackName != null ? trackName : "未知赛道").append("\n\n");
 
         // 历史标题（最多50条）

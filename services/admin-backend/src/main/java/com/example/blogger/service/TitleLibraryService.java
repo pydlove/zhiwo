@@ -824,15 +824,27 @@ return result;
 
     private String resolveScriptPath(String scriptName) {
         try {
+            // 策略1：开发环境直接路径
             Path directPath = Paths.get(System.getProperty("user.dir"), "src", "main", "resources", "py", scriptName);
             if (Files.exists(directPath)) {
                 return directPath.toString();
             }
+
+            // 策略2：部署环境 scripts/py/ 目录（deploy.sh 上传位置）
+            // user.dir 通常是 /root/app/gzh/admin-service，同级 ../scripts/py/ 即为部署路径
+            Path deployPath = Paths.get(System.getProperty("user.dir")).getParent().resolve("scripts").resolve("py").resolve(scriptName);
+            if (Files.exists(deployPath)) {
+                log.info("[resolveScriptPath] 使用部署环境脚本: {}", deployPath);
+                return deployPath.toString();
+            }
+
+            // 策略3：从 JAR 包中提取
             try (InputStream is = getClass().getClassLoader().getResourceAsStream("py/" + scriptName)) {
                 if (is != null) {
                     Path tempScript = Files.createTempFile(scriptName.replace(".py", ""), ".py");
                     Files.copy(is, tempScript, StandardCopyOption.REPLACE_EXISTING);
                     tempScript.toFile().deleteOnExit();
+                    log.info("[resolveScriptPath] 从 JAR 提取临时脚本: {}", tempScript);
                     return tempScript.toString();
                 }
             }

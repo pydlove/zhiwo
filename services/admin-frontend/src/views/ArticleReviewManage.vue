@@ -8,7 +8,7 @@ import {
 import { DownloadOutlined, CopyOutlined } from '@ant-design/icons-vue'
 import { renderAsync } from 'docx-preview'
 import { useDocxHighlight } from '../composables/useDocxHighlight.js'
-import { listPendingReview, listReviewHistory, reviewTitle, batchReview, generateImagePost, getImagePosts } from '../api/titleLibrary.js'
+import { listPendingReview, listReviewHistory, reviewTitle, batchReview, generateImagePost, batchGenerateImagePost, getImagePosts } from '../api/titleLibrary.js'
 
 const STORAGE_KEY = 'article-review-date'
 const router = useRouter()
@@ -34,6 +34,7 @@ const previewImageUrl = ref('')
 
 const selectedRowKeys = ref([])
 const selectedRows = ref([])
+const batchImagePostLoading = ref(false)
 
 const rowSelection = {
   onChange: (keys, rows) => {
@@ -318,6 +319,31 @@ async function handleGenerateImagePost(record) {
   })
 }
 
+async function handleBatchGenerateImagePost() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择要生成贴图的文章')
+    return
+  }
+  Modal.confirm({
+    title: '批量生成贴图',
+    content: `确认对选中的 ${selectedRowKeys.value.length} 篇文章批量生成贴图？`,
+    async onOk() {
+      batchImagePostLoading.value = true
+      try {
+        const res = await batchGenerateImagePost(selectedRowKeys.value)
+        message.success(`批量生成完成：成功 ${res.success} 条，失败 ${res.failed} 条`)
+        if (res.errors && res.errors.length > 0) {
+          console.warn('批量生成贴图失败明细:', res.errors)
+        }
+      } catch (e) {
+        message.error('批量生成贴图失败: ' + (e?.response?.data?.msg || e?.message || '未知错误'))
+      } finally {
+        batchImagePostLoading.value = false
+      }
+    },
+  })
+}
+
 async function openImagePostModal(record) {
   if (!record || !record.id) return
   currentImagePostTitleId.value = record.id
@@ -454,6 +480,7 @@ onMounted(() => {
       <span style="font-size: 14px; color: #096dd9;">已选择 {{ selectedRowKeys.length }} 条</span>
       <Button type="primary" size="small" @click="handleBatchReview('confirm')">批量确认</Button>
       <Button danger size="small" @click="handleBatchReview('reject')">批量打回</Button>
+      <Button size="small" :loading="batchImagePostLoading" @click="handleBatchGenerateImagePost">批量生成贴图</Button>
     </div>
 
     <Tabs v-model:activeKey="activeTab" @change="onTabChange">

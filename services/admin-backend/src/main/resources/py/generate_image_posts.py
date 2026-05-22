@@ -8,7 +8,7 @@
         [--width 1080] [--height 1920] \
         [--bg-color #ffffff] \
         [--cover-gradient "#4f46e5,#7c3aed"] \
-        [--theme morandi-cream|mint-fresh|sunset-blush|midnight|lavender|klein-blue|gradient-ins|newspaper]
+        [--theme classic-xhs|xhs-fresh|morandi-cream|mint-fresh|sunset-blush|midnight|lavender|klein-blue|gradient-ins|newspaper]
 输出 JSON:
     {"success": true, "images": ["/uploads/image-posts/.../xxx_0.png", ...]}
 """
@@ -23,6 +23,7 @@ import argparse
 import subprocess
 import urllib.request
 import math
+import time
 from docx import Document
 from PIL import Image, ImageDraw, ImageFont
 
@@ -144,6 +145,19 @@ COVER_THEMES = {
         "accent_color": "#ffb428",
         "layout": "left",
         "decorations": ["quote_marks"],
+        "font_size_factor": 1.0,
+        "line_height_factor": 1.15,
+    },
+    # 10. 小红书清新 — 极简笔记风，支持文字高亮
+    "xhs-fresh": {
+        "name": "小红书清新",
+        "bg_type": "solid",
+        "bg_color": "#e0f7f5",
+        "text_color": "#2d3436",
+        "accent_color": "#b8a9e8",
+        "highlight_bg": "#e0d4f7",
+        "layout": "left",
+        "decorations": ["big_quote_muted", "bottom_bar"],
         "font_size_factor": 1.0,
         "line_height_factor": 1.15,
     },
@@ -646,6 +660,127 @@ def draw_typewriter_box(draw, x, y, text, font, text_color, bg_color, padding=16
     draw.text((x + padding, y + padding - 2), text, font=font, fill=text_color)
 
 
+def draw_big_quote_muted(draw, width, height, margin, color, font):
+    """绘制淡色大引号（小红书清新风）"""
+    quote_text = '"'
+    draw.text((margin + 10, margin + 10), quote_text, font=font, fill=color)
+
+
+def draw_bottom_bar(draw, width, height, margin, color):
+    """右下角短横线装饰"""
+    bar_width = 60
+    bar_height = 6
+    x1 = width - margin - bar_width
+    y1 = height - margin - 40
+    x2 = x1 + bar_width
+    y2 = y1 + bar_height
+    draw.rectangle([(x1, y1), (x2, y2)], fill=color)
+
+
+def parse_highlight_segments(text):
+    """解析「高亮」标记，返回片段列表 [(text, is_highlight), ...]"""
+    segments = []
+    current = ""
+    i = 0
+    while i < len(text):
+        if text[i] == '\u300c':  # 「
+            if current:
+                segments.append((current, False))
+                current = ""
+            end = text.find('\u300d', i + 1)  # 」
+            if end == -1:
+                current += text[i]
+                i += 1
+            else:
+                segments.append((text[i + 1:end], True))
+                i = end + 1
+        else:
+            current += text[i]
+            i += 1
+    if current:
+        segments.append((current, False))
+    return segments
+
+
+def wrap_segments(segments, font, max_width, draw):
+    """对片段列表进行换行，保证高亮片段不被截断，返回每行的片段列表"""
+    # 先展开为字符列表，保留高亮属性
+    chars = []
+    for text, is_highlight in segments:
+        for ch in text:
+            chars.append((ch, is_highlight))
+
+    lines = []
+    current_line_chars = []
+    current_width = 0
+
+    for ch, is_highlight in chars:
+        bbox = draw.textbbox((0, 0), ch, font=font)
+        ch_width = bbox[2] - bbox[0]
+
+        if current_width + ch_width > max_width and current_line_chars:
+            # 合并连续同属性字符为片段
+            line_segments = []
+            current_text = current_line_chars[0][0]
+            current_attr = current_line_chars[0][1]
+            for c, attr in current_line_chars[1:]:
+                if attr == current_attr:
+                    current_text += c
+                else:
+                    line_segments.append((current_text, current_attr))
+                    current_text = c
+                    current_attr = attr
+            line_segments.append((current_text, current_attr))
+            lines.append(line_segments)
+            current_line_chars = [(ch, is_highlight)]
+            current_width = ch_width
+        else:
+            current_line_chars.append((ch, is_highlight))
+            current_width += ch_width
+
+    # 处理最后一行
+    if current_line_chars:
+        line_segments = []
+        current_text = current_line_chars[0][0]
+        current_attr = current_line_chars[0][1]
+        for c, attr in current_line_chars[1:]:
+            if attr == current_attr:
+                current_text += c
+            else:
+                line_segments.append((current_text, current_attr))
+                current_text = c
+                current_attr = attr
+        line_segments.append((current_text, current_attr))
+        lines.append(line_segments)
+
+    return lines
+
+
+def draw_line_segments(draw, x, y, segments, font, text_color, highlight_bg_color):
+    """绘制一行带高亮的文字，维护当前 x 坐标"""
+    current_x = x
+    for seg_text, is_highlight in segments:
+        if not seg_text:
+            continue
+        bbox = draw.textbbox((0, 0), seg_text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        if is_highlight:
+            padding_x = 8
+            padding_y = 6
+            bg_x1 = current_x - padding_x
+            bg_y1 = y - padding_y
+            bg_x2 = current_x + text_width + padding_x
+            bg_y2 = y + text_height + padding_y
+            draw.rounded_rectangle(
+                [(bg_x1, bg_y1), (bg_x2, bg_y2)],
+                radius=10,
+                fill=highlight_bg_color,
+            )
+        draw.text((current_x, y), seg_text, font=font, fill=text_color)
+        current_x += text_width
+
+
 # ============================================================
 # 主题封面渲染
 # ============================================================
@@ -737,19 +872,29 @@ class ImagePostGenerator:
             draw_soft_circle(draw, self.width, self.height, soft_color)
         if "newspaper_lines" in decorations:
             draw_newspaper_lines(draw, self.width, self.height, self.margin_x, accent_color)
+        if "big_quote_muted" in decorations:
+            quote_font = find_cover_font(220)
+            muted_color = hex_to_rgb("#a8e5de")
+            draw_big_quote_muted(draw, self.width, self.height, self.margin_x, muted_color, quote_font)
+        if "bottom_bar" in decorations:
+            draw_bottom_bar(draw, self.width, self.height, self.margin_x, accent_color)
         if "wavy_line" in decorations:
             # 在标题下方绘制波浪线
             pass  # 等计算完标题位置后再画
 
         # 标题自动换行
-        title_lines = wrap_text(title, font_cover, self.content_width, draw)
-
-        # 最多显示行数：减少行数，让每行字数更少、字体在缩略图中更显眼
-        max_lines = 4 if layout != "center_upper" else 3
-        title_lines = title_lines[:max_lines]
-
-        # 计算标题总高度
-        total_title_height = len(title_lines) * cover_line_height
+        if self.theme == "xhs-fresh":
+            # 小红书清新风：先解析高亮片段，再做片段感知换行
+            segments = parse_highlight_segments(title)
+            wrapped_lines = wrap_segments(segments, font_cover, self.content_width, draw)
+            max_lines = 4
+            wrapped_lines = wrapped_lines[:max_lines]
+            total_title_height = len(wrapped_lines) * cover_line_height
+        else:
+            title_lines = wrap_text(title, font_cover, self.content_width, draw)
+            max_lines = 4 if layout != "center_upper" else 3
+            title_lines = title_lines[:max_lines]
+            total_title_height = len(title_lines) * cover_line_height
 
         # 计算起始 Y 位置
         if layout == "center":
@@ -768,25 +913,40 @@ class ImagePostGenerator:
 
         # 绘制标题文字
         y = start_y
-        for i, line in enumerate(title_lines):
-            if layout in ("center", "center_upper"):
-                bbox = draw.textbbox((0, 0), line, font=font_cover)
-                line_w = bbox[2] - bbox[0]
-                x = (self.width - line_w) // 2
-            else:
-                x = self.margin_x
+        if self.theme == "xhs-fresh":
+            for line_segments in wrapped_lines:
+                if layout in ("center", "center_upper"):
+                    line_w = 0
+                    for seg_text, _ in line_segments:
+                        if seg_text:
+                            bbox = draw.textbbox((0, 0), seg_text, font=font_cover)
+                            line_w += bbox[2] - bbox[0]
+                    x = (self.width - line_w) // 2
+                else:
+                    x = self.margin_x
+                highlight_bg = hex_to_rgb(theme_cfg.get("highlight_bg", "#e0d4f7"))
+                draw_line_segments(draw, x, y, line_segments, font_cover, text_color, highlight_bg)
+                y += cover_line_height
+        else:
+            for i, line in enumerate(title_lines):
+                if layout in ("center", "center_upper"):
+                    bbox = draw.textbbox((0, 0), line, font=font_cover)
+                    line_w = bbox[2] - bbox[0]
+                    x = (self.width - line_w) // 2
+                else:
+                    x = self.margin_x
 
-            # 渐变ins风添加文字阴影
-            if "text_shadow" in decorations:
-                shadow_color = tuple(max(0, c - 60) for c in text_color)
-                draw_text_shadow(draw, line, x, y, font_cover, text_color, shadow_color, 3)
-            else:
-                draw.text((x, y), line, font=font_cover, fill=text_color)
+                # 渐变ins风添加文字阴影
+                if "text_shadow" in decorations:
+                    shadow_color = tuple(max(0, c - 60) for c in text_color)
+                    draw_text_shadow(draw, line, x, y, font_cover, text_color, shadow_color, 3)
+                else:
+                    draw.text((x, y), line, font=font_cover, fill=text_color)
 
-            y += cover_line_height
+                y += cover_line_height
 
         # 波浪线在标题下方
-        if "wavy_line" in decorations and title_lines:
+        if "wavy_line" in decorations:
             wave_y = y + 30
             draw_wavy_line(draw, wave_y, self.width, self.margin_x, accent_color, 3, 8, 40)
 

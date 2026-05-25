@@ -2,7 +2,7 @@
 # 管理端后端停止脚本
 
 APP_NAME="admin-backend"
-APP_HOME="/root/app/gzh/admin-service"
+APP_HOME="/root/app/zhiwo/admin-service"
 PID_FILE="$APP_HOME/app.pid"
 PORT=8080
 

@@ -45,8 +45,8 @@ app:
   visible-tabs:
     process-manage: pushed-up
   script:
-    # 生产环境脚本路径，deploy.sh 会自动上传到 /root/app/gzh/scripts/py/
-    replace-periods-path: ${REPLACE_PERIODS_SCRIPT_PATH:/root/app/gzh/scripts/py/replace_periods.py}
+    # 生产环境脚本路径，deploy.sh 会自动上传到 /root/app/zhiwo/scripts/py/
+    replace-periods-path: ${REPLACE_PERIODS_SCRIPT_PATH:/root/app/zhiwo/scripts/py/replace_periods.py}
 
 jasypt:
   encryptor:

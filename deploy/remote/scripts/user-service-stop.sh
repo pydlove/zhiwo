@@ -2,7 +2,7 @@
 # 用户端后端停止脚本
 
 APP_NAME="user-backend"
-APP_HOME="/root/app/gzh/user-service"
+APP_HOME="/root/app/zhiwo/user-service"
 PID_FILE="$APP_HOME/app.pid"
 PORT=8082
 

@@ -13,13 +13,13 @@ fi
 
 case "$SERVICE" in
   user-service)
-    /bin/bash /root/app/gzh/user-service/user-service-stop.sh
+    /bin/bash /root/app/zhiwo/user-service/user-service-stop.sh
     ;;
   admin-service)
-    /bin/bash /root/app/gzh/admin-service/admin-service-stop.sh
+    /bin/bash /root/app/zhiwo/admin-service/admin-service-stop.sh
     ;;
   all)
-    /bin/bash /root/app/gzh/stop-all.sh
+    /bin/bash /root/app/zhiwo/stop-all.sh
     ;;
   *)
     echo "未知服务: $SERVICE"

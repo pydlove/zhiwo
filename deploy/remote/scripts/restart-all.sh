@@ -6,12 +6,12 @@ echo "重启公众号创作助手所有服务"
 echo "========================================"
 
 echo ""
-echo "[1/2] 重启用户端后端 (gzh-user)..."
-systemctl restart gzh-user
+echo "[1/2] 重启用户端后端 (zhiwo-user)..."
+systemctl restart zhiwo-user
 
 echo ""
-echo "[2/2] 重启管理端后端 (gzh-admin)..."
-systemctl restart gzh-admin
+echo "[2/2] 重启管理端后端 (zhiwo-admin)..."
+systemctl restart zhiwo-admin
 
 echo ""
 echo "========================================"
@@ -20,5 +20,5 @@ echo "========================================"
 echo "用户端后端: http://localhost:8082"
 echo "管理端后端: http://localhost:8080"
 echo ""
-echo "查看状态: systemctl status gzh-user gzh-admin"
+echo "查看状态: systemctl status zhiwo-user zhiwo-admin"
 echo "========================================"

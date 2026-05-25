@@ -2,10 +2,10 @@
 # 管理端后端一键重启脚本（systemctl）
 
 echo "========================================"
-echo "重启管理端后端 (gzh-admin)"
+echo "重启管理端后端 (zhiwo-admin)"
 echo "========================================"
 
-systemctl restart gzh-admin
+systemctl restart zhiwo-admin
 
 echo ""
 echo "========================================"

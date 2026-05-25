@@ -7,13 +7,13 @@ echo "========================================"
 
 echo ""
 echo "[systemctl 状态]"
-systemctl status gzh-user --no-pager
+systemctl status zhiwo-user --no-pager
 
 echo ""
 echo "----------------------------------------"
 
 echo ""
-systemctl status gzh-admin --no-pager
+systemctl status zhiwo-admin --no-pager
 
 echo ""
 echo "========================================"

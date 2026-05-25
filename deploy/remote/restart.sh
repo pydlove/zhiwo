@@ -13,7 +13,7 @@ SSH_KEY_PATH=""
 # ===================================================
 
 DEPLOY_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$DEPLOY_DIR")"
+PROJECT_DIR="$(cd "$DEPLOY_DIR/../.." && pwd)"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -38,18 +38,18 @@ fi
 REMOTE_HOST="$SERVER_USER@$SERVER_IP"
 
 log_info "重新上传前端文件..."
-eval "$SCP_CMD -r $PROJECT_DIR/frontend/dist/* $REMOTE_HOST:/root/app/web/gzh/"
-eval "$SCP_CMD -r $PROJECT_DIR/admin/dist/* $REMOTE_HOST:/root/app/web/gzh-admin/"
+eval "$SCP_CMD -r $PROJECT_DIR/frontend/dist/* $REMOTE_HOST:/root/app/zhiwo/user-frontend/"
+eval "$SCP_CMD -r $PROJECT_DIR/admin/dist/* $REMOTE_HOST:/root/app/zhiwo/admin-frontend/"
 
 log_info "停止后端服务..."
-eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/user-service/user-service-stop.sh || true'"
-eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/admin-service/admin-service-stop.sh || true'"
+eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/zhiwo/user-service/user-service-stop.sh || true'"
+eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/zhiwo/admin-service/admin-service-stop.sh || true'"
 
 sleep 2
 
 log_info "启动后端服务..."
-eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/user-service/user-service-start.sh'"
-eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/admin-service/admin-service-start.sh'"
+eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/zhiwo/user-service/user-service-start.sh'"
+eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/zhiwo/admin-service/admin-service-start.sh'"
 
 log_info "重载 Nginx..."
 eval "$SSH_CMD $REMOTE_HOST 'nginx -s reload'"

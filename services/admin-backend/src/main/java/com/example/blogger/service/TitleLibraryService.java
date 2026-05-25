@@ -831,7 +831,7 @@ return result;
             }
 
             // 策略2：部署环境 scripts/py/ 目录（deploy.sh 上传位置）
-            // user.dir 通常是 /root/app/gzh/admin-service，同级 ../scripts/py/ 即为部署路径
+            // user.dir 通常是 /root/app/zhiwo/admin-service，同级 ../scripts/py/ 即为部署路径
             Path deployPath = Paths.get(System.getProperty("user.dir")).getParent().resolve("scripts").resolve("py").resolve(scriptName);
             if (Files.exists(deployPath)) {
                 log.info("[resolveScriptPath] 使用部署环境脚本: {}", deployPath);
@@ -864,7 +864,7 @@ return result;
      */
     private String extractFontDir() {
         // 策略1：服务器部署路径（deploy.sh 会把 admin-frontend/src/assets/font 同步到这里）
-        String serverFontPath = "/root/app/gzh/admin-frontend/src/assets/font";
+        String serverFontPath = "/root/app/zhiwo/admin-frontend/src/assets/font";
         if (java.nio.file.Files.exists(java.nio.file.Paths.get(serverFontPath))) {
             log.info("[extractFontDir] 使用服务器字体路径: {}", serverFontPath);
             return serverFontPath;

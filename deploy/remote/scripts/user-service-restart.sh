@@ -2,10 +2,10 @@
 # 用户端后端一键重启脚本（systemctl）
 
 echo "========================================"
-echo "重启用户端后端 (gzh-user)"
+echo "重启用户端后端 (zhiwo-user)"
 echo "========================================"
 
-systemctl restart gzh-user
+systemctl restart zhiwo-user
 
 echo ""
 echo "========================================"

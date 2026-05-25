@@ -1,18 +1,18 @@
 #!/bin/bash
 # 用户端后端启动脚本
-# 部署目录: /root/app/gzh/user-service/
+# 部署目录: /root/app/zhiwo/user-service/
 
 APP_NAME="user-backend"
 JAR_NAME="user-backend-1.0.0.jar"
-APP_HOME="/root/app/gzh/user-service"
+APP_HOME="/root/app/zhiwo/user-service"
 LOG_FILE="$APP_HOME/app.log"
 PID_FILE="$APP_HOME/app.pid"
-JAVA_OPTS="-Xms256m -Xmx512m -Dfile.encoding=UTF-8"
+JAVA_OPTS="-Xms256m -Xmx512m -Dfile.encoding=UTF-8 -Dprocess.name=zhiwo-user"
 SPRING_OPTS="--spring.profiles.active=prod"
 
 # 加载环境变量（如果存在）
-if [ -f "/root/app/gzh/.env" ]; then
-  source /root/app/gzh/.env
+if [ -f "/root/app/zhiwo/.env" ]; then
+  source /root/app/zhiwo/.env
 fi
 
 # 检查是否已运行

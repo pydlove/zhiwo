@@ -6,12 +6,12 @@ echo "停止公众号创作助手服务"
 echo "========================================"
 
 echo ""
-echo "[1/2] 停止用户端后端 (gzh-user)..."
-systemctl stop gzh-user
+echo "[1/2] 停止用户端后端 (zhiwo-user)..."
+systemctl stop zhiwo-user
 
 echo ""
-echo "[2/2] 停止管理端后端 (gzh-admin)..."
-systemctl stop gzh-admin
+echo "[2/2] 停止管理端后端 (zhiwo-admin)..."
+systemctl stop zhiwo-admin
 
 echo ""
 echo "========================================"

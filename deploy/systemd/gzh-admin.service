@@ -6,8 +6,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/root/app/gzh/admin-service
-EnvironmentFile=-/root/app/gzh/.env
-ExecStart=/usr/bin/java -Xms256m -Xmx512m -Dfile.encoding=UTF-8 -jar blogger-backend-1.0.0.jar --spring.profiles.active=prod
+ExecStart=/bin/bash -c 'source /root/app/gzh/.env && exec /usr/bin/java -Xms256m -Xmx512m -Dfile.encoding=UTF-8 -jar blogger-backend-1.0.0.jar --spring.profiles.active=prod'
 SuccessExitStatus=143
 Restart=on-failure
 RestartSec=10

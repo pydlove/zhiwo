@@ -1,17 +1,11 @@
 #!/bin/bash
-# 用户端后端一键重启脚本
+# 用户端后端一键重启脚本（systemctl）
 
 echo "========================================"
-echo "重启用户端后端 (user-backend)"
+echo "重启用户端后端 (gzh-user)"
 echo "========================================"
 
-echo ""
-echo "[1/2] 停止服务..."
-/bin/bash /root/app/gzh/user-service/user-service-stop.sh
-
-echo ""
-echo "[2/2] 启动服务..."
-/bin/bash /root/app/gzh/user-service/user-service-start.sh
+systemctl restart gzh-user
 
 echo ""
 echo "========================================"

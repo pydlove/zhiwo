@@ -222,10 +222,9 @@ eval "$SSH_CMD $REMOTE_HOST 'chmod +x /root/app/gzh/scripts/*.sh && cp /root/app
 # log_info "执行数据库迁移..."
 # eval "$SSH_CMD $REMOTE_HOST 'chmod +x /root/app/gzh/db/migrate.sh && cd /root/app/gzh/db && bash migrate.sh prod'"
 
-# ============ 步骤7: 停止旧服务 ============
-log_info "停止旧服务..."
-eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/user-service/user-service-stop.sh'"
-eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/admin-service/admin-service-stop.sh'"
+# ============ 步骤6: 重启服务（systemctl） ============
+log_info "停止服务（systemctl）..."
+eval "$SSH_CMD $REMOTE_HOST 'systemctl stop gzh-user gzh-admin 2>/dev/null || true'"
 
 # 等待端口释放
 sleep 2
@@ -237,14 +236,13 @@ eval "$SSH_CMD $REMOTE_HOST 'lsof -t -i:8082 >/dev/null 2>&1 && { echo \"清理 
 
 sleep 1
 
-# ============ 步骤7: 启动新服务 ============
-log_info "启动用户端后端..."
-eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/user-service/user-service-start.sh'"
+log_info "启动用户端后端（systemctl）..."
+eval "$SSH_CMD $REMOTE_HOST 'systemctl start gzh-user'"
 
-log_info "启动管理端后端..."
-eval "$SSH_CMD $REMOTE_HOST '/bin/bash /root/app/gzh/admin-service/admin-service-start.sh'"
+log_info "启动管理端后端（systemctl）..."
+eval "$SSH_CMD $REMOTE_HOST 'systemctl start gzh-admin'"
 
-# ============ 步骤8: 上传 SSL 证书并更新 Nginx 配置 ============
+# ============ 步骤7: 上传 SSL 证书并更新 Nginx 配置 ============
 log_info "上传 SSL 证书..."
 eval "$SSH_CMD $REMOTE_HOST 'mkdir -p /root/ssl'"
 retry_scp "$DEPLOY_DIR/www.mmshuo.tech_nginx/www.mmshuo.tech.pem" "$REMOTE_HOST:/root/ssl/"
